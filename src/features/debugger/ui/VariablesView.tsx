@@ -135,6 +135,10 @@ const valueChanges = new ValueChanges();
 export interface VariablesViewProps {
   roots: VarRoot[];
   session: DebugSessionId | null;
+  loadVariables?: (reference: number) => Promise<Variable[]>;
+  readOnly?: boolean;
+  onAddWatch?: (expression: string) => void;
+  onRemoveWatch?: (expression: string) => void;
   /** Changing it drops loaded children (new stop); expansion is kept and re-loaded. */
   generation?: number;
   /** Highlight values changed since the previous `epoch` (stop) within the same `scope`. */
@@ -151,6 +155,10 @@ export function VariablesView({
   roots,
   session,
   generation = 0,
+  loadVariables,
+  readOnly = false,
+  onAddWatch = addWatch,
+  onRemoveWatch = removeWatch,
   changes,
   defaultExpanded,
   autoFocus,
@@ -191,13 +199,15 @@ export function VariablesView({
 
   const load = useCallback(
     async (node: VarNode) => {
-      if (session == null || node.reference <= 0) return;
+      if ((session == null && !loadVariables) || node.reference <= 0) return;
       const tag = `${generation}:${node.key}`;
       if (loading.current.has(tag)) return;
       loading.current.add(tag);
       let list: VarNode[];
       try {
-        const raw = await call(commands.debugVariables(session, node.reference));
+        const raw = loadVariables
+          ? await loadVariables(node.reference)
+          : await call(commands.debugVariables(session!, node.reference));
         const vars = workflowSettings().debugger.sortValues ? sortVariables(raw) : raw;
         const seen = new Map<string, number>();
         list = vars.map((v) => {
@@ -217,7 +227,7 @@ export function VariablesView({
         return { gen: generation, map };
       });
     },
-    [session, generation],
+    [session, generation, loadVariables],
   );
 
   // Re-load children of nodes that stay expanded across steps (and non-expensive scopes on first show).
@@ -230,7 +240,11 @@ export function VariablesView({
 
   const [editing, setEditing] = useState<{ key: string; value: string; error: string | null } | null>(null);
   const editable = (n: VarNode | undefined): n is VarNode =>
-    !!n && session != null && (n.kind === "var" || n.kind === "watch") && (n.container > 0 || !!n.evaluateName);
+    !!n &&
+    !readOnly &&
+    session != null &&
+    (n.kind === "var" || n.kind === "watch") &&
+    (n.container > 0 || !!n.evaluateName);
   const startEdit = (n: VarNode) => setEditing({ key: n.key, value: n.value, error: null });
   const commitEdit = async () => {
     const e = editing;
@@ -262,11 +276,11 @@ export function VariablesView({
     },
     jumpToSource: () => {
       const node = leadNode();
-      if (node) void jumpToDeclaration(node);
+      if (node && !readOnly) void jumpToDeclaration(node);
     },
   });
   const canWatch = (n: VarNode) =>
-    session != null && n.kind === "var" && n.container > 0 && sessionSupports("dataBreakpoints");
+    !readOnly && session != null && n.kind === "var" && n.container > 0 && sessionSupports("dataBreakpoints");
 
   const onContextMenu = (node: VarNode | null, _sel: Set<string>, e: React.MouseEvent) => {
     if (!node || node.kind === "message") return;
@@ -277,22 +291,24 @@ export function VariablesView({
         { label: "Set Value…", icon: "edit", shortcut: "F2", run: () => startEdit(node) },
         { kind: "separator" },
       );
-    if (node.kind === "watch") items.push({ label: "Remove Watch", icon: "minus", run: () => removeWatch(node.name) });
+    if (node.kind === "watch")
+      items.push({ label: "Remove Watch", icon: "minus", run: () => onRemoveWatch(node.name) });
     if (node.kind !== "scope") {
       items.push({ label: "Copy Value", icon: "copy", run: () => void navigator.clipboard?.writeText(node.value) });
       items.push({ label: "Copy Name", run: () => void navigator.clipboard?.writeText(node.name) });
       if (node.kind === "var" && node.evaluateName)
-        items.push({ label: "Add to Watches", icon: "eye", run: () => addWatch(node.evaluateName!) });
+        items.push({ label: "Add to Watches", icon: "eye", run: () => onAddWatch(node.evaluateName!) });
       if (canWatch(node))
         items.push({
           label: "Add Field Watchpoint",
           icon: "breakpoint-field",
           run: () => void addWatchpointFor(session!, node),
         });
-      items.push(
-        { kind: "separator" },
-        { label: "Jump to Source", shortcut: "F4", run: () => void jumpToDeclaration(node) },
-      );
+      if (!readOnly)
+        items.push(
+          { kind: "separator" },
+          { label: "Jump to Source", shortcut: "F4", run: () => void jumpToDeclaration(node) },
+        );
     }
     if (items.length) showContextMenu(e, items);
   };
@@ -304,7 +320,7 @@ export function VariablesView({
     if (e.key !== "Delete" && e.key !== "Backspace") return;
     if (node?.kind === "watch") {
       e.preventDefault();
-      removeWatch(node.name);
+      onRemoveWatch(node.name);
     }
   };
 

@@ -162,3 +162,9 @@ DS-04B0 显式启动已完成本批集成验收：Start Kernel 不执行用户 c
 下一实现切片为 B2：复用通用调试工具窗口的 kernel adapter，订阅 ready 后协商能力；保存 kernel 返回 sourcePath 与 cell ID/source revision 的映射；重复源码保留歧义，不猜测定位。优先验证暂停栈、局部变量、watch/继续和旧 token 清理，再开放 cell 断点入口。普通脚本 debugpy 必须保持回归通过。
 
 renv 激活的具体 launchId/token、Notebook/Console workspace member 绑定、bootstrap 与缓存政策已细化为 [启动合同](research/2026-11-06-renv-launch-contract.md)，生产接线仍 pending。后续包管理明确分离“已激活”与“锁文件同步”：增加显式同步差异检查，restore 使用可审阅包变更与 transactional 默认，非默认 profile 纳入环境身份；这些不是本批已实现功能。
+
+## DS-04B2 调试 UI 首片交付（2026-11-06）
+
+已实现 Connect Debugger / Debug Cell、每 cell 显式断点行、kernel 独立调试 target、暂停栈/作用域/变量/watch/单步/继续/断开，以及 token 和暂停 epoch 隔离。Python/R 真实协议双 cell 验收与两个尺寸的浏览器 mock IPC 接线验收分别通过，详见 [B2 报告](evidence/ds04b2/REPORT.md)。完整桌面真实 UI 链路尚未验收；断点 gutter、多断点、历史源码、重连恢复仍不能标为完成。
+
+下一独立实现批次优先 DS-01E2 renv 生产启动激活，按既有启动合同绑定项目根、R_HOME 与 launch 身份，在 readiness 前完成激活并验证双项目包库隔离。并行可补充 Notebook 历史源码和重连的协议设计；调试 UI 新缺口及官方依据见 [本轮研究](research/2026-11-06-debug-ui-gaps.md)，暂停对象数据查看器作为后续任务，不挤入当前接线。

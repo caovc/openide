@@ -245,3 +245,21 @@
   gap: 8px;
   flex: 1;
 }
+.debugMessage {
+  padding: 6px 10px;
+  color: var(--fg-secondary);
+  border-bottom: 1px solid var(--border);
+}
+.breakpoint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--fg-secondary);
+  font-size: var(--fs-small);
+}
+.breakpoint input {
+  width: 64px;
+}
+.pausedLine {
+  background: var(--bg-debug-line);
+}

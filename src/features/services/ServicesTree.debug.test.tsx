@@ -81,8 +81,8 @@ it("shows debug output/state, pins actions, and does not rebuild the tree for st
   appendConsole(1, "stdout", "gateway log\n");
   appendConsole(2, "stdout", "other log\n");
   const d = summary(1);
-  useDebugRunSessions.setState({ serviceSessions: [d] });
   useDebug.setState({ active: 2 });
+  useDebugRunSessions.setState({ serviceSessions: [d] });
   render(<ServicesTreeView />);
   select();
   expect(screen.getByRole("log")).toHaveTextContent("gateway log");

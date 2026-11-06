@@ -1552,3 +1552,43 @@ export function registerCloneSource(source: CloneSourceContribution): () => void
 export function cloneSourceList(sources = useCloneSources.getState().sources): CloneSourceContribution[] {
   return [...sources.values()].sort((a, b) => (a.order ?? 100) - (b.order ?? 100) || a.id.localeCompare(b.id));
 }
+
+/** Kernel debugging uses an opaque generation token, never a native script session id. */
+export interface KernelDebugIdentity {
+  kind: "kernel";
+  documentId: string;
+  token: string;
+}
+export interface KernelDebugFrame {
+  id: number;
+  name: string;
+  source: { path?: string; sourceReference?: number } | null;
+  /** Raw DAP coordinates (1-based); the notebook owner resolves the original cell. */
+  line: number;
+  column: number;
+}
+export interface KernelDebugTarget {
+  identity: KernelDebugIdentity;
+  name: string;
+  capabilities: Record<string, unknown>;
+  request(command: string, arguments_: Record<string, unknown>): Promise<unknown>;
+  disconnect(): Promise<void>;
+  revealFrame(frame: KernelDebugFrame): Promise<void>;
+}
+export interface KernelDebugHandle {
+  event(event: { event: string; body?: unknown }): void;
+  focus(): void;
+  /** Drops UI handles only. The notebook owner controls the kernel lifecycle. */
+  dispose(): void;
+}
+let kernelDebugRegistration: ((target: KernelDebugTarget) => KernelDebugHandle) | null = null;
+export function provideKernelDebugTargets(register: (target: KernelDebugTarget) => KernelDebugHandle): () => void {
+  kernelDebugRegistration = register;
+  return () => {
+    if (kernelDebugRegistration === register) kernelDebugRegistration = null;
+  };
+}
+export function registerKernelDebugTarget(target: KernelDebugTarget): KernelDebugHandle {
+  if (!kernelDebugRegistration) throw new Error("Debugger is unavailable");
+  return kernelDebugRegistration(target);
+}

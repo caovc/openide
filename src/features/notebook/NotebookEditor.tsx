@@ -13,7 +13,7 @@ import { executeAction } from "@/platform/actions";
 import { tx } from "@/platform/i18n";
 import { useMarkdownPreviewFontSize } from "@/platform/languageSettings";
 import { useProject } from "@/platform/project";
-import { Button, Dialog, EmptyState, IconButton, Select, Spinner } from "@/ui";
+import { Button, Dialog, EmptyState, IconButton, Input, Select, Spinner } from "@/ui";
 import type { EditorInput } from "@/workbench/contributions";
 import { CellEditor } from "./CellEditor";
 import { KernelInput } from "./KernelInput";
@@ -29,6 +29,7 @@ export function NotebookEditor({ input }: { input: EditorInput }) {
 
 function NotebookDocument({ session }: { session: NotebookSession }) {
   const state = useSyncExternalStore(session.subscribe, session.getState);
+  const debug = useSyncExternalStore(session.debugger.subscribe, session.debugger.getState);
   const root = useRef<HTMLDivElement>(null);
   const scroll = useRef<HTMLDivElement>(null);
   const [selected, select] = useState<string | null>(session.selectedCell);
@@ -54,6 +55,14 @@ function NotebookDocument({ session }: { session: NotebookSession }) {
     initialOffset: session.scrollTop,
   });
   useEffect(() => {
+    if (!debug.location) return;
+    const index = session.cells().findIndex((cell) => cell.id === debug.location!.cell);
+    if (index < 0) return;
+    session.selectedCell = debug.location.cell;
+    select(debug.location.cell);
+    virtualizer.scrollToIndex(index, { align: "center" });
+  }, [debug.location, session, virtualizer]);
+  useEffect(() => {
     invoke(session.load());
   }, [session, invoke]);
   useLayoutEffect(() => {
@@ -78,7 +87,7 @@ function NotebookDocument({ session }: { session: NotebookSession }) {
     ...(editor?.lineHeight ? { "--openidea-editor-line-height": `${editor.lineHeight}px` } : {}),
   } as CSSProperties;
   const disabled = state.frozen || !state.snapshot;
-  const busy = state.running || state.starting;
+  const busy = state.running || state.starting || debug.status === "connecting";
   const historyDisabled = disabled || busy;
   const options = state.environments.map((sdk) => ({
     value: sdk.path,
@@ -120,6 +129,11 @@ function NotebookDocument({ session }: { session: NotebookSession }) {
         }
       }}
     >
+      {debug.message && (
+        <div className={styles.debugMessage} role="status">
+          {tx(debug.message)}
+        </div>
+      )}
       {state.input && (
         <KernelInput
           key={state.input.requestId}
@@ -153,6 +167,22 @@ function NotebookDocument({ session }: { session: NotebookSession }) {
           onClick={() => invoke(executeAction("notebook.startKernel", session.path))}
         >
           Start Kernel
+        </Button>
+        <Button
+          size="small"
+          icon="debug"
+          disabled={disabled || busy || !state.python}
+          onClick={() => invoke(executeAction("notebook.connectDebugger", session.path))}
+        >
+          Connect Debugger
+        </Button>
+        <Button
+          size="small"
+          icon="debug"
+          disabled={disabled || busy || debug.status !== "connected" || active?.cellType !== "code"}
+          onClick={() => active && invoke(executeAction("notebook.debugCell", { path: session.path, cell: active.id }))}
+        >
+          Debug Cell
         </Button>
         <IconButton
           icon="stop"
@@ -294,7 +324,7 @@ function NotebookDocument({ session }: { session: NotebookSession }) {
                       index={item.index}
                       cells={cells}
                       selected={active?.id === cell.id}
-                      frozen={disabled || state.starting}
+                      frozen={disabled || state.starting || debug.status === "connecting"}
                       running={busy}
                       onSelect={() => choose(cell.id)}
                     />
@@ -368,6 +398,7 @@ function NotebookCellView({
   onSelect: () => void;
 }) {
   const [editing, setEditing] = useState(session.markdownEditing.has(cell.id));
+  const debug = useSyncExternalStore(session.debugger.subscribe, session.debugger.getState);
   const known = cell.cellType === "code" || cell.cellType === "markdown";
   const structuralDisabled = frozen || running;
   return (
@@ -406,6 +437,35 @@ function NotebookCellView({
               void session.execute([cell.id]).catch((error) => session.report(error));
             }}
           />
+        )}
+        {cell.cellType === "code" && (
+          <label className={styles.breakpoint}>
+            {tx("Breakpoint line")}
+            <Input
+              type="number"
+              min={1}
+              max={cell.source.split("\n").length}
+              aria-label="Breakpoint line"
+              placeholder="None"
+              disabled={structuralDisabled}
+              value={debug.breakpoints.get(cell.id) ?? ""}
+              onChange={(event) => {
+                const value = event.currentTarget.value;
+                void executeAction("notebook.setCellBreakpoint", {
+                  path: session.path,
+                  cell: cell.id,
+                  line: value === "" ? null : Number(value),
+                });
+              }}
+            />
+            {debug.breakpoints.has(cell.id) && (
+              <span title={debug.breakpointStatus.get(cell.id)?.message}>
+                {tx(debug.breakpointStatus.get(cell.id)?.verified ? "Breakpoint verified" : "Breakpoint pending")}
+                {debug.breakpointStatus.get(cell.id)?.line !== undefined &&
+                  ` (${debug.breakpointStatus.get(cell.id)!.line})`}
+              </span>
+            )}
+          </label>
         )}
         {cell.cellType === "markdown" && (
           <IconButton

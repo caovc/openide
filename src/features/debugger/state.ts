@@ -1,3 +1,4 @@
+import { activeKernelDebug, useKernelDebug, selectScriptDebugTarget, resetKernelTargets } from "./kernel";
 import { showDebugAdapter } from "@/platform/productProfile";
 /**
  * Debug sessions as the UI sees them, fed by `IdeEvent::Debug` and by pulls
@@ -136,6 +137,7 @@ function ansiStream(session: DebugSessionId, category: string): AnsiStream {
 // --- accessors ---------------------------------------------------------------
 
 export function activeSession(): DebugSession | null {
+  if (activeKernelDebug()) return null;
   const { active, sessions } = useDebug.getState();
   return active != null ? (sessions[active] ?? null) : null;
 }
@@ -326,10 +328,12 @@ export function publishContext() {
         };
       }),
   });
-  const anyLive = Object.values(useDebug.getState().sessions).some(isLive);
+  const kernel = activeKernelDebug();
+  setContext("debugKernelSelected", !!kernel);
+  const anyLive = Object.values(useDebug.getState().sessions).some(isLive) || !!kernel;
   setContext("debugSessionActive", anyLive);
-  setContext("debugSessionRunning", s?.status === "running");
-  setContext("debugSessionPaused", s?.status === "paused");
+  setContext("debugSessionRunning", kernel ? false : s?.status === "running");
+  setContext("debugSessionPaused", kernel ? kernel.status === "paused" && !kernel.busy : s?.status === "paused");
   // Dart and Flutter sessions: Hot Reload / Hot Restart.
   setContext("debugSessionDart", !!s && rootOf(s).adapter === "dart");
   setContext("debugCanRerun", !!s && !!(rootOf(s).runConfig || rootOf(s).launch));
@@ -500,6 +504,7 @@ export async function startSession(
         active: id,
       };
     });
+    selectScriptDebugTarget(id);
     settleStart(id);
     publishContext();
     void refreshExceptionFilters();
@@ -664,6 +669,7 @@ function markTerminated(id: DebugSessionId) {
 // --- selection / pulls -------------------------------------------------------
 
 export function selectSession(id: DebugSessionId) {
+  selectScriptDebugTarget(id);
   useDebug.setState({ active: id });
   publishContext();
   updateExecutionPoint();
@@ -979,6 +985,7 @@ export function handleDebugEvent(id: DebugSessionId, event: DebugEvent) {
 
 /** The window switched projects: stops its sessions and forgets them (late events stay ignored via `owned`). */
 export function resetSessions() {
+  resetKernelTargets();
   const { sessions } = useDebug.getState();
   for (const s of Object.values(sessions)) if (s.parent == null && isLive(s)) void stopSession(s.id);
   pendingOutput.length = 0;
@@ -993,3 +1000,11 @@ export function resetSessions() {
 export function sessionsRunning(): boolean {
   return Object.values(useDebug.getState().sessions).some(isLive);
 }
+
+useKernelDebug.subscribe(() => {
+  if (activeKernelDebug()) useExecutionPoint.setState({ path: null, line: 0, top: true, values: {} });
+  publishContext();
+});
+useDebug.subscribe((state, previous) => {
+  if (state.active !== previous.active && !activeKernelDebug()) selectScriptDebugTarget(state.active);
+});

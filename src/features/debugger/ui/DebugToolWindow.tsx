@@ -1,3 +1,5 @@
+import { useKernelDebug, kernelKey, focusKernelTarget, kernelControl } from "../kernel";
+import { KernelDebugPane } from "./KernelDebugPane";
 /** Debug tool window: toolbar, Threads & Variables (frames + variables), Console. */
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import clsx from "clsx";
@@ -115,8 +117,10 @@ function statusText(s: DebugSession): string {
 export function DebugTabs() {
   const sessions = useDebug((s) => s.sessions);
   const active = useDebug((s) => s.active);
+  const kernels = useKernelDebug((s) => s.sessions);
+  const selected = useKernelDebug((s) => s.selected);
   const list = Object.values(sessions);
-  if (!list.length) return null;
+  if (!list.length && !Object.keys(kernels).length) return null;
   const items: TabItem[] = list.map((s) => ({
     id: String(s.id),
     label: s.parent != null ? tx`${s.name} (child)` : s.name,
@@ -126,21 +130,47 @@ export function DebugTabs() {
     closable: true,
     tooltip: statusText(s),
   }));
+  items.push(
+    ...Object.values(kernels).map((s) => ({
+      id: `kernel:${s.key}`,
+      label: s.target.name,
+      text: s.target.name,
+      icon: "debug",
+      closable: true,
+    })),
+  );
   return (
     <Tabs
       variant="compact"
       className={styles.sessionTabs}
       aria-label="Debug sessions"
       items={items}
-      activeId={active != null ? String(active) : null}
-      onSelect={(id) => selectSession(+id)}
-      onClose={(id) => void closeSessionTab(+id)}
+      activeId={selected?.kind === "kernel" ? `kernel:${kernelKey(selected)}` : active != null ? String(active) : null}
+      onSelect={(id) => {
+        const kernel = kernels[id.slice(7)];
+        if (id.startsWith("kernel:")) {
+          if (kernel) focusKernelTarget(kernel);
+        } else selectSession(+id);
+      }}
+      onClose={(id) => {
+        const kernel = kernels[id.slice(7)];
+        if (id.startsWith("kernel:")) {
+          if (kernel && focusKernelTarget(kernel)) void kernelControl("disconnect");
+        } else void closeSessionTab(+id);
+      }}
       panelIdPrefix="openidea-debug"
     />
   );
 }
 
 export function DebugToolWindow() {
+  const kernel = useKernelDebug((state) =>
+    state.selected?.kind === "kernel" ? state.sessions[kernelKey(state.selected)] : undefined,
+  );
+  return kernel ? <KernelDebugPane key={kernel.key} session={kernel} /> : <ScriptDebugToolWindow />;
+}
+
+function ScriptDebugToolWindow() {
   const active = useDebug((s) => (s.active != null ? s.sessions[s.active] : undefined));
   const muted = useBreakpoints((s) => s.muted);
   const [view, setView] = useState<{

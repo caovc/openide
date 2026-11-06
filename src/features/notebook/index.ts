@@ -61,6 +61,37 @@ export function activate(): () => void {
         await session.startKernel();
       },
     }),
+    ...[
+      ["notebook.connectDebugger", "Connect Debugger"],
+      ["notebook.debugCell", "Debug Cell"],
+      ["notebook.setCellBreakpoint", "Set Cell Breakpoint"],
+    ].map(([id, title]) =>
+      registerAction({
+        id: id!,
+        title: title!,
+        category: "Notebook",
+        when: "projectOpen",
+        run: async ({ arg }) => {
+          const input = editorService().activeInput?.();
+          const options =
+            typeof arg === "object" && arg !== null
+              ? (arg as { path?: string; cell?: string; line?: number | null })
+              : {};
+          const path =
+            typeof arg === "string" ? arg : (options.path ?? (input?.kind === "notebook" ? input.path : null));
+          const session = path ? existingNotebookSession(path) : null;
+          if (!session) return;
+          if (id === "notebook.connectDebugger") await session.debugger.connect();
+          else {
+            const cell =
+              options.cell ?? session.selectedCell ?? session.cells().find((cell) => cell.cellType === "code")?.id;
+            if (!cell) return;
+            if (id === "notebook.debugCell") await session.debugger.debugCell(cell);
+            else session.debugger.setBreakpoint(cell, options.line ?? null);
+          }
+        },
+      }),
+    ),
     registerEditorKind({
       kind: "notebook",
       restorable: true,

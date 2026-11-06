@@ -106,6 +106,10 @@ async fn real_debug(runtime: KernelRuntime) {
     let generation = capabilities.generation;
     let mut subscription = comms.debug_subscribe().unwrap();
     assert_eq!(subscription.generation(), generation);
+    let info = request(&comms, "debugInfo", json!({})).await;
+    assert_eq!(info["isStarted"], !python, "fresh Ark advertises isStarted even before attachment");
+    assert!(info["breakpoints"].as_array().unwrap().is_empty());
+    assert!(info["stoppedThreads"].as_array().unwrap().is_empty());
     // Subscription is registered before initialize: initialized may precede its reply.
     request(&comms, "initialize", json!({"clientID":"openide-test","adapterID":if python {"python"} else {"r"},"pathFormat":"path","linesStartAt1":true,"columnsStartAt1":true,"supportsVariableType":true})).await;
     let attach_comms = comms.clone();

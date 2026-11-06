@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useSyncExternalStore } from "react";
 import { Annotation, Compartment, EditorState, Prec, StateEffect } from "@codemirror/state";
 import {
   EditorView,
+  Decoration,
   drawSelection,
   highlightActiveLine,
   highlightSpecialChars,
@@ -34,6 +35,8 @@ export function CellEditor({
   type: string;
   frozen: boolean;
 }) {
+  const debug = useSyncExternalStore(session.debugger.subscribe, session.debugger.getState);
+  const debugLine = useRef(new Compartment());
   const selection = useSyncExternalStore(session.subscribe, () => session.getState().python);
   const isR = type === "code" && !!selection?.startsWith("ark|");
   const host = useRef<HTMLDivElement>(null);
@@ -47,6 +50,7 @@ export function CellEditor({
       openideaTheme,
       syntaxHighlighting(openideaHighlightStyle),
       lineNumbers(),
+      debugLine.current.of([]),
       drawSelection(),
       selectionMarks,
       seamlessSelection(),
@@ -131,6 +135,26 @@ export function CellEditor({
       });
     editor.dispatch({ effects: readonly.current.reconfigure(EditorState.readOnly.of(frozen)) });
   }, [source, frozen]);
+  useLayoutEffect(() => {
+    const editor = view.current;
+    if (!editor) return;
+    const location = debug.location?.cell === id ? debug.location : null;
+    const line = location && location.line < editor.state.doc.lines ? editor.state.doc.line(location.line + 1) : null;
+    editor.dispatch({
+      effects: [
+        debugLine.current.reconfigure(
+          line
+            ? EditorView.decorations.of(
+                Decoration.set([Decoration.line({ class: styles.pausedLine }).range(line.from)]),
+              )
+            : [],
+        ),
+        ...(line ? [EditorView.scrollIntoView(line.from, { y: "center" })] : []),
+      ],
+      ...(line ? { selection: { anchor: line.from } } : {}),
+    });
+    if (line) editor.focus();
+  }, [debug.location, id]);
   return <div ref={host} className={styles.cellEditor} />;
 }
 

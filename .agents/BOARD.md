@@ -154,3 +154,24 @@ B1合同冻结：KernelComms提供debug_capabilities（generation/debugger/原�
 Host新增notebook_debug_capabilities(id,token)、notebook_debug_request(id,{token,command,arguments},request)、notebook_debug_events(id,token,request,onEvent)。事件订阅建立后发送{token,sequence:0,event:"ready",body:{}}，客户端收到ready才发送initialize；后续事件附同一token及sequence，lag明确失败。请求返回{token,response:原始DAP response}，保留success=false及initialize能力。旧Ark TCP API兼容，受新transport互斥约束。root接Tauri薄命令及生成bindings。
 
 B1分域已验：真实Notebook91测（含Python/Ark跨cell断点、x41→42、watch43、同PID断开后执行）通过；host新合同Python3+Ark1通过；既有host Notebook13+R Console1通过；前端相关309通过，五套类型/生成bindings/构建通过。独立review推动事件内存上限与send前claim修正，Ark实测推动cellId元数据与threads unit wire适配。受影响三crate的严格all-targets Clippy通过，root完成集成；B2调试UI与renv生产激活仍pending，详见ds04b1报告。
+
+## DS-04B2 Notebook 调试界面接线（基线 cb53d1b）
+
+| unit             | status | owner                  | branch                 | 独占路径 / 范围                                                                                   |
+| ---------------- | ------ | ---------------------- | ---------------------- | ------------------------------------------------------------------------------------------------- |
+| B2-debug-adapter | done   | env_frontend           | ds/b2-debug-adapter    | src/features/debugger/**、workbench/contributions.ts；现有工具窗口支持kernel target，先提共享合同 |
+| B2-notebook-ui   | done   | start_frontend         | ds/b2-notebook-ui      | src/features/notebook/**；会话调试生命周期、cell/source绑定、显式入口，等合同冻结                 |
+| B2-e2e           | done   | start_host             | ds/b2-e2e              | 新e2e/notebook-debug.spec.ts；真实React+mockIPC接线，待合同冻结；不宣称真实runtime                |
+| B2-review        | done   | b0_review              | read-only              | 独立UI/协议/暂停及重启review，不改源码                                                            |
+| feature-research | done   | renv_activation_design | ds/b2-feature-research | 新docs/ds/research/2026-11-06-debug-ui-gaps.md；官方调试UI与环境恢复能力缺口，不重复已完成计划    |
+| B2-integration   | done   | Cloud Codex            | work                   | catalog、集成接口裁决、测试/浏览器验证、证据、计划、提交推送                                      |
+
+本批消费已验B1协议接入UI；renv生产启动修改在后续独立所有权批次，不与调试界面混改。各agent从cb53d1b新建worktree，root维护唯一BOARD，不手改bindings。不得伪造script process ID来让kernel混入脚本生命周期。
+
+B2共享合同冻结：contributions注册KernelDebugTarget {identity:{kind:'kernel',documentId,token},name,capabilities,request(command,args)->原始DAP response,disconnect(),revealFrame(frame)}，返回event/focus/dispose。KernelDebugFrame坐标保持DAP1-based，Notebook定位时单次转换；脚本store保留原数值ID域，kernel独立registry/selected target。Notebook负责token/sequence、ready握手、不可变source/revision映射；每cell首片一个显式断点行，重复源码歧义不猜测定位。编辑/结构变动断开并使旧映射失效。
+
+root补充独占crates/ide-notebook/tests/kernel_debug.rs，仅验证UI新增debugInfo前置查询和真实运行时差异；Ark0.1.252 isStarted恒true，不能按Python规则一律拒绝新连接。未知已有breakpoints/stoppedThreads时拒绝盲目恢复；完整重连留后续。
+
+B2收尾所有权交接：各实现agent已交付，root负责集成后catalog与最小回归修正；新增独占src/features/services/ServicesTree.debug.test.tsx，仅调整fixture发布顺序，避免active同步覆盖手工serviceSessions。独立review已确认原因。
+
+B2实现与独立review完成：Connect/Debug Cell、显式单行断点、kernel独立target、暂停栈/变量/watch/控制与异步epoch隔离已集成；真实Python/Ark协议2测、前端相关388测和两尺寸浏览器mockIPC 8测通过，五套类型/严格Clippy/lint/knip/build通过。证据见docs/ds/evidence/ds04b2/REPORT.md；最终全量625文件/6833通过/6跳过、浏览器再次8通过；root统一提交推送。renv生产激活、多断点gutter、历史源码与完整重连仍pending。

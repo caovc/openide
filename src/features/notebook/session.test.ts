@@ -862,3 +862,30 @@ it("preserves observed busy status when acquiring an existing kernel handle", as
   expect(session.getState().starting).toBe(false);
   await session.close();
 });
+
+it("interrupt cancels the kernel startup owned by a connecting debugger", async () => {
+  const m = model();
+  m.backend.environments = async () => [[], "/python"];
+  const pending = deferred<NotebookKernelSession>();
+  m.backend.startKernel = vi.fn(() => pending.promise);
+  m.backend.cancel = vi.fn(async () => {
+    pending.resolve({ id: "document-a", token: "cancelled-start", selection: "/python", language: "python" });
+  });
+  m.backend.interrupt = vi.fn(async () => null);
+  m.backend.execute = vi.fn();
+  const session = new NotebookSession("/p/debug-start.ipynb", m.backend, true);
+  await session.load();
+  await session.detectEnvironments();
+  const connecting = session.debugger.connect();
+  await vi.waitFor(() => expect(m.backend.startKernel).toHaveBeenCalled());
+  expect(session.debugger.getState().status).toBe("connecting");
+  await session.interrupt();
+  await connecting;
+  expect(m.backend.cancel).toHaveBeenCalledExactlyOnceWith(expect.any(Number));
+  expect(m.backend.interrupt).not.toHaveBeenCalled();
+  expect(m.backend.execute).not.toHaveBeenCalled();
+  expect(session.getState().kernelHandle).toBeNull();
+  expect(session.getState().starting).toBe(false);
+  expect(session.debugger.getState().status).toBe("disconnected");
+  await session.close();
+});

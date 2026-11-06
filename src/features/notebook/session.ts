@@ -15,6 +15,7 @@ import type {
 import { call, commands, IpcError, isTauri, nextRequestId, onIdeEvent } from "@/platform/ipc";
 import { notifyEditorDocumentChanged } from "@/workbench/contributions";
 import { OutputReducer } from "./outputs";
+import { NotebookDebugger } from "./debug";
 
 export const notebookBackend = {
   inputReply: (id: string, prompt: string, value: string | null) =>
@@ -124,6 +125,7 @@ export class NotebookSession {
   private lspEpoch = 0;
   private errors = new Map<ErrorOwner, { cause: unknown; message: string }>();
   // EditorState contains selection and syntax state, but deliberately no local history.
+  readonly debugger = new NotebookDebugger(this);
   readonly editors = new Map<string, EditorState>();
   readonly markdownEditing = new Set<string>();
   selectedCell: string | null = null;
@@ -211,6 +213,7 @@ export class NotebookSession {
           ++this.kernelDeaths;
         }
         if (event.state === "dead" || event.state === "starting") {
+          this.debugger.kernelChanged();
           this.cancelLsp();
           this.publish({ input: null, kernelHandle: null });
         }
@@ -246,6 +249,7 @@ export class NotebookSession {
       /* Interpreter preference is optional when storage is unavailable. */
     }
     if (python === this.state.python) return;
+    this.debugger.invalidate();
     this.cancelLsp();
     this.publish({ python, frozen: true, kernelHandle: null });
     const id = this.state.snapshot?.id;
@@ -321,6 +325,7 @@ export class NotebookSession {
       this.reportOperation(new Error("Stop execution before changing notebook structure."), "mutation");
       return;
     }
+    if (edit.type !== "setOutputs") this.debugger.sourceChanged();
     const last = this.pending.at(-1);
     // Never mutate an in-flight intent; only coalesce an unsent tail.
     if (
@@ -408,6 +413,7 @@ export class NotebookSession {
     if (!this.state.snapshot) await this.load();
     if (this.state.running || this.state.starting || this.state.frozen || this.disposed)
       throw new Error("Notebook is busy or closing.");
+    this.debugger.sourceChanged();
     // History is a queue barrier: later typing must commit AFTER undo/redo, not
     // race it and get overwritten by the history response.
     this.pending.push({ edit: { type: direction }, committed: false });
@@ -477,6 +483,8 @@ export class NotebookSession {
     return this.startup;
   }
   execute(cells?: string[]): Promise<void> {
+    if (this.debugger.getState().status === "connecting")
+      return Promise.reject(new Error("Notebook is busy or closing."));
     if (this.state.running || this.state.starting || this.state.frozen || this.disposed)
       return Promise.reject(new Error("Notebook is busy or closing."));
     this.publish({ running: true });
@@ -580,6 +588,16 @@ export class NotebookSession {
     if (this.state.input === input) this.publish({ input: null });
   }
   async interrupt() {
+    if (this.debugger.getState().status === "connecting") {
+      const detaching = this.debugger.disconnect();
+      // Connect may still own a B0 startup request, before any debugger request exists.
+      if (this.startup) {
+        this.startupCancelled = true;
+        if (this.request !== null) await this.backend.cancel(this.request);
+      }
+      await detaching;
+      return;
+    }
     if (this.startup) {
       this.startupCancelled = true;
       // The request owns only a newly launched kernel. Interrupting by notebook
@@ -608,6 +626,7 @@ export class NotebookSession {
     }
   }
   async restart() {
+    this.debugger.invalidate();
     this.cancelLsp();
     if (this.state.frozen) throw new Error("Notebook is closing.");
     this.publish({ frozen: true, kernelHandle: null });
@@ -627,6 +646,7 @@ export class NotebookSession {
     }
   }
   async prepareClose() {
+    this.debugger.invalidate();
     this.cancelLsp();
     this.publish({ frozen: true });
     if (this.loading) await this.loading.catch(() => {});
@@ -642,6 +662,7 @@ export class NotebookSession {
     if (!this.disposed) this.publish({ frozen: false });
   }
   async discard() {
+    this.debugger.invalidate();
     this.cancelLsp();
     this.publish({ frozen: true, kernelHandle: null });
     ++this.generation;
@@ -663,6 +684,7 @@ export class NotebookSession {
     }
   }
   async close() {
+    this.debugger.invalidate();
     this.cancelLsp();
     this.publish({ frozen: true, kernelHandle: null });
     ++this.generation;

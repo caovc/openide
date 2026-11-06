@@ -1,3 +1,5 @@
+import { provideKernelDebugTargets } from "@/workbench/contributions";
+import { registerKernelTarget, resetKernelTargets } from "./kernel";
 /**
  * Debugger: breakpoints (editor gutter + per-project store synced to the
  * backend), DAP sessions driven by `IdeEvent::Debug`, the Debug tool window,
@@ -47,6 +49,8 @@ export function activate(): () => void {
   loadExceptionBreakpoints(useProject.getState().project?.root ?? null);
   loadSpecialBreakpoints(useProject.getState().project?.root ?? null);
   const disposers = [
+    provideKernelDebugTargets(registerKernelTarget),
+    () => resetKernelTargets(),
     () => useDebugRunSessions.setState({ sessions: [], serviceSessions: [], Console: null }),
     registerDebugActions(),
     // Remote JVM Debug, Go Remote, …: Run/Debug Configurations › Add New Configuration.

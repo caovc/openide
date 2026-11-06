@@ -1,3 +1,4 @@
+import { activeKernelDebug, kernelControl, focusKernelEvaluate } from "./kernel";
 import { runConfigIssue, showRunConfig } from "@/platform/productProfile";
 /** Debugger actions (ids match `keymaps/intellij-macos.ts`). */
 import { executeAction, getAction, registerActions, type Action } from "@/platform/actions";
@@ -256,6 +257,32 @@ async function startConfig(arg: unknown) {
   await startSession(launch, { runConfig: origin ?? config });
 }
 
+function routeKernelActions(actions: Action[]): Action[] {
+  const controls: Record<string, () => unknown> = {
+    "debug.stop": () => kernelControl("disconnect"),
+    "debug.resume": () => kernelControl("continue"),
+    "debug.stepOver": () => kernelControl("next"),
+    "debug.stepInto": () => kernelControl("stepIn"),
+    "debug.stepOut": () => kernelControl("stepOut"),
+    "debug.evaluate": focusKernelEvaluate,
+  };
+  return actions.map((action) => {
+    if (action.id === "debug.startConfig" || action.id === "debug.showToolWindow") return action;
+    const run = controls[action.id];
+    return {
+      ...action,
+      when: run ? action.when : `!debugKernelSelected${action.when ? ` && (${action.when})` : ""}`,
+      run: (context) => {
+        if (activeKernelDebug()) {
+          if (run) void run();
+          return;
+        }
+        return action.run(context);
+      },
+    };
+  });
+}
+
 export function registerDebugActions(): () => void {
   const paused = "debugSessionPaused";
   const step = (id: string, title: string, kind: "over" | "into" | "out", icon: string): Action => ({
@@ -274,7 +301,7 @@ export function registerDebugActions(): () => void {
     },
   });
 
-  return registerActions([
+  const actions: Action[] = [
     {
       id: "debug.startConfig",
       title: "Debug…",
@@ -633,5 +660,6 @@ export function registerDebugActions(): () => void {
       hidden: true,
       run: () => toolWindowService().show("debug", true),
     },
-  ]);
+  ];
+  return registerActions(routeKernelActions(actions));
 }

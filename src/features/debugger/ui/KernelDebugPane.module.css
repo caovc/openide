@@ -1,0 +1,30 @@
+.variables {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+.watch {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-2);
+}
+.watch input {
+  min-width: 0;
+  flex: 1;
+  color: var(--fg);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  padding: calc(var(--space-2) / 2);
+}
+.watch button {
+  color: var(--fg);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  padding: calc(var(--space-2) / 2);
+}
+.error {
+  color: var(--fg);
+  padding: var(--space-2);
+  overflow-wrap: anywhere;
+}
