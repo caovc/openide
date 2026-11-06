@@ -135,3 +135,22 @@ U11 集成里程碑：`8b6cc56`（提交含环境管理 P0/P1 计划与固定 Ar
 接口冻结：KernelManager::ensure_started(path,runtime,cancel)->KernelComms；同runtime健康会话复用，不同活跃runtime拒绝。host notebook_start_kernel(id,selection,request)->NotebookKernelSession { id, token, selection, language }，token复用后端session generation，language为python/r，selection取实际runtime。启动复用admission且不修改文档execution_count或用户cell。仅显式启动新内核的取消会停止该启动，获取既有句柄不得杀已有kernel。root统一重型构建；renv启动改动待B0后串行接续。
 
 B0分域交付已集成：真实Notebook82测通过；host启动Python6测及Ark1测通过；host既有Notebook10测通过（3项真实runtime默认忽略）；前端6805通过/6跳过；Chromium双视口2测通过。独立review发现取消获取误interrupt与busy覆盖均已修复。renv研究完成真实双项目隔离，IDE激活仍pending。完整证据见 `docs/ds/evidence/ds04b0/REPORT.md`；受影响三crate的all-targets严格Clippy、生成bindings、格式及diff检查均通过，本轮B0切片完成；原生GUI及完整调试仍按报告保留边界。
+
+## DS-04B1 Jupyter 调试 broker（基线 2edb535）
+
+| unit             | status | owner                  | branch              | 独占路径 / 范围                                                                                                     |
+| ---------------- | ------ | ---------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| B1-transport     | done   | kernel_start           | ds/b1-transport     | ide-notebook/src/kernel.rs、kernel/**；单control reader、有界请求关联、能力快照与generation事件；先提合同再冻结     |
+| B1-runtime-tests | done   | start_frontend         | ds/b1-runtime-tests | 新ide-notebook/tests/kernel_debug.rs；真实Python/Ark双cell断点/栈/变量/继续，等待合同后编写                         |
+| B1-host          | done   | start_host             | ds/b1-host          | ide-host/src/notebook.rs、ops/notebook.rs、新tests/notebook_debug.rs；等待kernel合同冻结，token/订阅ready/信任/取消 |
+| renv-followup    | done   | renv_activation_design | ds/renv-followup    | 新docs/ds/research/2026-11-06-renv-launch-contract.md；细化结构化环境与启动合同，生产transport待B1串行接续          |
+| B1-review        | done   | b0_review              | read-only           | 独立协议及生命周期review；不修改源码                                                                                |
+| B1-integration   | done   | Cloud Codex            | work                | Tauri接线、生成bindings、契约冻结、统一重型编译与验收、报告/计划、提交推送                                          |
+
+本批先交付B1a/b/c后端协议闭环，不提前显示未经真实验收的Debug Cell。各agent从2edb535新建独立worktree，不覆盖上一任务未提交交付。重型cargo由root串行执行。
+
+B1合同冻结：KernelComms提供debug_capabilities（generation/debugger/原始kernel_info）、同步debug_subscribe（generation与recv）、debug_request(command,arguments,cancel)返回原始DAP response。事件含generation、u32单调sequence、parent_id、原始content。control独立broker单reader，32 pending加32排队、10秒timeout、1MiB参数/8MiB响应、64KiB单debug事件和64项事件buffer；唯一msg_id+request_seq+command关联。每generation只允许Jupyter或ArkTCP一种调试transport，disconnect不释放transport身份，切换须restart；能力查询不占用。禁止launch/restart，disconnect不得terminateDebuggee/restart。
+
+Host新增notebook_debug_capabilities(id,token)、notebook_debug_request(id,{token,command,arguments},request)、notebook_debug_events(id,token,request,onEvent)。事件订阅建立后发送{token,sequence:0,event:"ready",body:{}}，客户端收到ready才发送initialize；后续事件附同一token及sequence，lag明确失败。请求返回{token,response:原始DAP response}，保留success=false及initialize能力。旧Ark TCP API兼容，受新transport互斥约束。root接Tauri薄命令及生成bindings。
+
+B1分域已验：真实Notebook91测（含Python/Ark跨cell断点、x41→42、watch43、同PID断开后执行）通过；host新合同Python3+Ark1通过；既有host Notebook13+R Console1通过；前端相关309通过，五套类型/生成bindings/构建通过。独立review推动事件内存上限与send前claim修正，Ark实测推动cellId元数据与threads unit wire适配。受影响三crate的严格all-targets Clippy通过，root完成集成；B2调试UI与renv生产激活仍pending，详见ds04b1报告。

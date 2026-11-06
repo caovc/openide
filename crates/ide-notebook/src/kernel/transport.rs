@@ -1,11 +1,12 @@
 use super::comm::{CommRequest, InputReplyRequest};
+use super::debug::{DebugClient, DebugRequest, Pending};
 use super::process::Process;
 use super::{
     CommEvent, ExecutionResult, KernelComms, KernelOutput, KernelRuntime, KernelState, OutputCallback, StatusCallback,
 };
 use ide_core::{CancellationToken, IdeError, IdeResult};
 use jupyter_protocol::{ExecuteRequest, JupyterMessage, KernelInfoRequest, ShutdownRequest};
-use jupyter_zmq_client::{ClientControlConnection, Connection, DealerSendConnection, RawMessage};
+use jupyter_zmq_client::{Connection, DealerSendConnection, RawMessage};
 use parking_lot::Mutex;
 use serde_json::Value;
 use std::path::PathBuf;
@@ -35,6 +36,7 @@ impl Drop for Admission {
 }
 
 struct Execution {
+    cell_id: Option<String>,
     code: String,
     allow_stdin: bool,
     cancel: CancellationToken,
@@ -73,7 +75,10 @@ impl Running {
             stop.clone(),
             comm_tx.clone(),
         );
+        let (debug, debug_requests) =
+            DebugClient::new(session_data.snapshot().expect("new session").generation, stop.clone());
         let comms = KernelComms {
+            debug: debug.clone(),
             session: session_data.clone(),
             requests: comm_tx,
             events: events.clone(),
@@ -90,7 +95,15 @@ impl Running {
             status,
             stop.clone(),
             receiver,
-            SessionChannels { ready, comm_requests: comm_rx, comm_events: events, input: input_rx, session_data },
+            SessionChannels {
+                ready,
+                comm_requests: comm_rx,
+                comm_events: events,
+                input: input_rx,
+                session_data,
+                debug,
+                debug_requests,
+            },
         ));
         (
             Self { runtime: selected, comms, stop, requests, task: Some(task), busy: Arc::new(AtomicBool::new(false)) },
@@ -102,8 +115,10 @@ impl Running {
         self.task.as_ref().is_none_or(JoinHandle::is_finished)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn execute(
         &self,
+        cell_id: Option<&str>,
         code: &str,
         allow_stdin: bool,
         cancel: CancellationToken,
@@ -115,6 +130,7 @@ impl Running {
         }
         let (reply, result) = oneshot::channel();
         let execution = Execution {
+            cell_id: cell_id.map(str::to_owned),
             code: code.to_owned(),
             allow_stdin,
             cancel,
@@ -148,6 +164,7 @@ impl Drop for Running {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Channel {
     Stdin,
+    Control,
     Shell,
     Iopub,
 }
@@ -263,7 +280,8 @@ struct Session {
     data: Option<Arc<crate::session::SessionData>>,
     process: Process,
     shell: DealerSendConnection,
-    control: ClientControlConnection,
+    control: Arc<tokio::sync::Mutex<DealerSendConnection>>,
+    debug: Arc<DebugClient>,
     stdin: DealerSendConnection,
     input: mpsc::Receiver<InputReplyRequest>,
     frames: mpsc::Receiver<Frame>,
@@ -317,6 +335,7 @@ impl Session {
         send(&mut self.shell, message).await
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn connect(
         runtime: &std::path::Path,
         notebook: &std::path::Path,
@@ -324,6 +343,9 @@ impl Session {
         comm_requests: mpsc::Receiver<CommRequest>,
         comm_events: broadcast::Sender<CommEvent>,
         input: mpsc::Receiver<InputReplyRequest>,
+        debug: Arc<DebugClient>,
+        debug_requests: mpsc::Receiver<DebugRequest>,
+        stop: CancellationToken,
     ) -> IdeResult<Self> {
         let (process, info) = Process::spawn(runtime, notebook, selected).await?;
         let session = Uuid::new_v4().to_string();
@@ -337,19 +359,32 @@ impl Session {
         .map_err(protocol)?;
         let (shell, shell_recv) = shell.split();
         let (stdin, stdin_recv) = stdin.split();
+        let (control, control_recv) = control.split();
+        let control = Arc::new(tokio::sync::Mutex::new(control));
+        let (control_tx, control_frames) = mpsc::channel(QUEUED_MESSAGES);
         let (tx, frames) = mpsc::channel(QUEUED_MESSAGES);
         let failure = Failure::new();
         let queued = Arc::new(Semaphore::new(QUEUED_BYTES));
         let readers = Readers(vec![
             reader(iopub, Channel::Iopub, tx.clone(), failure.clone(), queued.clone()),
             reader(shell_recv, Channel::Shell, tx.clone(), failure.clone(), queued.clone()),
-            reader(stdin_recv, Channel::Stdin, tx, failure.clone(), queued),
+            reader(stdin_recv, Channel::Stdin, tx, failure.clone(), queued.clone()),
+            reader(control_recv, Channel::Control, control_tx, failure.clone(), queued),
+            tokio::spawn(debug_broker(
+                control.clone(),
+                debug_requests,
+                control_frames,
+                stop,
+                failure.clone(),
+                debug.clone(),
+            )),
         ]);
         Ok(Self {
             data: None,
             process,
             shell,
             control,
+            debug,
             stdin,
             input,
             frames,
@@ -396,7 +431,10 @@ impl Session {
                     let frame = frame.ok_or_else(|| IdeError::unavailable("kernel readers closed during startup"))?;
                     if self.dispatch_comm(&frame).await? { continue; }
                     if frame.parent != request { continue; }
-                    if frame.channel == Channel::Shell && frame.kind == "kernel_info_reply" { reply = true; }
+                    if frame.channel == Channel::Shell && frame.kind == "kernel_info_reply" {
+                        *self.debug.info.lock() = Some(frame.content.clone());
+                        reply = true;
+                    }
                     if frame.channel == Channel::Iopub && is_idle(&frame) { idle = true; }
                     if reply && idle { return Ok(()); }
                 }
@@ -414,13 +452,16 @@ impl Session {
         if execution.cancel.is_cancelled() || execution.interrupt.is_cancelled() || execution.reply.is_closed() {
             return Err(IdeError::cancelled());
         }
-        let request: JupyterMessage = ExecuteRequest {
+        let mut request: JupyterMessage = ExecuteRequest {
             code: std::mem::take(&mut execution.code),
             allow_stdin: execution.allow_stdin,
             stop_on_error: true,
             ..Default::default()
         }
         .into();
+        if let Some(cell_id) = &execution.cell_id {
+            request.metadata["cellId"] = Value::String(cell_id.clone());
+        }
         let request_id = request.header.msg_id.clone();
         // If sending fails/times out, delivery is uncertain. Supervisor closes
         // the process; no caller may retry user code automatically.
@@ -511,6 +552,10 @@ impl Session {
     }
 
     async fn dispatch_comm(&mut self, frame: &Frame) -> IdeResult<bool> {
+        if frame.channel == Channel::Iopub && frame.kind == "debug_event" {
+            self.debug.event(&frame.parent, &frame.content)?;
+            return Ok(true);
+        }
         if frame.channel == Channel::Iopub
             && let Some(data) = &self.data
         {
@@ -545,19 +590,14 @@ impl Session {
                 "Q" => "disconnect",
                 _ => unreachable!(),
             };
-            let request: JupyterMessage = jupyter_protocol::DebugRequest { content: serde_json::json!({"seq":1,"type":"request","command":command,"arguments":{"threadId":-1,"restart":false}}) }.into();
-            tokio::time::timeout(SEND_TIMEOUT, async {
-                self.control.send(request).await.map_err(protocol)?;
-                let reply = self.control.read().await.map_err(protocol)?;
-                match reply.content {
-                    jupyter_protocol::JupyterMessageContent::DebugReply(reply) if reply.content["success"] == true => {
-                        Ok(())
-                    }
-                    _ => Err(protocol("Ark control rejected DAP browser command")),
-                }
-            })
-            .await
-            .map_err(|_| IdeError::unavailable("Ark debug control timed out"))??;
+            // The broker's reader runs independently of this IOPub dispatcher.
+            let reply = self
+                .debug
+                .request(command, serde_json::json!({"threadId":-1,"restart":false}), CancellationToken::new(), false)
+                .await?;
+            if reply["success"] != true {
+                return Err(protocol(format!("Ark control rejected DAP browser command: {reply}")));
+            }
         }
         if self.dap_comm.as_deref() == Some(comm_id) && frame.kind == "comm_close" {
             self.dap_comm = None;
@@ -581,6 +621,12 @@ impl Session {
             }
             _ => None,
         };
+        if dap_comm.is_some()
+            && let Err(error) = self.debug.claim(2)
+        {
+            let _ = request.reply.send(Err(error));
+            return Ok(());
+        }
         let result = send(&mut self.shell, request.message).await;
         if result.is_ok() && dap_comm.is_some() {
             self.dap_comm = dap_comm;
@@ -593,7 +639,9 @@ impl Session {
         // Stop is separate from user interrupt: graceful shutdown, then kill only
         // our process group/job. It must remain bounded even for wedged Python.
         let request: JupyterMessage = ShutdownRequest { restart: false }.into();
-        let _ = tokio::time::timeout(Duration::from_millis(500), self.control.send(request)).await;
+        let _ =
+            tokio::time::timeout(Duration::from_millis(500), async { self.control.lock().await.send(request).await })
+                .await;
         let deadline = Instant::now() + Duration::from_millis(750);
         while Instant::now() < deadline {
             match self.process.death() {
@@ -603,6 +651,53 @@ impl Session {
             tokio::time::sleep(Duration::from_millis(25)).await;
         }
         self.process.shutdown().await;
+    }
+}
+
+async fn debug_broker(
+    control: Arc<tokio::sync::Mutex<DealerSendConnection>>,
+    mut requests: mpsc::Receiver<DebugRequest>,
+    mut frames: mpsc::Receiver<Frame>,
+    stop: CancellationToken,
+    failure: Failure,
+    debug: Arc<DebugClient>,
+) {
+    let mut pending = Pending::default();
+    let mut sweep = tokio::time::interval(Duration::from_millis(25));
+    sweep.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    loop {
+        tokio::select! {
+            biased;
+            _ = stop.cancelled() => break,
+            _ = failure.token.cancelled() => break,
+            _ = sweep.tick() => pending.expire(),
+            frame = frames.recv() => {
+                let Some(frame) = frame else { break };
+                if frame.kind == "debug_reply" { pending.receive(&frame.parent, frame.content); }
+            },
+            request = requests.recv() => {
+                let Some(request) = request else { break };
+                pending.expire();
+                if request.reply.is_closed() || request.cancel.is_cancelled() || Instant::now() >= request.deadline { continue; }
+                if pending.full() {
+                    let _ = request.reply.send(Err(IdeError::unavailable("too many pending kernel debug requests")));
+                    continue;
+                }
+                if request.public && let Err(error) = debug.claim(1) {
+                    let _ = request.reply.send(Err(error));
+                    continue;
+                }
+                let message = request.message.clone();
+                // Insert before sending: a quick adapter can reply immediately.
+                pending.insert(request);
+                let result = tokio::select! {
+                    biased;
+                    _ = stop.cancelled() => break,
+                    result = async { send(&mut *control.lock().await, message).await } => result,
+                };
+                if let Err(error) = result { failure.fail(error); break; }
+            }
+        }
     }
 }
 
@@ -687,6 +782,8 @@ impl Budget {
 }
 
 struct SessionChannels {
+    debug: Arc<DebugClient>,
+    debug_requests: mpsc::Receiver<DebugRequest>,
     session_data: Arc<crate::session::SessionData>,
     ready: oneshot::Sender<IdeResult<()>>,
     comm_requests: mpsc::Receiver<CommRequest>,
@@ -703,7 +800,7 @@ async fn supervise(
     mut requests: mpsc::Receiver<Execution>,
     channels: SessionChannels,
 ) {
-    let SessionChannels { ready, comm_requests, comm_events, input, session_data } = channels;
+    let SessionChannels { ready, comm_requests, comm_events, input, session_data, debug, debug_requests } = channels;
     struct StopOnExit(CancellationToken);
     impl Drop for StopOnExit {
         fn drop(&mut self) {
@@ -713,7 +810,18 @@ async fn supervise(
     let _stop_on_exit = StopOnExit(stop.clone());
     status(&notebook, KernelState::Starting, None);
     let startup = async {
-        let mut session = Session::connect(&runtime, &notebook, &selected, comm_requests, comm_events, input).await?;
+        let mut session = Session::connect(
+            &runtime,
+            &notebook,
+            &selected,
+            comm_requests,
+            comm_events,
+            input,
+            debug,
+            debug_requests,
+            stop.clone(),
+        )
+        .await?;
         session.ready(&stop).await?;
         session.data = Some(session_data.clone());
         if let Err(error) = session.initialize_variables(&selected, &stop).await {

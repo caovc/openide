@@ -154,3 +154,11 @@ DS-04B0 显式启动已完成本批集成验收：Start Kernel 不执行用户 c
 
 - DS-04B1：Jupyter control 调试 broker、能力协商、cell/source 映射及断点 UI；将 generation/token 纳入事件合同，验证同文档重启后迟到事件不会更新新会话。Python 与 R Notebook 分别真实验收，不能以脚本调试替代。
 - DS-01E2 activation：可信项目显式选择 renv，启动 readiness 中完成加载再执行用户代码，运行身份包含明确项目根与 R_HOME。双真实 Ark 项目隔离探针已通过；IDE 尚未接线。`renv::load()` 会执行 settings.R 并写入库/缓存，不能作为只读环境探测。设计与固定版本证据见 [renv 激活研究](research/2026-11-06-renv-activation.md)。与 B1 的 kernel transport 修改串行认领；可并行实现独立 UI/测试。
+
+## DS-04B1 后端协议进展与接续
+
+本批实现 Jupyter control 调试 broker、真实 kernel_info 能力、generation/token 请求与事件、订阅 ready，以及 Ark 执行的稳定 cellId 元数据。Python 与 R 的双 cell 断点、locals、step/watch/continue 和 disconnect 后同 PID 执行由真实集成测试验收，详见 [B1 报告](evidence/ds04b1/REPORT.md)。这不等于 Debug Cell UI 完成。
+
+下一实现切片为 B2：复用通用调试工具窗口的 kernel adapter，订阅 ready 后协商能力；保存 kernel 返回 sourcePath 与 cell ID/source revision 的映射；重复源码保留歧义，不猜测定位。优先验证暂停栈、局部变量、watch/继续和旧 token 清理，再开放 cell 断点入口。普通脚本 debugpy 必须保持回归通过。
+
+renv 激活的具体 launchId/token、Notebook/Console workspace member 绑定、bootstrap 与缓存政策已细化为 [启动合同](research/2026-11-06-renv-launch-contract.md)，生产接线仍 pending。后续包管理明确分离“已激活”与“锁文件同步”：增加显式同步差异检查，restore 使用可审阅包变更与 transactional 默认，非默认 profile 纳入环境身份；这些不是本批已实现功能。

@@ -27,6 +27,7 @@ pub(super) struct InputReplyRequest {
 /// Bound to one process generation. Shutdown closes send and receive operations.
 #[derive(Clone)]
 pub struct KernelComms {
+    pub(super) debug: std::sync::Arc<super::debug::DebugClient>,
     pub(super) session: std::sync::Arc<crate::session::SessionData>,
     pub(super) requests: mpsc::Sender<CommRequest>,
     pub(super) events: broadcast::Sender<CommEvent>,
@@ -72,6 +73,19 @@ impl Drop for OpeningService {
 }
 
 impl KernelComms {
+    pub fn debug_capabilities(&self) -> IdeResult<super::KernelDebugCapabilities> {
+        self.debug.capabilities()
+    }
+
+    /// Registration is synchronous: initialized/stopped events can be received as soon as this returns.
+    pub fn debug_subscribe(&self) -> IdeResult<super::KernelDebugSubscription> {
+        self.debug.subscribe()
+    }
+
+    pub async fn debug_request(&self, command: &str, arguments: Value, cancel: CancellationToken) -> IdeResult<Value> {
+        self.debug.request(command, arguments, cancel, true).await
+    }
+
     pub fn session(&self) -> &std::sync::Arc<crate::session::SessionData> {
         &self.session
     }
@@ -139,6 +153,7 @@ impl KernelComms {
         if !matches!(self.runtime, super::KernelRuntime::Ark { .. }) || self.is_closed() {
             return Err(IdeError::unavailable("a running Ark session is required for R DAP"));
         }
+        self.debug.claim(2)?;
         self.dap
             .get_or_try_init(|| async {
                 let id = uuid::Uuid::new_v4().to_string();
@@ -252,6 +267,7 @@ mod tests {
         );
         (
             KernelComms {
+                debug: super::super::debug::DebugClient::new(session.snapshot().unwrap().generation, stop.clone()).0,
                 session,
                 requests,
                 events,

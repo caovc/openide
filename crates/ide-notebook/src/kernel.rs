@@ -4,8 +4,10 @@
 //! alive and drain later background output, but never attribute it to another run.
 
 pub(crate) mod comm;
+mod debug;
 mod process;
 pub use comm::{CommEvent, CommSubscription, KernelComms};
+pub use debug::{KernelDebugCapabilities, KernelDebugEvent, KernelDebugSubscription};
 mod transport;
 
 use ide_core::{CancellationToken, IdeError, IdeResult};
@@ -322,6 +324,38 @@ impl KernelManager {
         cancel: CancellationToken,
         on_output: OutputCallback,
     ) -> IdeResult<ExecutionResult> {
+        self.execute_inner(notebook, runtime, None, code, allow_stdin, cancel, on_output).await
+    }
+
+    /// Preserve a stable notebook cell identity for kernels that map debug sources by cell.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn execute_cell_with_stdin(
+        &self,
+        notebook: &Path,
+        runtime: &KernelRuntime,
+        cell: &str,
+        code: &str,
+        allow_stdin: bool,
+        cancel: CancellationToken,
+        on_output: OutputCallback,
+    ) -> IdeResult<ExecutionResult> {
+        if cell.is_empty() || cell.len() > 1024 {
+            return Err(IdeError::invalid("notebook cell ID must contain 1 to 1024 bytes"));
+        }
+        self.execute_inner(notebook, runtime, Some(cell), code, allow_stdin, cancel, on_output).await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn execute_inner(
+        &self,
+        notebook: &Path,
+        runtime: &KernelRuntime,
+        cell: Option<&str>,
+        code: &str,
+        allow_stdin: bool,
+        cancel: CancellationToken,
+        on_output: OutputCallback,
+    ) -> IdeResult<ExecutionResult> {
         if cancel.is_cancelled() {
             return Err(IdeError::cancelled());
         }
@@ -334,7 +368,7 @@ impl KernelManager {
         let result = running
             .as_ref()
             .expect("initialized kernel")
-            .execute(code, allow_stdin, cancel, interrupt, on_output)
+            .execute(cell, code, allow_stdin, cancel, interrupt, on_output)
             .await;
         if running.as_ref().is_some_and(transport::Running::is_finished) {
             slot.comms.lock().take();

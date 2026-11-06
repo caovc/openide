@@ -1,8 +1,8 @@
 //! Native notebook operations shared by desktop IPC and the remote dispatcher.
 use crate::Host;
 pub use crate::notebook::{
-    NotebookDapEvent, NotebookDapQuery, NotebookDapReply, NotebookKernelSession, NotebookLspQuery, NotebookOutputEvent,
-    SessionReply,
+    NotebookDapEvent, NotebookDapQuery, NotebookDapReply, NotebookDebugCapabilities, NotebookDebugEvent,
+    NotebookDebugQuery, NotebookDebugReply, NotebookKernelSession, NotebookLspQuery, NotebookOutputEvent, SessionReply,
 };
 use crate::ops::Channel;
 use crate::rpc::Dispatcher;
@@ -104,6 +104,45 @@ pub async fn start_kernel(
     let _request = RequestGuard { host, request, cancel: cancel.clone() };
     let runtime = ide_notebook::parse_selection(&selection)?;
     project.notebooks.start_kernel(&id, runtime, cancel).await
+}
+
+pub fn debug_capabilities(
+    host: &Host,
+    window: &str,
+    id: String,
+    token: String,
+) -> IdeResult<NotebookDebugCapabilities> {
+    host.require_trust(window)?;
+    host.project(window)?.notebooks.debug_capabilities(&id, &token)
+}
+
+pub async fn debug_request(
+    host: &Host,
+    window: &str,
+    id: String,
+    query: NotebookDebugQuery,
+    request: RequestId,
+) -> IdeResult<NotebookDebugReply> {
+    host.require_trust(window)?;
+    let project = host.project(window)?;
+    let cancel = host.begin_project_request(window, request);
+    let _request = RequestGuard { host, request, cancel: cancel.clone() };
+    project.notebooks.debug_request(&id, query, cancel).await
+}
+
+pub async fn debug_events(
+    host: &Host,
+    window: &str,
+    id: String,
+    token: String,
+    request: RequestId,
+    on_event: Channel<NotebookDebugEvent>,
+) -> IdeResult<()> {
+    host.require_trust(window)?;
+    let project = host.project(window)?;
+    let cancel = host.begin_project_request(window, request);
+    let _request = RequestGuard { host, request, cancel: cancel.clone() };
+    project.notebooks.debug_events(&id, &token, cancel, on_event).await
 }
 
 pub async fn close(host: &Host, window: &str, id: String) -> IdeResult<()> {
@@ -249,6 +288,15 @@ impl Drop for RequestGuard<'_> {
 }
 
 pub(crate) fn register(d: &mut Dispatcher) {
+    d.add("notebook_debug_capabilities", |c| async move {
+        debug_capabilities(&c.host, &c.window, c.arg("id")?, c.arg("token")?)
+    });
+    d.add("notebook_debug_request", |c| async move {
+        debug_request(&c.host, &c.window, c.arg("id")?, c.arg("query")?, c.arg("request")?).await
+    });
+    d.add("notebook_debug_events", |c| async move {
+        debug_events(&c.host, &c.window, c.arg("id")?, c.arg("token")?, c.arg("request")?, c.sender("onEvent")?).await
+    });
     d.add("notebook_start_kernel", |c| async move {
         start_kernel(&c.host, &c.window, c.arg("id")?, c.arg("selection")?, c.arg("request")?).await
     });

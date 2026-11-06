@@ -1,6 +1,7 @@
 //! Thin desktop adapters for the shared native notebook service.
 use crate::state::AppState;
 use ide_core::{IdeResult, RequestId};
+use ide_host::notebook::{NotebookDebugCapabilities, NotebookDebugEvent, NotebookDebugQuery, NotebookDebugReply};
 use ide_host::ops::notebook::{
     self, NotebookDapEvent, NotebookDapQuery, NotebookDapReply, NotebookLspQuery, NotebookOutputEvent, SessionReply,
 };
@@ -174,4 +175,40 @@ pub async fn notebook_dap_events(
     on_event: Channel<NotebookDapEvent>,
 ) -> IdeResult<()> {
     notebook::dap_events(&state.host, window.label(), id, selection, request, super::sender(on_event)).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn notebook_debug_capabilities(
+    window: Window,
+    state: State<'_, AppState>,
+    id: String,
+    token: String,
+) -> IdeResult<NotebookDebugCapabilities> {
+    notebook::debug_capabilities(&state.host, window.label(), id, token)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn notebook_debug_request(
+    window: Window,
+    state: State<'_, AppState>,
+    id: String,
+    query: NotebookDebugQuery,
+    request: RequestId,
+) -> IdeResult<NotebookDebugReply> {
+    notebook::debug_request(&state.host, window.label(), id, query, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn notebook_debug_events(
+    window: Window,
+    state: State<'_, AppState>,
+    id: String,
+    token: String,
+    request: RequestId,
+    on_event: Channel<NotebookDebugEvent>,
+) -> IdeResult<()> {
+    notebook::debug_events(&state.host, window.label(), id, token, request, super::sender(on_event)).await
 }

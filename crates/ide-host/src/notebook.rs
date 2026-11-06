@@ -71,6 +71,42 @@ pub struct NotebookKernelSession {
     pub language: String,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct NotebookDebugCapabilities {
+    pub token: String,
+    pub debugger: bool,
+    #[specta(type = specta_typescript::Unknown)]
+    pub kernel_info: serde_json::Value,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct NotebookDebugQuery {
+    pub token: String,
+    pub command: String,
+    #[specta(type = specta_typescript::Unknown)]
+    pub arguments: serde_json::Value,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct NotebookDebugReply {
+    pub token: String,
+    #[specta(type = specta_typescript::Unknown)]
+    pub response: serde_json::Value,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct NotebookDebugEvent {
+    pub token: String,
+    pub sequence: u32,
+    pub event: String,
+    #[specta(type = specta_typescript::Unknown)]
+    pub body: serde_json::Value,
+}
+
 #[derive(Default)]
 struct Registry {
     stopped: bool,
@@ -393,6 +429,104 @@ impl NotebookService {
         self.kernels.comms(&document.path)?.input_reply(prompt, value).await
     }
 
+    fn debug_session(&self, id: &str, token: &str) -> IdeResult<(Arc<ManagedDocument>, u64, KernelComms)> {
+        let document = self.resolve(id)?;
+        let generation = {
+            let state = document.state.lock();
+            mutable(&state)?;
+            state.generation
+        };
+        let comms = self.kernels.comms(&document.path)?;
+        validate_debug_session(&document, generation, &comms, token)?;
+        Ok((document, generation, comms))
+    }
+
+    pub fn debug_capabilities(&self, id: &str, token: &str) -> IdeResult<NotebookDebugCapabilities> {
+        let (document, generation, comms) = self.debug_session(id, token)?;
+        let capabilities = comms.debug_capabilities()?;
+        validate_debug_session(&document, generation, &comms, token)?;
+        if capabilities.generation != token {
+            return Err(IdeError::cancelled());
+        }
+        Ok(NotebookDebugCapabilities {
+            token: token.into(),
+            debugger: capabilities.debugger,
+            kernel_info: capabilities.kernel_info,
+        })
+    }
+
+    /// DAP coordinates remain on the wire; source-to-cell mapping belongs to the adapter.
+    pub async fn debug_request(
+        &self,
+        id: &str,
+        query: NotebookDebugQuery,
+        cancel: CancellationToken,
+    ) -> IdeResult<NotebookDebugReply> {
+        if cancel.is_cancelled() {
+            return Err(IdeError::cancelled());
+        }
+        if !query.arguments.is_object()
+            || serde_json::to_vec(&query.arguments).map_err(|e| IdeError::invalid(e.to_string()))?.len() > 1024 * 1024
+        {
+            return Err(IdeError::invalid("debug arguments must be an object no larger than 1 MiB"));
+        }
+        // The broker owns the complete command allowlist and safe disconnect arguments.
+        let (document, generation, comms) = self.debug_session(id, &query.token)?;
+        let response = comms.debug_request(&query.command, query.arguments, cancel.clone()).await?;
+        if cancel.is_cancelled() {
+            return Err(IdeError::cancelled());
+        }
+        validate_debug_session(&document, generation, &comms, &query.token)?;
+        Ok(NotebookDebugReply { token: query.token, response })
+    }
+
+    /// The ready notification is sent only after the generation-bound receiver exists.
+    pub async fn debug_events(
+        &self,
+        id: &str,
+        token: &str,
+        cancel: CancellationToken,
+        channel: Channel<NotebookDebugEvent>,
+    ) -> IdeResult<()> {
+        if cancel.is_cancelled() {
+            return Err(IdeError::cancelled());
+        }
+        let (document, generation, comms) = self.debug_session(id, token)?;
+        let mut subscription = comms.debug_subscribe()?;
+        if subscription.generation() != token {
+            return Err(IdeError::cancelled());
+        }
+        validate_debug_session(&document, generation, &comms, token)?;
+        channel.send(NotebookDebugEvent {
+            token: token.into(),
+            sequence: 0,
+            event: "ready".into(),
+            body: serde_json::json!({}),
+        })?;
+        loop {
+            let event = tokio::select! {
+                biased;
+                _ = cancel.cancelled() => return Err(IdeError::cancelled()),
+                event = subscription.recv() => event?,
+            };
+            validate_debug_session(&document, generation, &comms, token)?;
+            if event.generation != token || event.sequence == 0 {
+                return Err(IdeError::cancelled());
+            }
+            let name = event
+                .content
+                .get("event")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| IdeError::new(ErrorKind::Protocol, "debug event has no name"))?;
+            channel.send(NotebookDebugEvent {
+                token: token.into(),
+                sequence: event.sequence,
+                event: name.into(),
+                body: event.content.get("body").cloned().unwrap_or(serde_json::json!({})),
+            })?;
+        }
+    }
+
     /// Notebook-first DAP API. Arguments/results use the DAP wire's 1-based coordinates.
     pub async fn dap(
         &self,
@@ -654,9 +788,10 @@ impl NotebookService {
             let channel = on_output.clone();
             let result = self
                 .kernels
-                .execute_with_stdin(
+                .execute_cell_with_stdin(
                     &document.path,
                     &runtime,
+                    &cell,
                     &source,
                     true,
                     batch.cancel.clone(),
@@ -784,6 +919,18 @@ fn kernel_session(
         selection,
         language: language.into(),
     })
+}
+
+fn validate_debug_session(
+    document: &ManagedDocument,
+    generation: u64,
+    comms: &KernelComms,
+    token: &str,
+) -> IdeResult<()> {
+    if kernel_session(document, generation, comms)?.token != token {
+        return Err(IdeError::unavailable("notebook kernel session is stale"));
+    }
+    Ok(())
 }
 
 fn invalidate(document: &ManagedDocument) -> IdeResult<Option<Arc<Batch>>> {

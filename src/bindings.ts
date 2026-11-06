@@ -171,6 +171,9 @@ export const commands = {
 	notebookInputReply: (id: string, prompt: string, value: string | null) => typedError<null, IdeError>(__TAURI_INVOKE("notebook_input_reply", { id, prompt, value })),
 	notebookDap: (id: string, query: NotebookDapQuery, request: RequestId) => typedError<NotebookDapReply, IdeError>(__TAURI_INVOKE("notebook_dap", { id, query, request })),
 	notebookDapEvents: (id: string, selection: string, request: RequestId, onEvent: Channel<NotebookDapEvent>) => typedError<null, IdeError>(__TAURI_INVOKE("notebook_dap_events", { id, selection, request, onEvent })),
+	notebookDebugCapabilities: (id: string, token: string) => typedError<NotebookDebugCapabilities, IdeError>(__TAURI_INVOKE("notebook_debug_capabilities", { id, token })),
+	notebookDebugRequest: (id: string, query: NotebookDebugQuery, request: RequestId) => typedError<NotebookDebugReply, IdeError>(__TAURI_INVOKE("notebook_debug_request", { id, query, request })),
+	notebookDebugEvents: (id: string, token: string, request: RequestId, onEvent: Channel<NotebookDebugEvent>) => typedError<null, IdeError>(__TAURI_INVOKE("notebook_debug_events", { id, token, request, onEvent })),
 	notebookLsp: (id: string, query: NotebookLspQuery, request: RequestId) => typedError<SessionReply, IdeError>(__TAURI_INVOKE("notebook_lsp", { id, query, request })),
 	notebookStopKernel: (id: string) => typedError<null, IdeError>(__TAURI_INVOKE("notebook_stop_kernel", { id })),
 	notebookGet: (id: string) => typedError<NotebookSnapshot, IdeError>(__TAURI_INVOKE("notebook_get", { id })),
@@ -5075,6 +5078,30 @@ export type NotebookDapQuery = {
 
 export type NotebookDapReply = {
 	body: unknown,
+};
+
+export type NotebookDebugCapabilities = {
+	token: string,
+	debugger: boolean,
+	kernelInfo: unknown,
+};
+
+export type NotebookDebugEvent = {
+	token: string,
+	sequence: number,
+	event: string,
+	body: unknown,
+};
+
+export type NotebookDebugQuery = {
+	token: string,
+	command: string,
+	arguments: unknown,
+};
+
+export type NotebookDebugReply = {
+	token: string,
+	response: unknown,
 };
 
 export type NotebookEdit = { type: "setSource"; cell: string; source: string } | { type: "insertCell"; after: string | null; cellType: string } | { type: "deleteCell"; cell: string } | { type: "moveCell"; cell: string; before: string | null } | { type: "setCellType"; cell: string; cellType: string } | { type: "setOutputs"; cell: string; outputs: unknown[]; executionCount: number | null };
