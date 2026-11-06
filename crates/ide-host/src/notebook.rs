@@ -3,7 +3,7 @@ use crate::ops::Channel;
 use ide_core::error::ErrorKind;
 use ide_core::{CancellationToken, IdeError, IdeEvent, IdeResult, IpcPath, SharedSink};
 pub use ide_lsp::session::{SessionFeature, SessionReply};
-use ide_notebook::kernel::{KernelManager, KernelOutput, KernelRuntime};
+use ide_notebook::kernel::{KernelComms, KernelManager, KernelOutput, KernelRuntime};
 use ide_notebook::{NotebookDocument, NotebookEdit, NotebookSnapshot};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
@@ -61,6 +61,16 @@ pub struct NotebookLspQuery {
     pub feature: SessionFeature,
 }
 
+/// A ready process generation; the token is revoked by restart, close or runtime replacement.
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct NotebookKernelSession {
+    pub id: String,
+    pub token: String,
+    pub selection: String,
+    pub language: String,
+}
+
 #[derive(Default)]
 struct Registry {
     stopped: bool,
@@ -92,6 +102,7 @@ struct Batch {
 struct BatchGuard {
     document: Arc<ManagedDocument>,
     batch: Arc<Batch>,
+    execution: bool,
 }
 
 pub(crate) struct ExecutionAdmission {
@@ -104,7 +115,9 @@ impl Drop for BatchGuard {
     fn drop(&mut self) {
         let mut state = self.document.state.lock();
         if state.active.as_ref().is_some_and(|active| Arc::ptr_eq(active, &self.batch)) {
-            if let Err(error) = state.document.set_execution_active(false) {
+            if self.execution
+                && let Err(error) = state.document.set_execution_active(false)
+            {
                 tracing::error!("notebook batch release: {error}");
             }
             state.active = None;
@@ -239,6 +252,80 @@ impl NotebookService {
 
     pub fn get(&self, id: &str) -> IdeResult<NotebookSnapshot> {
         snapshot(self.resolve(id)?.as_ref())
+    }
+
+    /// Start the selected kernel without executing or changing any user cell.
+    pub async fn start_kernel(
+        self: &Arc<Self>,
+        id: &str,
+        runtime: KernelRuntime,
+        cancel: CancellationToken,
+    ) -> IdeResult<NotebookKernelSession> {
+        if cancel.is_cancelled() {
+            return Err(IdeError::cancelled());
+        }
+        let document = self.resolve(id)?;
+        let generation = {
+            let state = document.state.lock();
+            mutable(&state)?;
+            state.generation
+        };
+        // Reading an existing generation must not interrupt a cell that is already running.
+        if let Ok(comms) = self.kernels.comms(&document.path) {
+            if comms.runtime() != &runtime {
+                return Err(IdeError::unavailable("stop the current notebook kernel before selecting another runtime"));
+            }
+            if cancel.is_cancelled() {
+                return Err(IdeError::cancelled());
+            }
+            return kernel_session(&document, generation, &comms);
+        }
+        let guard = {
+            let mut state = document.state.lock();
+            mutable(&state)?;
+            if state.generation != generation || cancel.is_cancelled() {
+                return Err(IdeError::cancelled());
+            }
+            if state.active.is_some() {
+                return Err(IdeError::unavailable("notebook execution or startup is already running"));
+            }
+            let (done, _) = watch::channel(false);
+            let batch = Arc::new(Batch { cancel: cancel.clone(), done });
+            state.active = Some(batch.clone());
+            BatchGuard { document: document.clone(), batch, execution: false }
+        };
+        let service = self.clone();
+        // Keep startup owned until cancellation/close has drained the process, even if IPC disappears.
+        tokio::spawn(async move {
+            let result = async {
+                let comms = service.kernels.ensure_started(&document.path, &runtime, cancel.clone()).await?;
+                if cancel.is_cancelled() {
+                    return Err(IdeError::cancelled());
+                }
+                kernel_session(&document, generation, &comms)
+            }
+            .await;
+            drop(guard);
+            result
+        })
+        .await
+        .map_err(|error| IdeError::internal(error.to_string()))?
+    }
+
+    /// Shared validation for future generation-bound debugger commands.
+    pub fn validate_kernel_session(&self, id: &str, token: &str) -> IdeResult<()> {
+        let document = self.resolve(id)?;
+        let generation = {
+            let state = document.state.lock();
+            mutable(&state)?;
+            state.generation
+        };
+        let comms = self.kernels.comms(&document.path)?;
+        let session = kernel_session(&document, generation, &comms)?;
+        if token != session.token {
+            return Err(IdeError::unavailable("notebook kernel session is stale"));
+        }
+        Ok(())
     }
 
     pub fn edit(&self, id: &str, version: u32, edit: NotebookEdit) -> IdeResult<NotebookSnapshot> {
@@ -677,6 +764,28 @@ fn snapshot(document: &ManagedDocument) -> IdeResult<NotebookSnapshot> {
     Ok(state.document.snapshot())
 }
 
+fn kernel_session(
+    document: &ManagedDocument,
+    generation: u64,
+    comms: &KernelComms,
+) -> IdeResult<NotebookKernelSession> {
+    let state = document.state.lock();
+    mutable(&state)?;
+    if state.generation != generation || comms.is_closed() {
+        return Err(IdeError::cancelled());
+    }
+    let (selection, language) = match comms.runtime() {
+        KernelRuntime::Python { executable } => (executable.to_string_lossy().into_owned(), "python"),
+        KernelRuntime::Ark { executable, r_home } => (ide_notebook::discover::encode_ark(executable, r_home), "r"),
+    };
+    Ok(NotebookKernelSession {
+        id: document.id.clone(),
+        token: comms.session().snapshot()?.generation,
+        selection,
+        language: language.into(),
+    })
+}
+
 fn invalidate(document: &ManagedDocument) -> IdeResult<Option<Arc<Batch>>> {
     let mut state = document.state.lock();
     mutable(&state)?;
@@ -729,7 +838,7 @@ fn admit(
         state.active = Some(batch.clone());
         (batch, state.generation, plan)
     };
-    Ok(ExecutionAdmission { guard: BatchGuard { document, batch }, generation, plan })
+    Ok(ExecutionAdmission { guard: BatchGuard { document, batch, execution: true }, generation, plan })
 }
 
 /// Commit under the short document lock; the caller delivers only after release.

@@ -106,5 +106,9 @@
   "Manage Python environments": "Manage Python environments",
   "Console environment": "Console environment",
   "Environment unavailable": "Environment unavailable",
-  "New Console environment": "New Console environment"
+  "New Console environment": "New Console environment",
+  "Notebook": "Notebook",
+  "Start Kernel": "Start Kernel",
+  "Select a notebook kernel before starting.": "Select a notebook kernel before starting.",
+  "The kernel session does not match this notebook.": "The kernel session does not match this notebook."
 }

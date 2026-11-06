@@ -118,6 +118,20 @@ U11 集成里程碑：`8b6cc56`（提交含环境管理 P0/P1 计划与固定 Ar
 
 环境本批切片已完成集成验收，报告 `docs/ds/evidence/environments/REPORT.md`：真实Python双venv探针、R只读状态和host信任/项目根12测通过；bindings/严格clippy/标准类型/构建通过；前端全量6793通过，review修正后105相关测试通过；Chromium双视口4测通过。独立review发现默认/显式选择、跨项目迟到请求和renv措辞问题均已修复。整体DS-01E0–E4仍in_progress：renv实际激活、多R版本验证和完整统一环境合同尚待后续。
 
-| unit    | status  | owner | branch | notes                                                                        |
-| ------- | ------- | ----- | ------ | ---------------------------------------------------------------------------- |
-| DS-04B0 | pending | —     | —      | 显式内核启动/协商，不执行用户cell；合同见 research/2026-11-06-next-slices.md |
+| unit    | status | owner       | branch | notes                                                                        |
+| ------- | ------ | ----------- | ------ | ---------------------------------------------------------------------------- |
+| DS-04B0 | done   | Cloud Codex | work   | 显式内核启动/协商，不执行用户cell；合同见 research/2026-11-06-next-slices.md |
+
+## DS-04B0 显式内核启动（基线 26406df）
+
+| unit                     | status | owner                  | branch                    | 独占路径 / 范围                                                                                                      |
+| ------------------------ | ------ | ---------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| B0-kernel                | done   | kernel_start           | ds/kernel-start           | ide-notebook/src/kernel.rs、kernel/{transport,comm}.rs、新tests/kernel_start.rs；同generation启动句柄与取消/关闭竞争 |
+| B0-host                  | done   | start_host             | ds/start-host             | ide-host/src/notebook.rs、ops/notebook.rs、新tests/notebook_start.rs；信任/admission/token与IPC注册                  |
+| B0-ui                    | done   | start_frontend         | ds/start-frontend         | src/features/notebook/**、e2e/notebook-start.spec.ts；Start Kernel/取消，不执行用户cell                              |
+| renv-activation-research | done   | renv_activation_design | ds/renv-activation-design | 新docs/ds/research/2026-11-06-renv-activation.md；独立临时R库真实探针，不改生产启动                                  |
+| B0-integration           | done   | Cloud Codex            | work                      | Tauri薄命令/注册、bindings、catalog、集成验证、文档、提交推送                                                        |
+
+接口冻结：KernelManager::ensure_started(path,runtime,cancel)->KernelComms；同runtime健康会话复用，不同活跃runtime拒绝。host notebook_start_kernel(id,selection,request)->NotebookKernelSession { id, token, selection, language }，token复用后端session generation，language为python/r，selection取实际runtime。启动复用admission且不修改文档execution_count或用户cell。仅显式启动新内核的取消会停止该启动，获取既有句柄不得杀已有kernel。root统一重型构建；renv启动改动待B0后串行接续。
+
+B0分域交付已集成：真实Notebook82测通过；host启动Python6测及Ark1测通过；host既有Notebook10测通过（3项真实runtime默认忽略）；前端6805通过/6跳过；Chromium双视口2测通过。独立review发现取消获取误interrupt与busy覆盖均已修复。renv研究完成真实双项目隔离，IDE激活仍pending。完整证据见 `docs/ds/evidence/ds04b0/REPORT.md`；受影响三crate的all-targets严格Clippy、生成bindings、格式及diff检查均通过，本轮B0切片完成；原生GUI及完整调试仍按报告保留边界。

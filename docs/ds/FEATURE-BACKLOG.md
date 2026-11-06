@@ -145,3 +145,12 @@ add_one()
 DS-01E0/E1/E2 首个实现切片：Notebook/Console 环境详情、真实 Python 身份/依赖探针、renv 项目只读状态、文件附近Python默认与Console自动/显式选择隔离。验收与未完边界见 [环境报告](evidence/environments/REPORT.md)。这不等于renv已激活或完整管理器已支持。
 
 DS-04B0 新增前置：显式启动/协商内核，不执行用户cell、不消耗其execution_count，随后才发送调试初始化/断点请求。与环境诊断可以独立推进，具体合同见 [下一切片研究](research/2026-11-06-next-slices.md)。
+
+## DS-04B0 与 renv 后续接线（2026-11-06）
+
+DS-04B0 显式启动已完成本批集成验收：Start Kernel 不执行用户 cell，返回绑定实际 runtime 与 generation 的会话句柄；复用已有 busy 内核时取消获取不会中断执行。该切片是调试前置能力，不等于 Debug Cell 已实现。验收见 [B0 报告](evidence/ds04b0/REPORT.md)。
+
+下一阶段保持两条核心队列：
+
+- DS-04B1：Jupyter control 调试 broker、能力协商、cell/source 映射及断点 UI；将 generation/token 纳入事件合同，验证同文档重启后迟到事件不会更新新会话。Python 与 R Notebook 分别真实验收，不能以脚本调试替代。
+- DS-01E2 activation：可信项目显式选择 renv，启动 readiness 中完成加载再执行用户代码，运行身份包含明确项目根与 R_HOME。双真实 Ark 项目隔离探针已通过；IDE 尚未接线。`renv::load()` 会执行 settings.R 并写入库/缓存，不能作为只读环境探测。设计与固定版本证据见 [renv 激活研究](research/2026-11-06-renv-activation.md)。与 B1 的 kernel transport 修改串行认领；可并行实现独立 UI/测试。

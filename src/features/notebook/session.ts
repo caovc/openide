@@ -2,6 +2,7 @@ import { Channel } from "@tauri-apps/api/core";
 import type { EditorState } from "@codemirror/state";
 import type {
   NotebookSnapshot,
+  NotebookKernelSession,
   NotebookEdit,
   NotebookOutputEvent,
   Sdk,
@@ -20,6 +21,8 @@ export const notebookBackend = {
     call(commands.notebookInputReply(id, prompt, value)),
   lsp: (id: string, query: NotebookLspQuery, request: RequestId) => call(commands.notebookLsp(id, query, request)),
   stopKernel: (id: string) => call(commands.notebookStopKernel(id)),
+  startKernel: (id: string, selection: string, request: RequestId) =>
+    call(commands.notebookStartKernel(id, selection, request)),
   open: (path: string) => call(commands.notebookOpen(path)),
   get: (id: string) => call(commands.notebookGet(id)),
   edit: (id: string, version: number, edit: NotebookEdit) => call(commands.notebookEdit(id, version, edit)),
@@ -73,6 +76,8 @@ export interface NotebookViewState {
   loading: boolean;
   error: string | null;
   running: boolean;
+  starting: boolean;
+  kernelHandle: NotebookKernelSession | null;
   frozen: boolean;
   kernel: string;
   python: string | null;
@@ -88,6 +93,8 @@ export class NotebookSession {
     loading: false,
     error: null,
     running: false,
+    starting: false,
+    kernelHandle: null,
     frozen: false,
     kernel: "idle",
     python: null,
@@ -105,6 +112,9 @@ export class NotebookSession {
   private executionCancelled = false;
   private generation = 0;
   private execution: Promise<void> | null = null;
+  private startup: Promise<void> | null = null;
+  private startupCancelled = false;
+  private kernelDeaths = 0;
   private request: RequestId | null = null;
   private refreshing: Promise<void> | null = null;
   private refreshAgain = false;
@@ -196,10 +206,13 @@ export class NotebookSession {
       this.recover("load");
       this.stopEvents = onIdeEvent("notebookKernel", (event) => {
         if (this.disposed || event.path !== snapshot.path || event.id !== snapshot.id) return;
-        if (event.state === "dead") this.executionCancelled = true;
+        if (event.state === "dead") {
+          this.executionCancelled = true;
+          ++this.kernelDeaths;
+        }
         if (event.state === "dead" || event.state === "starting") {
           this.cancelLsp();
-          this.publish({ input: null });
+          this.publish({ input: null, kernelHandle: null });
         }
         this.publish({ kernel: event.state });
         if (event.message) this.reportOperation(event.message, "kernel");
@@ -226,7 +239,7 @@ export class NotebookSession {
     }
   }
   selectPython(python: string) {
-    if (this.state.running || this.state.frozen) return;
+    if (this.state.running || this.state.starting || this.state.frozen) return;
     try {
       globalThis.localStorage?.setItem(PYTHON_KEY + this.path, python);
     } catch {
@@ -234,7 +247,7 @@ export class NotebookSession {
     }
     if (python === this.state.python) return;
     this.cancelLsp();
-    this.publish({ python, frozen: true });
+    this.publish({ python, frozen: true, kernelHandle: null });
     const id = this.state.snapshot?.id;
     const generation = ++this.generation;
     void (async () => {
@@ -304,7 +317,7 @@ export class NotebookSession {
   }
   edit(edit: NotebookEdit) {
     if (this.disposed || this.state.frozen || !this.state.snapshot) return;
-    if (this.state.running && edit.type !== "setSource") {
+    if ((this.state.running || this.state.starting) && edit.type !== "setSource") {
       this.reportOperation(new Error("Stop execution before changing notebook structure."), "mutation");
       return;
     }
@@ -390,9 +403,11 @@ export class NotebookSession {
     }
   }
   private async history(direction: "undo" | "redo") {
-    if (this.state.running || this.state.frozen) throw new Error("Stop execution before undo or redo.");
+    if (this.state.running || this.state.starting || this.state.frozen)
+      throw new Error("Stop execution before undo or redo.");
     if (!this.state.snapshot) await this.load();
-    if (this.state.running || this.state.frozen || this.disposed) throw new Error("Notebook is busy or closing.");
+    if (this.state.running || this.state.starting || this.state.frozen || this.disposed)
+      throw new Error("Notebook is busy or closing.");
     // History is a queue barrier: later typing must commit AFTER undo/redo, not
     // race it and get overwritten by the history response.
     this.pending.push({ edit: { type: direction }, committed: false });
@@ -417,8 +432,52 @@ export class NotebookSession {
     });
     return this.refreshing;
   }
+  startKernel(): Promise<void> {
+    if (this.state.running || this.state.starting || this.state.frozen || this.disposed)
+      return Promise.reject(new Error("Notebook is busy or closing."));
+    const selection = this.state.python;
+    if (!selection) return Promise.reject(new Error("Select a notebook kernel before starting."));
+    this.startupCancelled = false;
+    const generation = ++this.generation;
+    let request: RequestId | null = null;
+    const kernelDeaths = this.kernelDeaths;
+    this.publish({ starting: true, kernelHandle: null });
+    this.startup = (async () => {
+      await this.load();
+      if (this.state.frozen || this.disposed || this.startupCancelled || generation !== this.generation) return;
+      const id = this.state.snapshot!.id;
+      request = nextRequestId();
+      this.request = request;
+      const handle = await this.backend.startKernel(id, selection, request);
+      if (
+        this.disposed ||
+        this.startupCancelled ||
+        generation !== this.generation ||
+        kernelDeaths !== this.kernelDeaths
+      )
+        return;
+      if (handle.id !== id || handle.selection !== selection)
+        throw new Error("The kernel session does not match this notebook.");
+      // Kernel events remain authoritative: acquiring an existing session can
+      // return while another client is executing on it.
+      this.publish({ kernelHandle: handle });
+      this.recover("kernel");
+    })()
+      .catch((error) => {
+        if (!this.startupCancelled && !this.disposed && generation === this.generation) {
+          this.reportOperation(error, "kernel");
+          throw error;
+        }
+      })
+      .finally(() => {
+        if (this.request === request) this.request = null;
+        this.startup = null;
+        this.publish({ starting: false });
+      });
+    return this.startup;
+  }
   execute(cells?: string[]): Promise<void> {
-    if (this.state.running || this.state.frozen || this.disposed)
+    if (this.state.running || this.state.starting || this.state.frozen || this.disposed)
       return Promise.reject(new Error("Notebook is busy or closing."));
     this.publish({ running: true });
     this.executionCancelled = false;
@@ -521,6 +580,13 @@ export class NotebookSession {
     if (this.state.input === input) this.publish({ input: null });
   }
   async interrupt() {
+    if (this.startup) {
+      this.startupCancelled = true;
+      // The request owns only a newly launched kernel. Interrupting by notebook
+      // id here could interrupt another client's work on an existing session.
+      if (this.request !== null) await this.backend.cancel(this.request);
+      return;
+    }
     this.executionCancelled = true;
     this.publish({ input: null });
     if (!this.state.snapshot) return;
@@ -533,18 +599,18 @@ export class NotebookSession {
     }
   }
   private async drain() {
-    const execution = this.execution;
-    if (!execution) return;
+    const work = this.startup ?? this.execution;
+    if (!work) return;
     try {
       await this.interrupt();
     } finally {
-      await execution.catch(() => {});
+      await work.catch(() => {});
     }
   }
   async restart() {
     this.cancelLsp();
     if (this.state.frozen) throw new Error("Notebook is closing.");
-    this.publish({ frozen: true });
+    this.publish({ frozen: true, kernelHandle: null });
     ++this.generation;
     try {
       await this.drain();
@@ -577,7 +643,7 @@ export class NotebookSession {
   }
   async discard() {
     this.cancelLsp();
-    this.publish({ frozen: true });
+    this.publish({ frozen: true, kernelHandle: null });
     ++this.generation;
     try {
       await this.drain();
@@ -598,7 +664,7 @@ export class NotebookSession {
   }
   async close() {
     this.cancelLsp();
-    this.publish({ frozen: true });
+    this.publish({ frozen: true, kernelHandle: null });
     ++this.generation;
     try {
       // The host close interrupts, drains and shuts down authoritatively, and a

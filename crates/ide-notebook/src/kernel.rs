@@ -128,6 +128,21 @@ impl Drop for ActiveExecution<'_> {
     }
 }
 
+struct StartupGuard<'a> {
+    slot: &'a Slot,
+    stop: CancellationToken,
+    ready: bool,
+}
+
+impl Drop for StartupGuard<'_> {
+    fn drop(&mut self) {
+        if !self.ready {
+            self.stop.cancel();
+            self.slot.comms.lock().take();
+        }
+    }
+}
+
 pub struct KernelManager {
     runtime_dir: PathBuf,
     on_status: StatusCallback,
@@ -162,6 +177,129 @@ impl KernelManager {
             .ok_or_else(|| IdeError::unavailable("notebook kernel session is not ready"))
     }
 
+    /// Obtain a generation-bound session without executing user code. Reusing a healthy
+    /// session never changes its runtime or cancels its execution, even if this request is cancelled.
+    pub async fn ensure_started(
+        &self,
+        notebook: &Path,
+        runtime: &KernelRuntime,
+        cancel: CancellationToken,
+    ) -> IdeResult<KernelComms> {
+        if cancel.is_cancelled() {
+            return Err(IdeError::cancelled());
+        }
+        let slot = self.slot(notebook)?;
+        if slot.closed.load(Ordering::Acquire) {
+            return Err(IdeError::unavailable("notebook kernel was closed"));
+        }
+        let ready = slot.comms.lock().clone().filter(|comms| !comms.is_closed());
+        if let Some(comms) = ready {
+            if comms.runtime() != runtime {
+                return Err(IdeError::unavailable("stop the current notebook kernel before selecting another runtime"));
+            }
+            if cancel.is_cancelled() || slot.closed.load(Ordering::Acquire) || comms.is_closed() {
+                return Err(IdeError::cancelled());
+            }
+            return Ok(comms);
+        }
+        let interrupt = Self::admit(&slot)?;
+        let _active = ActiveExecution(&slot);
+        let mut running = slot.operation.try_lock().map_err(|_| IdeError::unavailable("notebook kernel is busy"))?;
+        self.start_ready(notebook, runtime, &slot, &mut running, false, &cancel, &interrupt).await
+    }
+
+    fn slot(&self, notebook: &Path) -> IdeResult<Arc<Slot>> {
+        let mut slots = self.slots.lock();
+        if self.closed.load(Ordering::Acquire) {
+            return Err(IdeError::unavailable("notebook kernel manager is shut down"));
+        }
+        Ok(slots.entry(notebook.to_path_buf()).or_insert_with(|| Arc::new(Slot::new())).clone())
+    }
+
+    fn admit(slot: &Slot) -> IdeResult<CancellationToken> {
+        // Register before taking the operation lock so interrupt cannot miss admission.
+        let interrupt = CancellationToken::new();
+        let mut active = slot.interrupt.lock();
+        if active.is_some() {
+            return Err(IdeError::unavailable("notebook kernel is busy"));
+        }
+        *active = Some(interrupt.clone());
+        Ok(interrupt)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn start_ready(
+        &self,
+        notebook: &Path,
+        runtime: &KernelRuntime,
+        slot: &Slot,
+        running: &mut Option<transport::Running>,
+        allow_switch: bool,
+        cancel: &CancellationToken,
+        interrupt: &CancellationToken,
+    ) -> IdeResult<KernelComms> {
+        if slot.closed.load(Ordering::Acquire) {
+            return Err(IdeError::unavailable("notebook kernel was closed"));
+        }
+        if !allow_switch
+            && running.as_ref().is_some_and(|r| r.runtime != *runtime && !r.is_finished() && !r.comms.is_closed())
+        {
+            return Err(IdeError::unavailable("stop the current notebook kernel before selecting another runtime"));
+        }
+        if running.as_ref().is_some_and(|r| r.runtime != *runtime || r.is_finished() || r.comms.is_closed())
+            && let Some(old) = running.take()
+        {
+            slot.comms.lock().take();
+            old.shutdown().await;
+            slot.stop.lock().take();
+        }
+        if cancel.is_cancelled() || interrupt.is_cancelled() || slot.closed.load(Ordering::Acquire) {
+            return Err(IdeError::cancelled());
+        }
+        if running.is_none() {
+            let (new, ready) = transport::Running::spawn(
+                self.runtime_dir.clone(),
+                notebook.to_path_buf(),
+                runtime.clone(),
+                self.on_status.clone(),
+            );
+            let mut guard = StartupGuard { slot, stop: new.stop.clone(), ready: false };
+            *slot.stop.lock() = Some(new.stop.clone());
+            *running = Some(new);
+            if slot.closed.load(Ordering::Acquire) {
+                slot.stop();
+            }
+            let result = tokio::select! {
+                biased;
+                _ = cancel.cancelled() => Err(IdeError::cancelled()),
+                _ = interrupt.cancelled() => Err(IdeError::cancelled()),
+                result = ready => result.unwrap_or_else(|_| Err(IdeError::unavailable("kernel startup task ended"))),
+            }
+            .and_then(|()| {
+                if cancel.is_cancelled()
+                    || interrupt.is_cancelled()
+                    || slot.closed.load(Ordering::Acquire)
+                    || guard.stop.is_cancelled()
+                {
+                    Err(IdeError::cancelled())
+                } else {
+                    Ok(())
+                }
+            });
+            if let Err(error) = result {
+                if let Some(failed) = running.take() {
+                    failed.shutdown().await;
+                }
+                slot.stop.lock().take();
+                return Err(error);
+            }
+            guard.ready = true;
+        }
+        let comms = running.as_ref().expect("initialized kernel").comms.clone();
+        *slot.comms.lock() = Some(comms.clone());
+        Ok(comms)
+    }
+
     pub async fn execute_runtime(
         &self,
         notebook: &Path,
@@ -187,65 +325,12 @@ impl KernelManager {
         if cancel.is_cancelled() {
             return Err(IdeError::cancelled());
         }
-        let slot = {
-            let mut slots = self.slots.lock();
-            if self.closed.load(Ordering::Acquire) {
-                return Err(IdeError::unavailable("notebook kernel manager is shut down"));
-            }
-            slots.entry(notebook.to_path_buf()).or_insert_with(|| Arc::new(Slot::new())).clone()
-        };
-        // Register cancellation before taking the operation lock: interrupt can
-        // otherwise race the tiny lock-to-token gap and miss a newly admitted run.
-        let interrupt = CancellationToken::new();
-        {
-            let mut active = slot.interrupt.lock();
-            if active.is_some() {
-                return Err(IdeError::unavailable("notebook kernel is busy"));
-            }
-            *active = Some(interrupt.clone());
-        }
+        let slot = self.slot(notebook)?;
+        let interrupt = Self::admit(&slot)?;
         let _active = ActiveExecution(&slot);
         // A second caller must not sit in a queue and execute stale source later.
         let mut running = slot.operation.try_lock().map_err(|_| IdeError::unavailable("notebook kernel is busy"))?;
-        if slot.closed.load(Ordering::Acquire) {
-            return Err(IdeError::unavailable("notebook kernel was closed"));
-        }
-        if running.as_ref().is_some_and(|r| r.runtime != *runtime || r.is_finished())
-            && let Some(old) = running.take()
-        {
-            slot.comms.lock().take();
-            old.shutdown().await;
-        }
-        if cancel.is_cancelled() || interrupt.is_cancelled() || slot.closed.load(Ordering::Acquire) {
-            return Err(IdeError::cancelled());
-        }
-        if running.is_none() {
-            let (new, ready) = transport::Running::spawn(
-                self.runtime_dir.clone(),
-                notebook.to_path_buf(),
-                runtime.clone(),
-                self.on_status.clone(),
-            );
-            *slot.stop.lock() = Some(new.stop.clone());
-            *running = Some(new);
-            if slot.closed.load(Ordering::Acquire) {
-                slot.stop();
-            }
-            let result = tokio::select! {
-                biased;
-                _ = cancel.cancelled() => Err(IdeError::cancelled()),
-                _ = interrupt.cancelled() => Err(IdeError::cancelled()),
-                result = ready => result.unwrap_or_else(|_| Err(IdeError::unavailable("kernel startup task ended"))),
-            };
-            if let Err(error) = result {
-                if let Some(failed) = running.take() {
-                    failed.shutdown().await;
-                }
-                slot.stop.lock().take();
-                return Err(error);
-            }
-        }
-        *slot.comms.lock() = running.as_ref().map(|r| r.comms.clone());
+        self.start_ready(notebook, runtime, &slot, &mut running, true, &cancel, &interrupt).await?;
         let result = running
             .as_ref()
             .expect("initialized kernel")

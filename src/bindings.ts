@@ -182,6 +182,7 @@ export const commands = {
 	notebookClose: (id: string) => typedError<null, IdeError>(__TAURI_INVOKE("notebook_close", { id })),
 	notebookExecute: (id: string, cells: string[], python: string | null, request: RequestId, onOutput: Channel<NotebookOutputEvent>) => typedError<NotebookSnapshot, IdeError>(__TAURI_INVOKE("notebook_execute", { id, cells, python, request, onOutput })),
 	notebookDetectRuntimes: () => typedError<NotebookRuntimeInfo[], IdeError>(__TAURI_INVOKE("notebook_detect_runtimes")),
+	notebookStartKernel: (id: string, selection: string, request: RequestId) => typedError<NotebookKernelSession, IdeError>(__TAURI_INVOKE("notebook_start_kernel", { id, selection, request })),
 	notebookProjectEnvironment: (near: string | null) => typedError<RProjectEnvironment, IdeError>(__TAURI_INVOKE("notebook_project_environment", { near })),
 	notebookInterrupt: (id: string) => typedError<null, IdeError>(__TAURI_INVOKE("notebook_interrupt", { id })),
 	notebookRestart: (id: string) => typedError<NotebookSnapshot, IdeError>(__TAURI_INVOKE("notebook_restart", { id })),
@@ -5077,6 +5078,14 @@ export type NotebookDapReply = {
 };
 
 export type NotebookEdit = { type: "setSource"; cell: string; source: string } | { type: "insertCell"; after: string | null; cellType: string } | { type: "deleteCell"; cell: string } | { type: "moveCell"; cell: string; before: string | null } | { type: "setCellType"; cell: string; cellType: string } | { type: "setOutputs"; cell: string; outputs: unknown[]; executionCount: number | null };
+
+/**  A ready process generation; the token is revoked by restart, close or runtime replacement. */
+export type NotebookKernelSession = {
+	id: string,
+	token: string,
+	selection: string,
+	language: string,
+};
 
 export type NotebookLspQuery = {
 	selection: string,

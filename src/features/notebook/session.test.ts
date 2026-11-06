@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type * as TauriCore from "@tauri-apps/api/core";
-import type { IdeEvent, NotebookSnapshot } from "@/bindings";
+import type { IdeEvent, NotebookKernelSession, NotebookSnapshot } from "@/bindings";
 import { IpcError } from "@/platform/ipc";
 import type * as Ipc from "@/platform/ipc";
 import { NotebookSession, notebookBackend } from "./session";
@@ -690,4 +690,175 @@ it("resolves the initial environment near the notebook and keeps an explicit sel
   expect(session.getState().python).toBe("/explicit/python");
   await session.close();
   localStorage.removeItem("openidea.notebook.python:/nested/science/env-check.ipynb");
+});
+
+describe("explicit kernel startup", () => {
+  const handle: NotebookKernelSession = {
+    id: "document-a",
+    token: "session-1",
+    selection: "/python",
+    language: "python",
+  };
+  async function ready() {
+    const m = model();
+    m.backend.environments = async () => [[], "/python"];
+    const session = new NotebookSession("/p/start.ipynb", m.backend, true);
+    await session.load();
+    await session.detectEnvironments();
+    return { m, session };
+  }
+
+  it("acquires a kernel without executing or mutating any notebook content", async () => {
+    const { m, session } = await ready();
+    m.backend.startKernel = vi.fn(async () => handle);
+    m.backend.execute = vi.fn();
+    m.backend.edit = vi.fn();
+    const before = structuredClone(session.getState().snapshot);
+    await session.startKernel();
+    expect(m.backend.startKernel).toHaveBeenCalledWith("document-a", "/python", expect.any(Number));
+    expect(session.getState().kernelHandle).toEqual(handle);
+    expect(session.getState().snapshot).toEqual(before);
+    expect(session.getState().running).toBe(false);
+    expect(session.getState().starting).toBe(false);
+    expect(m.backend.execute).not.toHaveBeenCalled();
+    expect(m.backend.edit).not.toHaveBeenCalled();
+    await session.close();
+  });
+
+  it("blocks concurrent execution, history and runtime changes while starting", async () => {
+    const { m, session } = await ready();
+    const pending = deferred<NotebookKernelSession>();
+    m.backend.startKernel = vi.fn(() => pending.promise);
+    const startup = session.startKernel();
+    await vi.waitFor(() => expect(m.backend.startKernel).toHaveBeenCalled());
+    expect(session.getState().starting).toBe(true);
+    await expect(session.execute()).rejects.toThrow("busy");
+    await expect(session.undo()).rejects.toThrow("Stop execution");
+    session.selectPython("/different/python");
+    expect(session.getState().python).toBe("/python");
+    pending.resolve(handle);
+    await startup;
+    await session.close();
+  });
+
+  it("discards a late startup handle after cancellation", async () => {
+    const { m, session } = await ready();
+    const pending = deferred<NotebookKernelSession>();
+    m.backend.startKernel = vi.fn(() => pending.promise);
+    m.backend.cancel = vi.fn(async () => {});
+    const startup = session.startKernel();
+    await vi.waitFor(() => expect(m.backend.startKernel).toHaveBeenCalled());
+    await session.interrupt();
+    expect(m.backend.cancel).toHaveBeenCalledWith(expect.any(Number));
+    pending.resolve(handle);
+    await startup;
+    expect(session.getState().kernelHandle).toBeNull();
+    expect(session.getState().starting).toBe(false);
+    await session.close();
+  });
+
+  it("drains startup on restart and cannot restore a stale handle", async () => {
+    const { m, session } = await ready();
+    const pending = deferred<NotebookKernelSession>();
+    m.backend.startKernel = vi.fn(() => pending.promise);
+    m.backend.restart = vi.fn(async () => snapshot());
+    m.backend.cancel = vi.fn(async () => {
+      pending.resolve(handle);
+    });
+    const startup = session.startKernel();
+    await vi.waitFor(() => expect(m.backend.startKernel).toHaveBeenCalled());
+    await session.restart();
+    await startup;
+    expect(m.backend.restart).toHaveBeenCalledWith("document-a");
+    expect(session.getState().kernelHandle).toBeNull();
+    expect(session.getState().starting).toBe(false);
+    expect(session.getState().frozen).toBe(false);
+    await session.close();
+  });
+
+  it("retains startup failure until a successful retry", async () => {
+    const { m, session } = await ready();
+    m.backend.startKernel = vi.fn().mockRejectedValueOnce(new Error("ipykernel unavailable")).mockResolvedValue(handle);
+    await expect(session.startKernel()).rejects.toThrow("ipykernel unavailable");
+    expect(session.getState().error).toBe("ipykernel unavailable");
+    expect(session.getState().starting).toBe(false);
+    await session.startKernel();
+    expect(session.getState().error).toBeNull();
+    expect(session.getState().kernelHandle).toEqual(handle);
+    kernelFailure("Kernel exited");
+    expect(session.getState().kernelHandle).toBeNull();
+    await session.close();
+  });
+
+  it("rejects a handle from another document or runtime", async () => {
+    const { m, session } = await ready();
+    m.backend.startKernel = async () => ({ ...handle, id: "retired-document" });
+    await expect(session.startKernel()).rejects.toThrow("does not match");
+    expect(session.getState().kernelHandle).toBeNull();
+    await session.close();
+  });
+});
+
+it("does not accept a delayed handle after the kernel has died", async () => {
+  const m = model();
+  m.backend.environments = async () => [[], "/python"];
+  const pending = deferred<NotebookKernelSession>();
+  m.backend.startKernel = vi.fn(() => pending.promise);
+  const session = new NotebookSession("/p/a.ipynb", m.backend, true);
+  await session.load();
+  await session.detectEnvironments();
+  const startup = session.startKernel();
+  await vi.waitFor(() => expect(m.backend.startKernel).toHaveBeenCalled());
+  kernelFailure("Kernel exited during startup");
+  pending.resolve({ id: "document-a", token: "dead", selection: "/python", language: "python" });
+  await startup;
+  expect(session.getState().kernelHandle).toBeNull();
+  expect(session.getState().kernel).toBe("dead");
+  expect(session.getState().error).toBe("Kernel exited during startup");
+  await session.close();
+});
+
+it("cancels handle acquisition without interrupting an existing busy kernel", async () => {
+  const m = model();
+  m.backend.environments = async () => [[], "/python"];
+  const pending = deferred<NotebookKernelSession>();
+  m.backend.startKernel = vi.fn(() => pending.promise);
+  m.backend.cancel = vi.fn(async () => {});
+  m.backend.interrupt = vi.fn(async () => null);
+  const session = new NotebookSession("/p/a.ipynb", m.backend, true);
+  await session.load();
+  await session.detectEnvironments();
+  for (const listener of kernelListeners)
+    listener({ type: "notebookKernel", id: "document-a", path: "/p/a.ipynb", state: "busy", message: null });
+  const startup = session.startKernel();
+  await vi.waitFor(() => expect(m.backend.startKernel).toHaveBeenCalled());
+  await session.interrupt();
+  pending.resolve({ id: "document-a", token: "existing", selection: "/python", language: "python" });
+  await startup;
+  expect(m.backend.cancel).toHaveBeenCalledExactlyOnceWith(expect.any(Number));
+  expect(m.backend.interrupt).not.toHaveBeenCalled();
+  expect(session.getState().kernel).toBe("busy");
+  expect(session.getState().kernelHandle).toBeNull();
+  await session.close();
+});
+
+it("preserves observed busy status when acquiring an existing kernel handle", async () => {
+  const m = model();
+  m.backend.environments = async () => [[], "/python"];
+  m.backend.startKernel = async (_id, selection) => ({
+    id: "document-a",
+    token: "existing",
+    selection,
+    language: "python",
+  });
+  const session = new NotebookSession("/p/a.ipynb", m.backend, true);
+  await session.load();
+  await session.detectEnvironments();
+  for (const listener of kernelListeners)
+    listener({ type: "notebookKernel", id: "document-a", path: "/p/a.ipynb", state: "busy", message: null });
+  await session.startKernel();
+  expect(session.getState().kernel).toBe("busy");
+  expect(session.getState().kernelHandle?.token).toBe("existing");
+  expect(session.getState().starting).toBe(false);
+  await session.close();
 });

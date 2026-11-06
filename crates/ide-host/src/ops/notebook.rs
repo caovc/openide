@@ -1,7 +1,8 @@
 //! Native notebook operations shared by desktop IPC and the remote dispatcher.
 use crate::Host;
 pub use crate::notebook::{
-    NotebookDapEvent, NotebookDapQuery, NotebookDapReply, NotebookLspQuery, NotebookOutputEvent, SessionReply,
+    NotebookDapEvent, NotebookDapQuery, NotebookDapReply, NotebookKernelSession, NotebookLspQuery, NotebookOutputEvent,
+    SessionReply,
 };
 use crate::ops::Channel;
 use crate::rpc::Dispatcher;
@@ -88,6 +89,21 @@ pub async fn restart(host: &Host, window: &str, id: String) -> IdeResult<Noteboo
     tokio::spawn(async move { notebooks.reload(&id, true).await })
         .await
         .map_err(|error| IdeError::internal(error.to_string()))?
+}
+
+pub async fn start_kernel(
+    host: &Host,
+    window: &str,
+    id: String,
+    selection: String,
+    request: RequestId,
+) -> IdeResult<NotebookKernelSession> {
+    host.require_trust(window)?;
+    let project = host.project(window)?;
+    let cancel = host.begin_project_request(window, request);
+    let _request = RequestGuard { host, request, cancel: cancel.clone() };
+    let runtime = ide_notebook::parse_selection(&selection)?;
+    project.notebooks.start_kernel(&id, runtime, cancel).await
 }
 
 pub async fn close(host: &Host, window: &str, id: String) -> IdeResult<()> {
@@ -233,6 +249,9 @@ impl Drop for RequestGuard<'_> {
 }
 
 pub(crate) fn register(d: &mut Dispatcher) {
+    d.add("notebook_start_kernel", |c| async move {
+        start_kernel(&c.host, &c.window, c.arg("id")?, c.arg("selection")?, c.arg("request")?).await
+    });
     d.add("notebook_dap_events", |c| async move {
         dap_events(&c.host, &c.window, c.arg("id")?, c.arg("selection")?, c.arg("request")?, c.sender("onEvent")?).await
     });

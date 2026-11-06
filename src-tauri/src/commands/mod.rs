@@ -140,6 +140,7 @@ pub fn builder() -> tauri_specta::Builder<tauri::Wry> {
         notebook::notebook_close,
         notebook::notebook_execute,
         notebook::notebook_detect_runtimes,
+        notebook::notebook_start_kernel,
         notebook::notebook_project_environment,
         notebook::notebook_interrupt,
         notebook::notebook_restart,

@@ -6023,5 +6023,9 @@
   "Manage Python environments": "管理 Python 环境",
   "Console environment": "Console 环境",
   "Environment unavailable": "环境不可用",
-  "New Console environment": "新 Console 环境"
+  "New Console environment": "新 Console 环境",
+  "Notebook": "笔记本",
+  "Start Kernel": "启动内核",
+  "Select a notebook kernel before starting.": "请先选择 Notebook 内核再启动。",
+  "The kernel session does not match this notebook.": "内核会话与此 Notebook 不匹配。"
 }

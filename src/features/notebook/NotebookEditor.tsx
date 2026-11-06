@@ -9,6 +9,7 @@ import {
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { NotebookCell } from "@/bindings";
+import { executeAction } from "@/platform/actions";
 import { tx } from "@/platform/i18n";
 import { useMarkdownPreviewFontSize } from "@/platform/languageSettings";
 import { useProject } from "@/platform/project";
@@ -77,7 +78,8 @@ function NotebookDocument({ session }: { session: NotebookSession }) {
     ...(editor?.lineHeight ? { "--openidea-editor-line-height": `${editor.lineHeight}px` } : {}),
   } as CSSProperties;
   const disabled = state.frozen || !state.snapshot;
-  const historyDisabled = disabled || state.running;
+  const busy = state.running || state.starting;
+  const historyDisabled = disabled || busy;
   const options = state.environments.map((sdk) => ({
     value: sdk.path,
     label: sdk.name,
@@ -131,7 +133,7 @@ function NotebookDocument({ session }: { session: NotebookSession }) {
           size="small"
           variant="primary"
           icon="run"
-          disabled={disabled || state.running || active?.cellType !== "code"}
+          disabled={disabled || busy || active?.cellType !== "code"}
           onClick={() => active && invoke(session.execute([active.id]))}
         >
           Run Cell
@@ -139,15 +141,23 @@ function NotebookDocument({ session }: { session: NotebookSession }) {
         <Button
           size="small"
           icon="run"
-          disabled={disabled || state.running || !cells.some((cell) => cell.cellType === "code")}
+          disabled={disabled || busy || !cells.some((cell) => cell.cellType === "code")}
           onClick={() => invoke(session.execute())}
         >
           Run All
         </Button>
+        <Button
+          size="small"
+          icon="run"
+          disabled={disabled || busy || !state.python}
+          onClick={() => invoke(executeAction("notebook.startKernel", session.path))}
+        >
+          Start Kernel
+        </Button>
         <IconButton
           icon="stop"
           title="Interrupt Kernel"
-          disabled={disabled || !state.running}
+          disabled={disabled || !busy}
           onClick={() => invoke(session.interrupt())}
         />
         <IconButton
@@ -163,18 +173,18 @@ function NotebookDocument({ session }: { session: NotebookSession }) {
           placeholder="Select notebook kernel"
           value={state.python}
           options={options}
-          disabled={disabled || state.running}
+          disabled={disabled || busy}
           onChange={(value) => session.selectPython(value)}
         />
         <IconButton
           icon="refresh"
           title="Refresh notebook kernels"
-          disabled={disabled || state.running}
+          disabled={disabled || busy}
           onClick={() => invoke(session.detectEnvironments())}
         />
         <span className={styles.kernel} role="status" title={state.error ?? undefined}>
-          {state.running && <Spinner size={12} />}
-          {tx(state.running ? "busy" : state.kernel)}
+          {busy && <Spinner size={12} />}
+          {tx(state.starting ? "starting" : state.running ? "busy" : state.kernel)}
         </span>
         <span className={styles.spacer} />
         <IconButton
@@ -259,7 +269,7 @@ function NotebookDocument({ session }: { session: NotebookSession }) {
               actions={
                 <Button
                   icon="add"
-                  disabled={disabled}
+                  disabled={disabled || busy}
                   onClick={() => session.edit({ type: "insertCell", after: null, cellType: "code" })}
                 >
                   Add Code Cell
@@ -284,8 +294,8 @@ function NotebookDocument({ session }: { session: NotebookSession }) {
                       index={item.index}
                       cells={cells}
                       selected={active?.id === cell.id}
-                      frozen={disabled}
-                      running={state.running}
+                      frozen={disabled || state.starting}
+                      running={busy}
                       onSelect={() => choose(cell.id)}
                     />
                   </div>
@@ -297,7 +307,7 @@ function NotebookDocument({ session }: { session: NotebookSession }) {
             <Button
               size="small"
               icon="add"
-              disabled={disabled || state.running}
+              disabled={disabled || busy}
               onClick={() => session.edit({ type: "insertCell", after: cells.at(-1)?.id ?? null, cellType: "code" })}
             >
               Add Code Cell
@@ -305,7 +315,7 @@ function NotebookDocument({ session }: { session: NotebookSession }) {
             <Button
               size="small"
               icon="add"
-              disabled={disabled || state.running}
+              disabled={disabled || busy}
               onClick={() =>
                 session.edit({ type: "insertCell", after: cells.at(-1)?.id ?? null, cellType: "markdown" })
               }

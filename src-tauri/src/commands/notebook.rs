@@ -10,6 +10,18 @@ use tauri::{State, Window};
 
 #[tauri::command]
 #[specta::specta]
+pub async fn notebook_start_kernel(
+    window: Window,
+    state: State<'_, AppState>,
+    id: String,
+    selection: String,
+    request: RequestId,
+) -> IdeResult<ide_host::notebook::NotebookKernelSession> {
+    notebook::start_kernel(&state.host, window.label(), id, selection, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn notebook_project_environment(
     window: Window,
     state: State<'_, AppState>,

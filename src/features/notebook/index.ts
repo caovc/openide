@@ -2,10 +2,12 @@ import type { NotebookSnapshot } from "@/bindings";
 import { basename } from "@/platform/project";
 import { lazyComponent } from "@/ui";
 import {
+  editorService,
   registerEditorKind,
   registerFileEditorProvider,
   type EditorDocumentLifecycle,
 } from "@/workbench/contributions";
+import { registerAction } from "@/platform/actions";
 import { isTauri } from "@/platform/ipc";
 import { ProviderAcquisitions } from "@/workbench/providerAcquisition";
 import { closeNotebook, existingNotebookSession, notebookBackend, notebookSession } from "./session";
@@ -46,6 +48,19 @@ const document: EditorDocumentLifecycle = {
 
 export function activate(): () => void {
   const disposers = [
+    registerAction({
+      id: "notebook.startKernel",
+      title: "Start Kernel",
+      category: "Notebook",
+      when: "projectOpen",
+      run: async ({ arg }) => {
+        const input = editorService().activeInput?.();
+        const path = typeof arg === "string" ? arg : input?.kind === "notebook" ? input.path : null;
+        const session = path ? existingNotebookSession(path) : null;
+        if (!session) return;
+        await session.startKernel();
+      },
+    }),
     registerEditorKind({
       kind: "notebook",
       restorable: true,
