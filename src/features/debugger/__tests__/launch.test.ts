@@ -115,6 +115,44 @@ describe("run config → launch config", () => {
     expect(extra(globalPytest).python).toBe("python3");
   });
 
+  it("debugpy: preserves the selected interpreter, script arguments, cwd and environment", () => {
+    const config = rc({
+      kind: "python",
+      command: "/envs/science/bin/python",
+      args: ["analysis.py", "--input", "data with spaces.csv"],
+      cwd: "analysis",
+      env: { DS_TEST_VALUE: "science", PYTHONPATH: "/extra/modules" },
+      debugAdapter: "debugpy",
+    });
+    const launch = launchConfigFor(config, "/project")!;
+    expect(launch).toMatchObject({
+      program: "/project/analysis/analysis.py",
+      args: ["--input", "data with spaces.csv"],
+      cwd: "/project/analysis",
+      env: config.env,
+    });
+    expect(extra(launch).python).toBe("/envs/science/bin/python");
+    expect(launch.env).not.toBe(config.env);
+  });
+
+  it("debugpy: preserves Windows interpreter paths and resolves sibling pytest interpreters", () => {
+    const debug = (command: string, args: string[]) =>
+      launchConfigFor(rc({ kind: "python", command, args, debugAdapter: "debugpy" }), "C:/project")!;
+    const interpreter = debug(String.raw`C:\envs\science\Scripts\python.exe`, ["analysis.py"]);
+    expect(extra(interpreter).python).toBe(String.raw`C:\envs\science\Scripts\python.exe`);
+    expect(extra(interpreter).module).toBeUndefined();
+    expect(interpreter.program).toBe("C:/project/analysis.py");
+    const pytest = debug(String.raw`.venv\Scripts\pytest.exe`, ["-x"]);
+    expect(extra(pytest)).toMatchObject({
+      python: String.raw`C:/project/.venv\Scripts\python.exe`,
+      module: "pytest",
+    });
+    expect(pytest.args).toEqual(["-x"]);
+    expect(extra(debug(String.raw`\\server\env\Scripts\python.exe`, ["analysis.py"])).python).toBe(
+      String.raw`\\server\env\Scripts\python.exe`,
+    );
+  });
+
   it("debugpy: uv / poetry run the debuggee in the project's environment", () => {
     const debug = (command: string, args: string[]) =>
       launchConfigFor(rc({ kind: "python", command, args, debugAdapter: "debugpy" }), "/p")!;

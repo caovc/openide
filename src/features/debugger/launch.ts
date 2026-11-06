@@ -5,7 +5,7 @@ import { workflowSettings } from "@/platform/workflowSettings";
 import type { LaunchConfig, RunConfig } from "@/platform/ipc";
 
 function isAbsolute(p: string) {
-  return p.startsWith("/") || /^[A-Za-z]:[\\/]/.test(p);
+  return p.startsWith("/") || p.startsWith("\\\\") || /^[A-Za-z]:[\\/]/.test(p);
 }
 
 function join(base: string, p: string) {
@@ -16,7 +16,7 @@ function join(base: string, p: string) {
 
 /** A command path with a directory part resolved against `cwd`; bare names stay for PATH lookup. */
 function resolveCommand(cmd: string, cwd: string) {
-  return cmd.includes("/") ? join(cwd, cmd) : cmd;
+  return /[\\/]/.test(cmd) ? join(cwd, cmd) : cmd;
 }
 
 function splitAtDashDash(args: readonly string[]): [string[], string[]] {
@@ -59,14 +59,18 @@ function cargoLaunch(rc: RunConfig, cwd: string, adapter: string): LaunchConfig 
   };
 }
 
-const PYTHON_NAME = /^python[\d.]*(\.exe)?$/;
+const PYTHON_NAME = /^python[\d.]*(\.exe)?$/i;
 
 function pythonFor(rc: RunConfig, cwd: string): string {
   const cmd = rc.command;
-  const name = cmd.split("/").pop() ?? cmd;
+  const name = cmd.split(/[\\/]/).pop() ?? cmd;
   if (PYTHON_NAME.test(name)) return resolveCommand(cmd, cwd);
   // A venv tool such as `.venv/bin/pytest`: use the interpreter next to it.
-  if (cmd.includes("/")) return resolveCommand(cmd.slice(0, cmd.lastIndexOf("/") + 1) + "python", cwd);
+  const separator = Math.max(cmd.lastIndexOf("/"), cmd.lastIndexOf("\\"));
+  if (separator >= 0) {
+    const python = /\.exe$/i.test(name) ? "python.exe" : "python";
+    return resolveCommand(cmd.slice(0, separator + 1) + python, cwd);
+  }
   return "python3";
 }
 
@@ -84,7 +88,7 @@ function debugpyLaunch(rc: RunConfig, cwd: string): LaunchConfig {
     redirectOutput: true,
   };
   if (dbg.python.gevent) extra.gevent = true;
-  const name = (rc.command.split("/").pop() ?? rc.command).replace(/\.exe$/, "");
+  const name = commandName(rc.command);
   let args = rc.args;
   let tool: string | null = PYTHON_NAME.test(name) ? null : name;
   if (PYTHON_RUNNERS.has(name) && args[0] === "run" && args[1]) {

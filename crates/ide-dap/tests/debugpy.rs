@@ -1,11 +1,13 @@
-//! End-to-end against a real debugpy (`python3 -m debugpy --version` must work).
-//! Run with `cargo test -p ide-dap --test debugpy -- --ignored`.
+//! End-to-end against a real debugpy, using the selected Python environment.
+//! Run with `OPENIDEA_TEST_PYTHON=/path/to/python cargo test -p ide-dap --test debugpy -- --ignored`.
+//! Explicitly running this ignored test requires debugpy; missing dependencies are failures.
 
 use ide_core::event::DebugEvent;
 use ide_core::{IdeEvent, SharedSink};
-use ide_dap::{Breakpoint, DebugManager, LaunchConfig, SessionOwner};
+use ide_dap::{Breakpoint, DebugManager, LaunchConfig, SessionOwner, StepKind};
 use ide_language::LanguageRegistry;
 use parking_lot::Mutex;
+use serde_json::json;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -25,40 +27,49 @@ async fn wait(events: &Mutex<Vec<IdeEvent>>, pred: impl Fn(&DebugEvent) -> bool)
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "needs python3 with debugpy installed"]
+#[ignore = "requires OPENIDEA_TEST_PYTHON (or python3/python on PATH) with debugpy installed"]
 async fn debugpy_end_to_end() {
-    let ok = std::process::Command::new("python3").args(["-m", "debugpy", "--version"]).output();
-    if !ok.is_ok_and(|o| o.status.success()) {
-        eprintln!("debugpy not installed; skipping");
-        return;
-    }
-    let dir = std::env::temp_dir().join(format!("openidea-dap-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let script = dir.join("prog.py");
-    std::fs::write(
-        &script,
-        "def main():\n    total = 0\n    for i in range(3):\n        total += i\n    print('total', total)\n\nmain()\n",
-    )
-    .unwrap();
-    let script = script.canonicalize().unwrap();
+    let python = std::env::var("OPENIDEA_TEST_PYTHON")
+        .unwrap_or_else(|_| if cfg!(windows) { "python" } else { "python3" }.into());
+    let probe = std::process::Command::new(&python)
+        .args([
+            "-c",
+            "import debugpy, json, sys; print(json.dumps({'python': sys.executable, 'debugpy': debugpy.__version__}))",
+        ])
+        .output()
+        .unwrap_or_else(|e| panic!("cannot run selected Python {python:?}: {e}"));
+    assert!(
+        probe.status.success(),
+        "selected Python {python:?} requires debugpy; install with `{python} -m pip install debugpy`: {}",
+        String::from_utf8_lossy(&probe.stderr)
+    );
+    let runtime: serde_json::Value = serde_json::from_slice(&probe.stdout).expect("Python runtime metadata");
+    let selected_python = runtime["python"].as_str().expect("sys.executable");
+    eprintln!("debugpy acceptance runtime: {runtime}");
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = dir.path().canonicalize().unwrap();
+    let script = cwd.join("prog.py");
+    std::fs::write(&script, "def add_one():\n    x = 41\n    x = x + 1\n    return x\nprint(add_one())\n").unwrap();
 
     let events: Arc<Mutex<Vec<IdeEvent>>> = Arc::default();
     let sink_events = events.clone();
     let sink: SharedSink = Arc::new(move |e: IdeEvent| sink_events.lock().push(e));
     let manager = DebugManager::new(Arc::new(LanguageRegistry::from_configs(Vec::new())));
-    let bp = Breakpoint { line: 3, condition: None, hit_condition: None, log_message: None, enabled: true };
+    let bp = Breakpoint { line: 2, condition: None, hit_condition: None, log_message: None, enabled: true };
     manager.set_breakpoints(script.clone(), vec![bp]).await.unwrap();
     let id = manager
         .start(
             LaunchConfig {
-                name: "prog".into(),
+                name: "Python environment acceptance".into(),
                 adapter: "debugpy".into(),
                 request: "launch".into(),
                 program: Some(script.to_string_lossy().into_owned()),
-                args: vec![],
-                cwd: Some(dir.clone().into()),
-                env: BTreeMap::new(),
-                extra_json: Some(r#"{"console": "internalConsole", "justMyCode": true}"#.into()),
+                args: vec!["--input".into(), "data with spaces.csv".into()],
+                cwd: Some(cwd.clone().into()),
+                env: BTreeMap::from([("OPENIDE_DEBUG_ACCEPTANCE".into(), "science".into())]),
+                extra_json: Some(
+                    json!({"python": selected_python, "console": "internalConsole", "justMyCode": true}).to_string(),
+                ),
             },
             SessionOwner::new("main", sink),
         )
@@ -68,15 +79,33 @@ async fn debugpy_end_to_end() {
         unreachable!()
     };
     let frames = manager.stack_trace(id, thread_id).await.unwrap();
-    assert_eq!(frames[0].line, 3, "0-based");
-    let scopes = manager.scopes(id, frames[0].id).await.unwrap();
+    assert_eq!(frames[0].line, 2, "0-based breakpoint on x = x + 1");
+    let frame = frames[0].id;
+    let scopes = manager.scopes(id, frame).await.unwrap();
     let vars = manager.variables(id, scopes[0].variables_reference).await.unwrap();
-    assert!(vars.iter().any(|v| v.name == "total"), "{vars:?}");
-    let v = manager.evaluate(id, Some(frames[0].id), "total + 100".into()).await.unwrap();
-    assert_eq!(v.value, "100");
-    manager.set_breakpoints(script.clone(), vec![]).await.unwrap();
+    assert!(vars.iter().any(|v| v.name == "x" && v.value == "41"), "{vars:?}");
+    let watch = manager.evaluate_in(id, Some(frame), "x + 1".into(), Some("watch".into())).await.unwrap();
+    assert_eq!(watch.value, "42");
+    for expression in [
+        format!("__import__('sys').executable == {}", json!(selected_python)),
+        format!("__import__('os').path.samefile(__import__('os').getcwd(), {})", json!(cwd.to_string_lossy())),
+        "__import__('sys').argv[1:] == ['--input', 'data with spaces.csv']".into(),
+        "__import__('os').environ['OPENIDE_DEBUG_ACCEPTANCE'] == 'science'".into(),
+    ] {
+        let result = manager.evaluate(id, Some(frame), expression.clone()).await.unwrap();
+        assert_eq!(result.value, "True", "{expression}");
+    }
+    // Clear the first stop before stepping, so it cannot satisfy the next-stop assertion.
+    events.lock().clear();
+    manager.step(id, thread_id, StepKind::Over).await.unwrap();
+    wait(&events, |e| matches!(e, DebugEvent::Stopped { .. })).await;
+    let frames = manager.stack_trace(id, thread_id).await.unwrap();
+    assert_eq!(frames[0].line, 3, "step reaches return x");
+    let value = manager.evaluate(id, Some(frames[0].id), "x".into()).await.unwrap();
+    assert_eq!(value.value, "42");
+    manager.set_breakpoints(script, vec![]).await.unwrap();
     manager.resume(id, thread_id).await.unwrap();
-    wait(&events, |e| matches!(e, DebugEvent::Output { output, .. } if output.contains("total 3"))).await;
+    wait(&events, |e| matches!(e, DebugEvent::Output { output, .. } if output.trim() == "42")).await;
     wait(&events, |e| matches!(e, DebugEvent::Terminated)).await;
-    let _ = std::fs::remove_dir_all(&dir);
+    assert!(manager.sessions(None).is_empty(), "terminated debug sessions must be removed");
 }

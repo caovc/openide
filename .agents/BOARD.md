@@ -99,3 +99,7 @@ DS-debug-research 扩展：feature_research 独占 docs/ds/research/2026-11-06-e
 ### U11 集成验收结论
 
 JVM 工具链删除代码已集成；全workspace/all-targets clippy、自动生成bindings、五套TS类型、生产bundle与格式/knip通过。前端621文件/6779测试通过（6既有跳过）；真实Notebook68项全通过。13个Rust库834通过、3容器PID1僵尸进程断言失败、7忽略，证据见U11报告。U11保持in_progress直到原生GUI及独立平台验证完成；可以提交当前可审查里程碑，不宣称整套IDE已完成。
+
+### 已提交里程碑与 DS-04A 进度
+
+U11 集成里程碑：`8b6cc56`（提交含环境管理 P0/P1 计划与固定 Ark 调试协议研究）。DS-04A 增量修复 Windows/UNC Python 解释器解析；前端21测通过，两个真实Python venv各自debugpy断点/变量/单步/解释器验收通过。完整DS04A仍in_progress：GUI与统一环境选择接线待验，证据 `docs/ds/evidence/ds04a/REPORT.md`。
