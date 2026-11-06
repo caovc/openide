@@ -7,7 +7,6 @@ import type {
   Limits,
   LogicalType,
   Page,
-  SchemaPage,
   TableHandle,
   TableProvider,
   TableState,
@@ -18,6 +17,14 @@ import {
   boundedInt,
   checkedIndex,
   parseIdentity,
+  parseHandle,
+  parsePage,
+  parsePageRequest,
+  parseProfileRequest,
+  parseQueryRequest,
+  parseSchemaPage,
+  parseSchemaRequest,
+  parseTableState,
   parseScope,
   requireThat,
   sameIdentity,
@@ -33,12 +40,15 @@ export const ARK_INF = 10;
 export const ARK_NEG_INF = 11;
 
 export interface ArkExplorerTransport {
-  getState(): Promise<unknown>;
-  getSchema(columnIndices: number[]): Promise<unknown>;
-  getDataValues(args: {
-    columns: { column_index: number; spec: { first_index: number; last_index: number } }[];
-    format_options: Record<string, unknown>;
-  }): Promise<unknown>;
+  getState(signal?: AbortSignal): Promise<unknown>;
+  getSchema(columnIndices: number[], signal?: AbortSignal): Promise<unknown>;
+  getDataValues(
+    args: {
+      columns: { column_index: number; spec: { first_index: number; last_index: number } }[];
+      format_options: Record<string, unknown>;
+    },
+    signal?: AbortSignal,
+  ): Promise<unknown>;
   close(): Promise<void>;
 }
 
@@ -110,9 +120,14 @@ export function mapArkColumn(raw: unknown, limits: Limits = DEFAULT_LIMITS): Col
 function preview(text: string, limits: Limits) {
   const bytes = utf8Bytes(text);
   if (bytes <= limits.maxPreviewBytes) return { text, truncated: false };
-  let end = text.length;
-  while (end > 0 && utf8Bytes(text.slice(0, end)) > limits.maxPreviewBytes) end -= 1;
-  return { text: text.slice(0, end), truncated: true };
+  let result = "";
+  let size = 0;
+  for (const char of text) {
+    size += utf8Bytes(char);
+    if (size > limits.maxPreviewBytes) break;
+    result += char;
+  }
+  return { text: result, truncated: true };
 }
 
 /** Map one Ark ColumnValue; doubles/factors/temporals stay lossy previews when formatted. */
@@ -183,150 +198,260 @@ export async function prepareArkExplorer(args: {
   handleId?: string;
 }): Promise<PreparedArkExplorer> {
   const scope = parseScope(args.scope);
-  requireThat(args.authorize(scope), "host authorization denied");
-  const backendState = await args.transport.getState();
-  const handle: TableHandle = { id: args.handleId ?? `ark-${scope.objectId}`, scope };
-  const identity: Identity = { handle, dataRevision: 1, schemaRevision: 1, queryEpoch: 1 };
-  return { scope, handle, identity, backendState, transport: args.transport };
+  requireThat(args.authorize({ ...scope }), "host authorization denied");
+  try {
+    const backendState = await args.transport.getState();
+    requireThat(args.authorize({ ...scope }), "host authorization denied");
+    const handle = parseHandle({ id: args.handleId ?? `ark-${scope.objectId}`, scope });
+    const identity: Identity = { handle, dataRevision: 1, schemaRevision: 1, queryEpoch: 1 };
+    return { scope, handle, identity, backendState, transport: args.transport };
+  } catch (error) {
+    try {
+      await args.transport.close();
+    } catch {
+      /* Preserve the preparation error. */
+    }
+    throw error;
+  }
 }
 
-<<<<<<< Updated upstream
 export function createArkTableProvider(
   prepared: PreparedArkExplorer,
   authorize: (scope: HostScope) => boolean,
   limits: Limits = DEFAULT_LIMITS,
 ): TableProvider {
-=======
-export function createArkTableProvider(prepared: PreparedArkExplorer, authorize: (scope: HostScope) => boolean, limits: Limits = DEFAULT_LIMITS): TableProvider {
->>>>>>> Stashed changes
+  limits = {
+    maxRows: boundedInt(limits.maxRows, 1, DEFAULT_LIMITS.maxRows),
+    maxColumns: boundedInt(limits.maxColumns, 1, DEFAULT_LIMITS.maxColumns),
+    maxResponseBytes: boundedInt(limits.maxResponseBytes, 1, DEFAULT_LIMITS.maxResponseBytes),
+    maxPreviewBytes: boundedInt(limits.maxPreviewBytes, 1, DEFAULT_LIMITS.maxPreviewBytes),
+  };
+  const owner = parseScope(prepared.scope);
+  let identity = parseIdentity(prepared.identity);
+  requireThat(sameScope(owner, identity.handle.scope), "scope mismatch");
+  const handle = parseHandle(prepared.handle);
+  requireThat(handle.id === identity.handle.id && sameScope(handle.scope, owner), "handle mismatch");
+  const transport = prepared.transport;
+  const shape = resultOf(prepared.backendState).table_shape;
+  requireThat(record(shape), "Ark table shape");
+  const rows = boundedInt(shape.num_rows, 0, Number.MAX_SAFE_INTEGER);
+  const columnCount = boundedInt(shape.num_columns, 0, Number.MAX_SAFE_INTEGER);
   let live = true;
-  const check = (scope: unknown, identity?: Identity) => {
+  let projection: string[] | null = null;
+  const pending = new Map<string, AbortController>();
+  const check = (scope: unknown, expected?: Identity) => {
     requireThat(live, "explorer closed");
     const parsed = parseScope(scope);
-    requireThat(authorize(parsed), "host authorization denied");
-    requireThat(sameScope(parsed, prepared.scope), "scope mismatch");
-    if (identity) requireThat(sameIdentity(identity, prepared.identity), "stale identity");
+    requireThat(authorize({ ...parsed }), "host authorization denied");
+    requireThat(sameScope(parsed, owner), "scope mismatch");
+    if (expected) requireThat(sameIdentity(expected, identity), "stale identity");
   };
-
-  const unsupported = (operation: Unsupported["operation"], reason: string): Unsupported => ({
+  const checkHandle = (value: unknown) => {
+    const parsed = parseHandle(value);
+    requireThat(parsed.id === handle.id && sameScope(parsed.scope, owner), "handle mismatch");
+  };
+  const snapshot = (): TableState =>
+    parseTableState(
+      {
+        identity,
+        backend: "ark",
+        rows: { kind: "exact", value: String(rows) },
+        columnCount: String(columnCount),
+        capabilities: { paging: true, projection: true, unsupported: ["sort", "filter", "profile", "export"] },
+      },
+      handle,
+    );
+  const cancel = () => {
+    for (const controller of pending.values()) controller.abort();
+  };
+  const dispose = () => {
+    if (!live) return;
+    live = false;
+    cancel();
+    // The synchronous TableProvider lifecycle cannot return a transport close promise.
+    void transport.close().catch(() => {});
+  };
+  const ordinal = (id: string) => {
+    requireThat(/^ark-col-(0|[1-9][0-9]*)$/.test(id), "unknown column id");
+    return checkedIndex(id.slice(8), columnCount - 1);
+  };
+  const unsupported = (operation: Unsupported["operation"]): Unsupported => ({
     kind: "unsupported",
     operation,
-    reason,
+    reason: "U9.2a read-only; operation deferred",
   });
-
+  const guarded = async <T>(
+    scope: HostScope,
+    expected: Identity,
+    requestId: string,
+    signal: AbortSignal | undefined,
+    work: (signal: AbortSignal) => Promise<T>,
+  ): Promise<T> => {
+    check(scope, expected);
+    requireThat(!signal?.aborted, "Cancelled");
+    requireThat(!pending.has(requestId), "Duplicate in-flight request id");
+    requireThat(pending.size < 2, "In-flight limit reached");
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    signal?.addEventListener("abort", abort, { once: true });
+    pending.set(requestId, controller);
+    let rejectAbort: () => void = () => {};
+    const cancelled = new Promise<never>((_, reject) => {
+      rejectAbort = () => reject(new ContractError("Cancelled"));
+      controller.signal.addEventListener("abort", rejectAbort, { once: true });
+    });
+    try {
+      const result = await Promise.race([work(controller.signal), cancelled]);
+      requireThat(!controller.signal.aborted, "Cancelled");
+      check(scope, expected);
+      return result;
+    } finally {
+      signal?.removeEventListener("abort", abort);
+      controller.signal.removeEventListener("abort", rejectAbort);
+      pending.delete(requestId);
+    }
+  };
+  const schemaColumns = async (indices: number[], signal: AbortSignal): Promise<Column[]> => {
+    if (!indices.length) return [];
+    const raw = resultOf(await transport.getSchema(indices, signal));
+    requireThat(Array.isArray(raw.columns) && raw.columns.length === indices.length, "schema dimensions");
+    return raw.columns.map((value, i) => {
+      const column = mapArkColumn(value, limits);
+      requireThat(column.ordinal === indices[i], "schema projection mismatch");
+      return column;
+    });
+  };
   return {
-    open() {
-      const state = resultOf(prepared.backendState);
-      const shape = record(state.table_shape) ? state.table_shape : {};
-      return {
-        identity: prepared.identity,
-        backend: "ark",
-        rows: { kind: "exact", value: String(shape.num_rows ?? 0) },
-        columnCount: String(shape.num_columns ?? 0),
-        capabilities: { paging: true, projection: true, unsupported: ["sort", "filter", "profile", "export"] },
-      } satisfies TableState;
+    open(scope) {
+      check(scope);
+      return snapshot();
     },
-    state(scope) {
+    state(scope, value) {
       check(scope);
-      return this.open(scope);
+      checkHandle(value);
+      return snapshot();
     },
-    async schema(scope, request) {
-      check(scope);
-      requireThat(record(request));
-      const identity = parseIdentity(request.identity);
-      requireThat(sameIdentity(identity, prepared.identity), "stale identity");
-      const offset = checkedIndex(request.offset, Number.MAX_SAFE_INTEGER);
-      const limit = boundedInt(request.limit, 1, limits.maxColumns);
-      const indices = Array.from({ length: limit }, (_, i) => offset + i);
-      const raw = await prepared.transport.getSchema(indices);
-      check(scope);
-      const result = resultOf(raw);
-      const columns = Array.isArray(result.columns) ? result.columns.map((c) => mapArkColumn(c, limits)) : [];
-      return {
-        identity: prepared.identity,
-        requestId: String(request.requestId),
-        offset: String(offset),
-        columns,
-        hasMore: columns.length === limit,
-      } satisfies SchemaPage;
-    },
-    async page(scope, request) {
-      check(scope);
-      requireThat(record(request));
-      const identity = parseIdentity(request.identity);
-      requireThat(sameIdentity(identity, prepared.identity), "stale identity");
-      const offset = checkedIndex(request.offset, Number.MAX_SAFE_INTEGER);
-      const limit = boundedInt(request.limit, 1, limits.maxRows);
-      const columnIds = Array.isArray(request.columns) ? request.columns.map(String) : [];
-      requireThat(columnIds.length > 0 && columnIds.length <= limits.maxColumns, "projection bound");
-      const ordinals = columnIds.map((id) => {
-        const match = /^ark-col-(\d+)$/.exec(id);
-        requireThat(match, `unknown column id ${id}`);
-        return Number(match[1]);
+    async schema(input, value, signal) {
+      const scope = parseScope(input);
+      const request = parseSchemaRequest(value, limits);
+      return guarded(scope, request.identity, request.requestId, signal, async (cancelSignal) => {
+        const offset =
+          BigInt(request.offset) >= BigInt(columnCount) ? columnCount : checkedIndex(request.offset, columnCount);
+        const count = Math.min(request.limit, columnCount - offset);
+        const columns = await schemaColumns(
+          Array.from({ length: count }, (_, i) => offset + i),
+          cancelSignal,
+        );
+        return parseSchemaPage(
+          {
+            identity: request.identity,
+            requestId: request.requestId,
+            offset: request.offset,
+            columns,
+            hasMore: offset + count < columnCount,
+          },
+          request,
+          limits,
+        );
       });
-      const last = offset + limit - 1;
-      const raw = await prepared.transport.getDataValues({
-        columns: ordinals.map((column_index) => ({
-          column_index,
-          spec: { first_index: offset, last_index: last },
-        })),
-        format_options: {
-          large_num_digits: 2,
-          small_num_digits: 4,
-          max_integral_digits: 7,
-          max_value_length: 100,
-          thousands_sep: null,
-        },
-      });
-      check(scope);
-      const result = resultOf(raw);
-      const wireColumns = Array.isArray(result.columns) ? result.columns : [];
-      const schemaCols = ordinals.map((ordinal) =>
-        mapArkColumn({ column_name: "", column_index: ordinal, type_name: "unknown", type_display: "object" }, limits),
+    },
+    async page(input, value, signal) {
+      const scope = parseScope(input);
+      const request = parsePageRequest(value, limits);
+      const ordinals = request.columns.map(ordinal);
+      requireThat(
+        projection === null || request.columns.every((id) => projection?.includes(id)),
+        "Column outside query projection",
       );
-      // Prefer logical types from ids alone when schema not re-fetched: mark float/text carefully via id only.
-      const columns = wireColumns.map((values, index) => {
-        const id = columnIds[index];
-        const column: Column = {
-          id,
-          ordinal: ordinals[index],
-          name: "",
-          runtimeType: "unknown",
-          nullable: true,
-          type: { kind: "unknown" },
-        };
-        // Infer from prepared schema if available via ark-col ordinal only — caller should pass typed columns via prior schema page.
-        void schemaCols;
-        requireThat(Array.isArray(values), "column values");
-        return {
-          id,
-          values: values.map((cell) => mapArkCell(cell, column, limits)),
-        };
+      return guarded(scope, request.identity, request.requestId, signal, async (cancelSignal) => {
+        const offset = BigInt(request.offset) >= BigInt(rows) ? rows : checkedIndex(request.offset, rows);
+        const count = Math.min(request.limit, rows - offset);
+        let columns: Page["columns"] = request.columns.map((id) => ({ id, values: [] }));
+        if (count) {
+          const schema = await schemaColumns(ordinals, cancelSignal);
+          requireThat(!cancelSignal.aborted, "Cancelled");
+          check(scope, request.identity);
+          const raw = resultOf(
+            await transport.getDataValues(
+              {
+                columns: ordinals.map((column_index) => ({
+                  column_index,
+                  spec: { first_index: offset, last_index: offset + count - 1 },
+                })),
+                format_options: {
+                  large_num_digits: 2,
+                  small_num_digits: 4,
+                  max_integral_digits: 7,
+                  max_value_length: limits.maxPreviewBytes,
+                  thousands_sep: null,
+                },
+              },
+              cancelSignal,
+            ),
+          );
+          requireThat(Array.isArray(raw.columns) && raw.columns.length === schema.length, "page dimensions");
+          columns = raw.columns.map((values, i) => {
+            requireThat(Array.isArray(values) && values.length === count, "column values dimensions");
+            const column = schema[i];
+            requireThat(column, "schema projection mismatch");
+            return { id: column.id, values: values.map((cell) => mapArkCell(cell, column, limits)) };
+          });
+        }
+        return parsePage(
+          {
+            identity: request.identity,
+            requestId: request.requestId,
+            offset: request.offset,
+            rowCount: count,
+            columns,
+            hasMore: offset + count < rows,
+          },
+          request,
+          limits,
+        );
       });
-      return {
-        identity: prepared.identity,
-        requestId: String(request.requestId),
-        offset: String(offset),
-        rowCount: limit,
-        columns,
-        hasMore: true,
-      } satisfies Page;
     },
-    query: () => unsupported("sort", "U9.2a read-only; sort/filter deferred"),
-    profile: () => unsupported("profile", "U9.2a read-only; profile deferred"),
-    export: () => unsupported("export", "U9.2a read-only; export deferred"),
-    refresh(scope) {
-      check(scope);
-      return this.open(scope);
+    query(scope, value) {
+      const request = parseQueryRequest(value, limits);
+      check(scope, request.identity);
+      request.query.projection.forEach(ordinal);
+      request.query.sort.forEach((sort) => ordinal(sort.column));
+      if (request.query.filter) ordinal(request.query.filter.column);
+      if (request.query.sort.length) return unsupported("sort");
+      if (request.query.filter) return unsupported("filter");
+      const queryEpoch = boundedInt(identity.queryEpoch + 1, 1, Number.MAX_SAFE_INTEGER);
+      cancel();
+      projection = request.query.projection;
+      identity = { ...identity, queryEpoch };
+      return { kind: "applied", state: snapshot() };
     },
-    close(scope) {
-      check(scope);
-      live = false;
-      void prepared.transport.close();
+    profile(scope, value) {
+      const request = parseProfileRequest(value, limits);
+      check(scope, request.identity);
+      request.columns.forEach(ordinal);
+      return unsupported("profile");
+    },
+    export(scope, value) {
+      check(scope, parseIdentity(value));
+      return unsupported("export");
+    },
+    // Invalidates this prepared snapshot only. Runtime mutations require a new preparation.
+    refresh(scope, value) {
+      check(scope, parseIdentity(value));
+      const dataRevision = boundedInt(identity.dataRevision + 1, 1, Number.MAX_SAFE_INTEGER);
+      const schemaRevision = boundedInt(identity.schemaRevision + 1, 1, Number.MAX_SAFE_INTEGER);
+      cancel();
+      identity = { ...identity, dataRevision, schemaRevision };
+      return snapshot();
+    },
+    close(scope, value) {
+      const parsed = parseScope(scope);
+      requireThat(authorize({ ...parsed }) && sameScope(parsed, owner), "host authorization denied");
+      checkHandle(value);
+      dispose();
     },
     revoke(scope) {
-      const parsed = parseScope(scope);
-      if (sameScope(parsed, prepared.scope)) live = false;
+      if (sameScope(parseScope(scope), owner)) dispose();
     },
   };
 }
@@ -342,15 +467,35 @@ export function mapArkPageWithSchema(args: {
 }): Page {
   const limits = args.limits ?? DEFAULT_LIMITS;
   requireThat(args.schemaColumns.length === args.wireColumns.length, "projection/schema mismatch");
-  return {
-    identity: args.identity,
-    requestId: args.requestId,
-    offset: args.offset,
-    rowCount: args.wireColumns[0]?.length ?? 0,
-    columns: args.schemaColumns.map((column, index) => ({
-      id: column.id,
-      values: (args.wireColumns[index] ?? []).map((cell) => mapArkCell(cell, column, limits)),
-    })),
-    hasMore: false,
-  };
+  boundedInt(args.schemaColumns.length, 1, limits.maxColumns);
+  const rowCount = boundedInt(args.wireColumns[0]?.length ?? 0, 0, limits.maxRows);
+  requireThat(
+    args.wireColumns.every((values) => values.length === rowCount),
+    "column values dimensions",
+  );
+  const request = parsePageRequest(
+    {
+      identity: args.identity,
+      requestId: args.requestId,
+      offset: args.offset,
+      limit: limits.maxRows,
+      columns: args.schemaColumns.map((column) => column.id),
+    },
+    limits,
+  );
+  return parsePage(
+    {
+      identity: args.identity,
+      requestId: args.requestId,
+      offset: args.offset,
+      rowCount: args.wireColumns[0]?.length ?? 0,
+      columns: args.schemaColumns.map((column, index) => ({
+        id: column.id,
+        values: (args.wireColumns[index] ?? []).map((cell) => mapArkCell(cell, column, limits)),
+      })),
+      hasMore: false,
+    },
+    request,
+    limits,
+  );
 }

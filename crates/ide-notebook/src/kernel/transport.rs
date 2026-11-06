@@ -67,15 +67,11 @@ impl Running {
         let (events, _) = broadcast::channel(16);
         let (input, input_rx) = mpsc::channel(8);
         let session_data = crate::session::SessionData::new(
-<<<<<<< Updated upstream
             runtime.clone(),
             notebook.clone(),
             &selected,
             stop.clone(),
             comm_tx.clone(),
-=======
-            runtime.clone(), notebook.clone(), &selected, stop.clone(), comm_tx.clone(),
->>>>>>> Stashed changes
         );
         let comms = KernelComms {
             session: session_data.clone(),
@@ -515,13 +511,9 @@ impl Session {
     }
 
     async fn dispatch_comm(&mut self, frame: &Frame) -> IdeResult<bool> {
-<<<<<<< Updated upstream
         if frame.channel == Channel::Iopub
             && let Some(data) = &self.data
         {
-=======
-        if frame.channel == Channel::Iopub && let Some(data) = &self.data {
->>>>>>> Stashed changes
             data.observe(&frame.kind, &frame.content, &frame.parent);
         }
         if frame.channel != Channel::Iopub || !matches!(frame.kind.as_str(), "comm_open" | "comm_msg" | "comm_close") {

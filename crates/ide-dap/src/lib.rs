@@ -12,7 +12,6 @@ pub mod adapter;
 pub mod attach;
 mod cargo;
 pub mod connection;
-pub mod session_dap;
 pub mod jdwp;
 pub mod kotlin;
 mod kotlin_jdwp;

@@ -200,12 +200,7 @@ impl KernelComms {
     /// Send a JSON-RPC-shaped comm message whose Jupyter header msg_id equals `id`.
     /// Ark requires that match for RPC parenting; data must also carry the same `id`.
     pub async fn send_rpc(&self, comm_id: &str, id: &str, data: Value) -> IdeResult<()> {
-<<<<<<< Updated upstream
         let mut message: JupyterMessage = CommMsg { comm_id: CommId(comm_id.into()), data: object(data)? }.into();
-=======
-        let mut message: JupyterMessage =
-            CommMsg { comm_id: CommId(comm_id.into()), data: object(data)? }.into();
->>>>>>> Stashed changes
         message.header.msg_id = id.into();
         self.send(message).await
     }
@@ -250,14 +245,10 @@ mod tests {
         let runtime = super::super::KernelRuntime::python("python");
         let session = crate::session::SessionData::new(
             std::path::PathBuf::from("comm-tests"),
-<<<<<<< Updated upstream
             std::path::PathBuf::from(uuid::Uuid::new_v4().to_string()),
             &runtime,
             stop.clone(),
             requests.clone(),
-=======
-            std::path::PathBuf::from(uuid::Uuid::new_v4().to_string()), &runtime, stop.clone(), requests.clone(),
->>>>>>> Stashed changes
         );
         (
             KernelComms {

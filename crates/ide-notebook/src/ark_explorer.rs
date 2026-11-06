@@ -133,9 +133,7 @@ impl ArkExplorerBroker {
 
     pub async fn get_schema(&self, column_indices: &[i64]) -> IdeResult<ExplorerSchema> {
         self.ensure_live()?;
-        if column_indices.is_empty() || column_indices.len() > MAX_COLUMNS {
-            return Err(IdeError::invalid("column_indices out of bounds"));
-        }
+        validate_columns(column_indices)?;
         let raw = self
             .rpc(json!({
                 "id": "",
@@ -155,16 +153,8 @@ impl ArkExplorerBroker {
         last_index: i64,
     ) -> IdeResult<ExplorerPage> {
         self.ensure_live()?;
-        if column_indices.is_empty() || column_indices.len() > MAX_COLUMNS {
-            return Err(IdeError::invalid("column_indices out of bounds"));
-        }
-        if first_index < 0 || last_index < first_index {
-            return Err(IdeError::invalid("inclusive row range invalid"));
-        }
-        let rows = (last_index - first_index + 1) as usize;
-        if rows == 0 || rows > MAX_ROWS {
-            return Err(IdeError::invalid("row window exceeds bound"));
-        }
+        validate_columns(column_indices)?;
+        validate_range(first_index, last_index)?;
         let columns: Vec<Value> = column_indices
             .iter()
             .map(|column_index| {
@@ -225,14 +215,7 @@ impl ArkExplorerBroker {
                     continue;
                 }
                 if data.get("error").is_some() {
-<<<<<<< Updated upstream
                     return Err(IdeError::unavailable(format!("data explorer RPC error: {}", data["error"])));
-=======
-                    return Err(IdeError::unavailable(format!(
-                        "data explorer RPC error: {}",
-                        data["error"]
-                    )));
->>>>>>> Stashed changes
                 }
                 // Re-validate generation before returning backend data.
                 self.ensure_live()?;
@@ -245,38 +228,51 @@ impl ArkExplorerBroker {
     }
 }
 
+fn validate_columns(column_indices: &[i64]) -> IdeResult<()> {
+    if column_indices.is_empty() || column_indices.len() > MAX_COLUMNS || column_indices.iter().any(|index| *index < 0)
+    {
+        return Err(IdeError::invalid("column_indices out of bounds"));
+    }
+    Ok(())
+}
+
+fn validate_range(first: i64, last: i64) -> IdeResult<()> {
+    if first < 0 || last < first {
+        return Err(IdeError::invalid("inclusive row range invalid"));
+    }
+    // Compare the inclusive range's span so i64::MAX never overflows on +1.
+    if last - first >= MAX_ROWS as i64 {
+        return Err(IdeError::invalid("row window exceeds bound"));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     #[test]
-    fn inclusive_range_helpers_reject_inverted_windows() {
-        assert!(ArkExplorerBroker::validate_range_for_test(0, 1).is_ok());
-        assert!(ArkExplorerBroker::validate_range_for_test(2, 1).is_err());
-        assert!(ArkExplorerBroker::validate_range_for_test(0, 300).is_err());
-    }
-
-    impl ArkExplorerBroker {
-        fn validate_range_for_test(first: i64, last: i64) -> Result<(), ()> {
-            if first < 0 || last < first {
-                return Err(());
-            }
-            let rows = (last - first + 1) as usize;
-            if rows == 0 || rows > MAX_ROWS {
-                return Err(());
-            }
-            Ok(())
+    fn inclusive_ranges_accept_exact_limit_and_large_offsets() {
+        for (first, last) in [(0, 0), (0, 255), (1, 256), (i64::MAX, i64::MAX), (i64::MAX - 255, i64::MAX)] {
+            assert!(validate_range(first, last).is_ok(), "{first}..={last}");
         }
     }
 
     #[test]
-    fn special_value_codes_match_ark_format_rs() {
-        // Verified against /workspace/ark/crates/ark/src/data_explorer/format.rs
-        assert_eq!(json!(0), json!(0)); // NULL
-        assert_eq!(1, 1); // NA
-        assert_eq!(2, 2); // NaN
-        assert_eq!(10, 10); // Inf
-        assert_eq!(11, 11); // -Inf
+    fn inclusive_ranges_reject_negative_inverted_and_oversized_windows() {
+        for (first, last) in [(-1, 0), (2, 1), (0, 256), (0, i64::MAX), (i64::MIN, i64::MAX)] {
+            assert!(validate_range(first, last).is_err(), "{first}..={last}");
+        }
+    }
+
+    #[test]
+    fn column_projection_rejects_empty_negative_and_oversized_requests() {
+        assert!(validate_columns(&[]).is_err());
+        assert!(validate_columns(&[-1]).is_err());
+        assert!(validate_columns(&[0, -1]).is_err());
+        assert!(validate_columns(&[0; MAX_COLUMNS + 1]).is_err());
+        assert!(validate_columns(&[0]).is_ok());
+        assert!(validate_columns(&(0..MAX_COLUMNS as i64).collect::<Vec<_>>()).is_ok());
+        assert!(validate_columns(&[i64::MAX]).is_ok());
     }
 }

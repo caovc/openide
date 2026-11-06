@@ -2,7 +2,7 @@
 
 ## 入口、协调人与通信状态源
 
-本环境 **OpenIDE大师** 为协调者。所有 agent 先读根 `AGENTS.md` 的 DS 节，再读本文与 `.agents/BOARD.md`。聊天用于通知；**唯一任务状态源**是协调 worktree `/workspace/openide/.agents/BOARD.md`。各 worktree 的 BOARD 副本可能过期，不能作为独立认领依据。
+原环境协调者为 **OpenIDE大师**；用户在云端要求按既有计划继续多 agent 开发，本会话由 **Cloud Codex** 接续协调。本文中的 OpenIDE大师指当前协调角色。所有 agent 先读根 `AGENTS.md` 的 DS 节，再读本文与 `.agents/BOARD.md`。聊天用于通知；**唯一任务状态源**是协调 worktree `/workspace/openide/.agents/BOARD.md`。各 worktree 的 BOARD 副本可能过期，不能作为独立认领依据。
 
 BOARD 状态只用 `pending` / `in_progress` / `done` / `blocked`。`pending` 无所有者；`in_progress` 必须填 owner、分支、路径范围；`done` 必须有结论和证据；`blocked` 必须写原因、需要谁做什么、已完成的可移交部分。没有验证不得写 done。
 
@@ -30,7 +30,6 @@ export CARGO_TARGET_DIR="$PWD/target"
 
 ## 路径所有权（初始规划）
 
-<<<<<<< Updated upstream
 | 单位             | 路径范围                                                                   | 约束                                                        |
 | ---------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------- |
 | 协调者           | `AGENTS.md`、`docs/ds/**`、canonical `.agents/BOARD.md`、`.gitignore`      | 规则与状态板单写者；其他 agent 提议修改，不直接抢写。       |
@@ -45,22 +44,6 @@ export CARGO_TARGET_DIR="$PWD/target"
 | U9               | DS data explorer / widgets                                                 | 先审 dbx 许可；SAS 扩展契约。                               |
 | U10              | Windows SAS                                                                | 后置。                                                      |
 | U11              | JVM 硬删除                                                                 | Later / 阶段 B。                                            |
-=======
-| 单位 | 路径范围 | 约束 |
-| --- | --- | --- |
-| 协调者 | `AGENTS.md`、`docs/ds/**`、canonical `.agents/BOARD.md`、`.gitignore` | 规则与状态板单写者；其他 agent 提议修改，不直接抢写。 |
-| U1 / OpenIDE大师 | `crates/ide-notebook/**`，包括新 `crates/ide-notebook/tests/**` | 仅 headless 启动接缝、会话 comm 分发和集成探针；UI 先不动。 |
-| U2 | notebook runtime 描述及必要 host/Tauri 接缝 | pending；与 U1 的 notebook 路径重叠，须交接/释放后再认领。 |
-| U3 | 环境发现与 notebook kernel 选择 | pending；具体目录先列明，再确认与 U2/UI 所有权无冲突。 |
-| U4 | `languages/r.toml`、`crates/ide-lsp/**` 及必要编辑器接线 | pending；`languages/r.toml` 属后续单位，U1 不修改。 |
-| U5 | DAP / stdin 管线 | pending；涉及 notebook 的修改须重新协调路径。 |
-| U6 | `src/features/ds-session/**` + 必要时 `crates/ide-notebook` 变量/plot 适配 | 共用 R/Python Session 变量/图表；与 U7 路径隔离。 |
-| U7 | `src/features/ds-console/**` | 独立 Console；不改 ide-notebook（U6 独占）。 |
-| U8 | 编辑器 Run actions + Console 会话路由 | 依赖 U7。 |
-| U9 | DS data explorer / widgets | 先审 dbx 许可；SAS 扩展契约。 |
-| U10 | Windows SAS | 后置。 |
-| U11 | JVM 硬删除 | Later / 阶段 B。 |
->>>>>>> Stashed changes
 
 该表是规划，不自动授予 pending 单位写权限。两个任务必须改同一文件时，先冻结相关修改、由协调者定接口与先后顺序，或拆成单一所有者，不能靠同时编辑后解冲突。
 

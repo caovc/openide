@@ -2,6 +2,10 @@
 
 本地 box 出口访问 ChatGPT/OpenAI API 被 Cloudflare 403，Codex CLI 不可用；用户改由**云端 Codex**继续开发。本仓已 push 到 `https://github.com/caovc/openide`。
 
+## 云端接续状态（2026-11-06）
+
+已读取既有计划并开始 U9.2a 基线修复与 canvas 核心并行开发。原交接中的 `.audit/u9-2-report.md` / `u9-2-verification.tsv` 实际已存在；其中 PASS 是历史结果。基线 `86113f6` 的 Rust/TS 源码含已提交冲突标记，当前环境没有原 Ark/R 安装，需区分编译/单测与真实 runtime 验证。新结果见 `docs/ds/evidence/u9-cloud/REPORT.md` 和 canonical BOARD。
+
 ## 产品目标（已定）
 
 - Fork 上游 `l0ng-ai/openidea` → 数据科学 IDE（DataSpell / RStudio / Positron 工作流对标）。
@@ -14,27 +18,17 @@
 
 ## 仓库与环境
 
-<<<<<<< Updated upstream
 | 项           | 值                                                                                                               |
 | ------------ | ---------------------------------------------------------------------------------------------------------------- |
 | origin       | https://github.com/caovc/openide                                                                                 |
 | upstream     | https://github.com/l0ng-ai/openidea（基线 commit `ba9ce1d8`）                                                    |
 | 本地曾用路径 | `/workspace/openide`；Ark `/workspace/ark` @ `670a4946`（tag 0.1.252）；R `R_HOME=/workspace/mamba/envs/r/lib/R` |
 | 工具链笔记   | `ENV.md`；优先 `source /workspace/tooling/env.sh`（若云端无此树，按 ENV 自备 Rust 1.96 + Ark 1.95）              |
-=======
-| 项 | 值 |
-| --- | --- |
-| origin | https://github.com/caovc/openide |
-| upstream | https://github.com/l0ng-ai/openidea（基线 commit `ba9ce1d8`） |
-| 本地曾用路径 | `/workspace/openide`；Ark `/workspace/ark` @ `670a4946`（tag 0.1.252）；R `R_HOME=/workspace/mamba/envs/r/lib/R` |
-| 工具链笔记 | `ENV.md`；优先 `source /workspace/tooling/env.sh`（若云端无此树，按 ENV 自备 Rust 1.96 + Ark 1.95） |
->>>>>>> Stashed changes
 
 **不要**默认 force-push；不要删用户未跟踪的研究仓。
 
 ## 单位进度（BOARD 为准）
 
-<<<<<<< Updated upstream
 | Unit                   | Status                                                 | 证据 / 说明                                                                                        |
 | ---------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
 | U1–U5                  | done                                                   | Ark ZMQ/LSP/DAP/stdin；`.audit/u1-*` … `u5-*`                                                      |
@@ -49,22 +43,6 @@
 | U10 SAS                | pending                                                |                                                                                                    |
 | U11 JVM 硬删           | pending                                                |                                                                                                    |
 | U12 包管理             | design only                                            | `.audit/u12-packages-design.md`；Python+R 差异都要；R 含包文档                                     |
-=======
-| Unit | Status | 证据 / 说明 |
-| --- | --- | --- |
-| U1–U5 | done | Ark ZMQ/LSP/DAP/stdin；`.audit/u1-*` … `u5-*` |
-| Java-A | done | 软藏；`.audit/java-soft-hide.md` |
-| U6 | done runtime | Variables/Plots；GUI 未验 |
-| U7 | done host | Console；GUI 未验 |
-| U8 | done unit/DOM | Editor Run；原生 GUI 未验 |
-| **U9.1** | done | `TableProvider` fixture + 148 测；`src/features/ds-data-explorer/**` |
-| **U9.2a** | **runtime smoke PASS**（待写正式 report / BOARD 更新） | `crates/ide-notebook/src/ark_explorer.rs` + `tests/ark_explorer.rs`；见下方 smoke |
-| U9 UI / dbx React 移植 | pending | 计划 `.audit/u9-dbx-port-plan.md`、文件图 `.audit/u9-dbx-file-map.md`；源码参考可另 clone t8y2/dbx |
-| U9.2b Python explorer | pending | 勿与 U9.2a 抢路径时并行写同一 broker |
-| U10 SAS | pending | |
-| U11 JVM 硬删 | pending | |
-| U12 包管理 | design only | `.audit/u12-packages-design.md`；Python+R 差异都要；R 含包文档 |
->>>>>>> Stashed changes
 
 ### U9.2a 已通过的 smoke（复跑）
 

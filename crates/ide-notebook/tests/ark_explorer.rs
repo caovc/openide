@@ -54,15 +54,8 @@ async fn ark_view_schema_page_and_restart_rejection() {
     let root = tempfile::tempdir().unwrap();
     let manager = KernelManager::new(root.path().join("kernels"), Arc::new(|_, _, _| {}));
     let notebook = root.path().join("explorer.ipynb");
-<<<<<<< Updated upstream
     let runtime =
         KernelRuntime::Ark { executable: ark.into(), r_home: std::env::var_os("R_HOME").expect("R_HOME").into() };
-=======
-    let runtime = KernelRuntime::Ark {
-        executable: ark.into(),
-        r_home: std::env::var_os("R_HOME").expect("R_HOME").into(),
-    };
->>>>>>> Stashed changes
 
     // Small data.frame: int/logical/string/double with NA/NaN/Inf and a duplicate name.
     execute(
@@ -90,13 +83,7 @@ names(df)[5] <- "s"
     println!("PASS discovered opaque key for df type={}", variable.type_name);
 
     let comms = manager.comms(&notebook).expect("comms");
-<<<<<<< Updated upstream
     let broker = ArkExplorerBroker::open(comms.clone(), &variable.key).await.expect("view opens positron.dataExplorer");
-=======
-    let broker = ArkExplorerBroker::open(comms.clone(), &variable.key)
-        .await
-        .expect("view opens positron.dataExplorer");
->>>>>>> Stashed changes
     println!(
         "PASS view opened explorer_comm={} title={:?} generation={}",
         broker.explorer_comm(),
@@ -112,27 +99,12 @@ names(df)[5] <- "s"
     let indices: Vec<i64> = (0..state.num_columns.min(6)).collect();
     let schema = broker.get_schema(&indices).await.expect("get_schema");
     assert_eq!(schema.columns.len(), indices.len());
-<<<<<<< Updated upstream
     let names: Vec<_> = schema.columns.iter().map(|c| c["column_name"].as_str().unwrap_or("")).collect();
-=======
-    let names: Vec<_> = schema
-        .columns
-        .iter()
-        .map(|c| c["column_name"].as_str().unwrap_or(""))
-        .collect();
->>>>>>> Stashed changes
     assert!(names.contains(&"i") && names.contains(&"l") && names.contains(&"d"), "{names:?}");
     assert_eq!(names.iter().filter(|n| **n == "s").count(), 2, "duplicate name by ordinal: {names:?}");
     println!("PASS get_schema names={names:?}");
 
-<<<<<<< Updated upstream
     let page = broker.get_data_values(&indices, 0, 2).await.expect("get_data_values inclusive 0..=2");
-=======
-    let page = broker
-        .get_data_values(&indices, 0, 2)
-        .await
-        .expect("get_data_values inclusive 0..=2");
->>>>>>> Stashed changes
     assert_eq!(page.columns.len(), indices.len());
     for col in &page.columns {
         assert_eq!(col.len(), 3, "inclusive three rows: {col:?}");
@@ -141,15 +113,7 @@ names(df)[5] <- "s"
     // Column i: 1, NA(code 1), 3
     let i_col = &page.columns[0];
     assert_eq!(cell_text(&i_col[0]).or_else(|| i_col[0].as_i64().map(|_| "")), cell_text(&i_col[0]));
-<<<<<<< Updated upstream
     assert!(cell_text(&i_col[0]) == Some("1") || i_col[0] == Value::String("1".into()), "int 1 got {:?}", i_col[0]);
-=======
-    assert!(
-        cell_text(&i_col[0]) == Some("1") || i_col[0] == Value::String("1".into()),
-        "int 1 got {:?}",
-        i_col[0]
-    );
->>>>>>> Stashed changes
     assert_eq!(cell_code(&i_col[1]), Some(1), "integer NA -> special code 1, got {:?}", i_col[1]);
     assert!(cell_text(&i_col[2]) == Some("3") || i_col[2] == Value::String("3".into()), "{:?}", i_col[2]);
 
@@ -198,14 +162,7 @@ names(df)[5] <- "s"
     manager.restart(&notebook).await.expect("restart");
     // Wait until a new generation is ready (variables empty or ready again).
     let _ = wait(&notebook, |s| s.generation != old_generation && s.ready).await;
-<<<<<<< Updated upstream
     assert!(broker.get_state().await.is_err(), "old broker must reject after restart/generation change");
-=======
-    assert!(
-        broker.get_state().await.is_err(),
-        "old broker must reject after restart/generation change"
-    );
->>>>>>> Stashed changes
     println!("PASS restart rejects stale broker generation={old_generation}");
     let _ = broker.close().await;
 }

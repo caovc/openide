@@ -2,7 +2,15 @@
 
 > 以下主体是首次搭建快照（Asia/Shanghai），部分限制已失效；当前状态见本节。**不要 push**。
 
-## 当前增量（2026-11-06，Asia/Shanghai）
+## 云端本会话快照（2026-11-06，Asia/Shanghai）
+
+- 当前 checkout：`/workspace/openide`，分支 `work`，基线 `86113f6`；origin 为 `caovc/openide`。
+- Node `v24.22.1`，pnpm `11.25.0`；Rust 使用 `source /workspace/tooling/env.sh`。
+- 旧快照中的 `/workspace/ark`、`/workspace/mamba/envs/r` 当前不存在。历史 Ark smoke PASS 不能算本环境复验；真实 runtime 验证待恢复依赖。
+- 本批次正在修复基线中已提交的 U9 Rust/TS 冲突，并开发独立 canvas 核心；结果见 `docs/ds/evidence/u9-cloud/REPORT.md`。
+- 以下为原环境历史记录，工具版本、路径与通过结果不代表当前云端状态。
+
+## 原环境增量（2026-11-06，Asia/Shanghai）
 
 - **U9.2a**：Ark `view`→`positron.dataExplorer` broker + ignored `ark_explorer` smoke 已通过；TS `ark.ts` 映射 U9.1 形状。Codex CLI 因 chatgpt.com HTTP 403 不可用，本地实现。
 
@@ -16,19 +24,11 @@
 
 ## 仓库
 
-<<<<<<< Updated upstream
 | 角色     | URL                                 | 说明                            |
 | -------- | ----------------------------------- | ------------------------------- |
 | origin   | https://github.com/caovc/openide    | 用户空仓目标远程（未 push）     |
 | upstream | https://github.com/l0ng-ai/openidea | 上游框架，工作树已对齐其 `main` |
 | 本地根   | `/workspace/openide/`               | 共享 box 固定路径               |
-=======
-| 角色 | URL | 说明 |
-|------|-----|------|
-| origin | https://github.com/caovc/openide | 用户空仓目标远程（未 push） |
-| upstream | https://github.com/l0ng-ai/openidea | 上游框架，工作树已对齐其 `main` |
-| 本地根 | `/workspace/openide/` | 共享 box 固定路径 |
->>>>>>> Stashed changes
 
 - 当前上游 commit：`ba9ce1d8` — `fix(workspace): unify nested project discovery and run ownership (#1716)`
 - 分支：`main`（跟踪内容来自 `upstream/main`；origin 尚无对应提交）
@@ -52,7 +52,6 @@
 
 ## 已装工具链版本（本机实测，2026-11-06）
 
-<<<<<<< Updated upstream
 | 工具   | 版本                      |
 | ------ | ------------------------- |
 | Node   | v24.22.1                  |
@@ -61,16 +60,6 @@
 | cargo  | 1.85.1                    |
 | OS     | Debian 13 (trixie) x86_64 |
 | Docker | 不可用 → 用本机进程       |
-=======
-| 工具 | 版本 |
-|------|------|
-| Node | v24.22.1 |
-| pnpm | 12.4.2 |
-| rustc | 1.85.1 |
-| cargo | 1.85.1 |
-| OS | Debian 13 (trixie) x86_64 |
-| Docker | 不可用 → 用本机进程 |
->>>>>>> Stashed changes
 
 ### Tauri Linux 系统依赖
 
@@ -87,21 +76,12 @@ sudo apt-get install -y pkg-config libwebkit2gtk-4.1-dev libgtk-3-dev \
 
 ## 依赖与验证
 
-<<<<<<< Updated upstream
 | 步骤                              | 结果                                                              |
 | --------------------------------- | ----------------------------------------------------------------- |
 | `pnpm install`                    | **成功**（~2.3s，lockfile 供应链策略通过）                        |
 | `pnpm typecheck`                  | **成功**（tsrs 全配置无报错）                                     |
 | `pnpm exec vite build`            | **成功**（~7.6s；有 chunk 体积 / 无效动态 import 警告，上游既有） |
 | `pnpm tauri dev` / `pnpm dev:app` | **未跑**：缺 webkit2gtk/pkg-config；冷编译耗时长且产物大          |
-=======
-| 步骤 | 结果 |
-|------|------|
-| `pnpm install` | **成功**（~2.3s，lockfile 供应链策略通过） |
-| `pnpm typecheck` | **成功**（tsrs 全配置无报错） |
-| `pnpm exec vite build` | **成功**（~7.6s；有 chunk 体积 / 无效动态 import 警告，上游既有） |
-| `pnpm tauri dev` / `pnpm dev:app` | **未跑**：缺 webkit2gtk/pkg-config；冷编译耗时长且产物大 |
->>>>>>> Stashed changes
 
 ## 启动命令（下次）
 
