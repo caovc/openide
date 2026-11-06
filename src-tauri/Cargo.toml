@@ -1,9 +1,14 @@
 [package]
 name = "openidea"
-description = "OpenIDEA desktop shell: an open-source IDE inspired by IntelliJ IDEA"
+description = "OpenIDE desktop shell: a data-science-oriented IDE"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+autobins = false
+
+[[bin]]
+name = "openide"
+path = "src/main.rs"
 
 [lib]
 name = "openidea_lib"

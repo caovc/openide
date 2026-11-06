@@ -1,7 +1,7 @@
 {
-  "name": "openidea",
+  "name": "openide",
   "private": true,
-  "description": "An open-source IDE inspired by IntelliJ IDEA",
+  "description": "OpenIDE: a data-science-oriented desktop IDE",
   "version": "0.1.0",
   "license": "Apache-2.0",
   "type": "module",

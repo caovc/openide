@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "OpenIDE",
   "version": "0.1.0",
-  "identifier": "ai.l0ng.openidea",
+  "identifier": "com.caovc.openide",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -37,18 +37,18 @@
     "category": "DeveloperTool",
     "copyright": "Copyright © 2026 OpenIDE contributors",
     "license": "Apache-2.0",
-    "shortDescription": "A data-science-oriented IDE fork based on OpenIDEA",
-    "longDescription": "OpenIDE is a data-science-oriented IDE fork based on OpenIDEA. Not affiliated with JetBrains.",
+    "shortDescription": "A data-science-oriented IDE",
+    "longDescription": "OpenIDE is a data-science-oriented IDE (fork lineage from OpenIDEA). Not affiliated with JetBrains.",
     "macOS": {
       "entitlements": "./Entitlements.plist",
       "minimumSystemVersion": "11.0"
     }
   },
-  "mainBinaryName": "openidea",
+  "mainBinaryName": "openide",
   "plugins": {
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDFCOUU0MUFFOUY4NzZCNkQKUldSdGE0ZWZya0dlRzNnRFJUR2loUVdNZ1BmamxkNzFoaWNPUTBsRmI0cjhxZFRqQURybkMwakEK",
-      "endpoints": ["https://github.com/l0ng-ai/openidea/releases/latest/download/latest.json"]
+      "endpoints": ["https://github.com/caovc/openide/releases/latest/download/latest.json"]
     }
   }
 }

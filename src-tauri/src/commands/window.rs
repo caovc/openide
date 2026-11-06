@@ -323,11 +323,14 @@ pub struct UpdateCheck {
 }
 
 fn update_endpoint_env() -> Option<String> {
-    std::env::var("OPENIDEA_UPDATE_ENDPOINT").ok().filter(|s| !s.trim().is_empty())
+    std::env::var("OPENIDE_UPDATE_ENDPOINT")
+        .or_else(|_| std::env::var("OPENIDEA_UPDATE_ENDPOINT"))
+        .ok()
+        .filter(|s| !s.trim().is_empty())
 }
 
 /// Whether an update endpoint is configured: `plugins.updater.endpoints` in
-/// tauri.conf.json, or the `OPENIDEA_UPDATE_ENDPOINT` environment variable. Empty by
+/// tauri.conf.json, or `OPENIDE_UPDATE_ENDPOINT` / legacy `OPENIDEA_UPDATE_ENDPOINT`. Empty by
 /// default, and "Check for Updates…" is hidden then.
 pub fn updates_configured<R: tauri::Runtime>(app: &AppHandle<R>) -> bool {
     !config_endpoints(app).is_empty() || update_endpoint_env().is_some()
@@ -344,7 +347,8 @@ pub enum UpdateSource {
     Cnb,
 }
 
-const CNB_ENDPOINT: &str = "https://cnb.cool/l0ng-ai/openidea/-/releases/latest/download/latest.json";
+/// Optional CNB (or other) mirror. Fork has none yet — do not fall back to upstream OpenIDEA.
+const CNB_ENDPOINT: Option<&str> = None;
 
 fn config_endpoints<R: tauri::Runtime>(app: &AppHandle<R>) -> Vec<String> {
     app.config()
@@ -364,7 +368,10 @@ fn source_endpoints(official: Vec<String>, source: UpdateSource) -> Vec<String> 
     if official.is_empty() {
         return official;
     }
-    let mirror = vec![CNB_ENDPOINT.to_string()];
+    let Some(mirror_url) = CNB_ENDPOINT else {
+        return official;
+    };
+    let mirror = vec![mirror_url.to_string()];
     match source {
         UpdateSource::Github => [official, mirror].concat(),
         UpdateSource::Cnb => [mirror, official].concat(),
@@ -563,9 +570,10 @@ mod tests {
 
     #[test]
     fn chosen_source_is_tried_first_and_the_other_after_it() {
-        let github = "https://github.com/l0ng-ai/openidea/releases/latest/download/latest.json".to_string();
-        assert_eq!(source_endpoints(vec![github.clone()], UpdateSource::Github), [github.clone(), CNB_ENDPOINT.into()]);
-        assert_eq!(source_endpoints(vec![github.clone()], UpdateSource::Cnb), [CNB_ENDPOINT.into(), github]);
+        let github = "https://github.com/caovc/openide/releases/latest/download/latest.json".to_string();
+        // No CNB mirror configured for this fork: both sources use the official endpoint only.
+        assert_eq!(source_endpoints(vec![github.clone()], UpdateSource::Github), [github.clone()]);
+        assert_eq!(source_endpoints(vec![github.clone()], UpdateSource::Cnb), [github]);
         // A build without an update endpoint stays without one.
         assert!(source_endpoints(Vec::new(), UpdateSource::Cnb).is_empty());
     }
