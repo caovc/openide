@@ -99,3 +99,7 @@ cargo test -p ide-notebook --test ark_explorer -- --ignored --nocapture --test-t
 - 本地 Codex ChatGPT 登录/API 曾整站 403（与额度无关）。
 - `.audit/` 原在 `.gitignore`；本交接 commit 会强制纳入**文档/报告**，排除 venv 与超大 log。
 - plugin `*.wasm` 构建产物曾被删出工作树——云端需按上游方式重建 wasm，勿当业务删除。
+
+## History note (2026-11-06)
+
+Remote `main` was force-replaced with a **single root commit** (`3b937b1e`); upstream OpenIDEA git history was removed. Clone fresh or `git fetch && git reset --hard origin/main`.
