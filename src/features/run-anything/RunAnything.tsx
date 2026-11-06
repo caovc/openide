@@ -1,6 +1,6 @@
 /**
  * The Run Anything popup: a command line with the recent commands and the
- * providers' entries (run configurations, `mvn` / `gradle` goals…). Enter runs
+ * providers' entries (run configurations, package scripts…). Enter runs
  * the selected entry, or the line itself: a provider that claims it, else the
  * shell in the project directory, its output in the Run tool window.
  */

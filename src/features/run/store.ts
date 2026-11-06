@@ -1,3 +1,4 @@
+import { runConfigIssue, showRunConfig } from "@/platform/productProfile";
 /**
  * Run state: configurations, the selected configuration and run sessions
  * (one Run tool window tab each). Output streams through a Channel into a
@@ -9,40 +10,20 @@ import {
   call,
   commands,
   isTauri,
-  isCancelled,
-  nextRequestId,
   type RequestId,
   type OutputChunk,
   type RunConfig,
   type RunId,
   type RunImportSource,
-  type TestCaseReport,
 } from "@/platform/ipc";
-import {
-  consoleVmArgs,
-  findJavaModule,
-  isJvmApplication,
-  parseJavaArgs,
-  prepareJavaLaunch,
-} from "@/platform/javaLaunch";
-import { downloadJdkActions } from "@/platform/jdk";
 import { useProject } from "@/platform/project";
 import { executeAction } from "@/platform/actions";
 import { workflowSettings } from "@/platform/workflowSettings";
 import { maybeEditorService, notifications, toolWindowService, useDebugRunSessions } from "@/workbench/contributions";
 import { ConsoleModel } from "./console";
-import { jvmFrameTarget } from "./links";
 import { confirmRerun, confirmTerminate } from "./dialogs";
-import {
-  createTestParser,
-  frameworkFor,
-  TestResults,
-  withTestReporting,
-  type TestEvent,
-  type TestOutputParser,
-} from "./testing";
+import { createTestParser, frameworkFor, TestResults, withTestReporting, type TestOutputParser } from "./testing";
 import { GoTestOutput } from "./testing/go";
-import { moveToReportedClasses } from "./testing/jvm";
 import { RubyTestOutput } from "./testing/ruby";
 import { TeamcityOutput } from "./testing/teamcity";
 import type { TestStdout } from "./testing/types";
@@ -54,9 +35,6 @@ import { TerminalOutput } from "./terminalOutput";
 import { typeFor } from "./types";
 import { recordRun } from "./services";
 import { startedPort } from "./serverPort";
-import { tomcatBrowserUrl } from "./tomcat";
-import { gradleDelegation, gradleTestLaunch } from "./gradleRun";
-import { openUrl } from "./navigate";
 import { tx } from "@/platform/i18n";
 
 /** The permanent "Current File" pseudo-configuration of the chooser (runs the active file's context). */
@@ -207,7 +185,7 @@ export async function loadConfigs(): Promise<void> {
     const configs = [...saved, ...temps];
     const stored = useRun.getState().selectedId ?? readSelected(root);
     const selectedId =
-      stored === CURRENT_FILE || configs.some((c) => c.id === stored)
+      stored === CURRENT_FILE || configs.some((c) => c.id === stored && showRunConfig(c))
         ? stored
         : (defaultSelection(saved)?.id ?? CURRENT_FILE);
     useRun.setState({
@@ -234,7 +212,7 @@ export function defaultSelection(configs: readonly RunConfig[]): RunConfig | und
     if (/build|package|lint|check|format|clean/.test(s)) return 0;
     return 2;
   };
-  return [...configs].sort((a, b) => score(b) - score(a))[0];
+  return configs.filter(showRunConfig).sort((a, b) => score(b) - score(a))[0];
 }
 
 export function selectConfig(id: string | null) {
@@ -311,7 +289,7 @@ export function currentFileSelected(): boolean {
 
 export function selectedConfig(): RunConfig | undefined {
   const { configs, selectedId } = useRun.getState();
-  return configs.find((c) => c.id === selectedId);
+  return configs.find((c) => c.id === selectedId && showRunConfig(c));
 }
 
 // ---------------------------------------------------------------------------
@@ -361,13 +339,6 @@ export function persistTemporary() {
     .catch(() => {});
 }
 
-/** IDEA's `isConfigurationFromContext` for an Application: the same main class of the same module. */
-function sameApplication(a: RunConfig, b: RunConfig): boolean {
-  if (!isJvmApplication(a) || !isJvmApplication(b)) return false;
-  const main = parseJavaArgs(a.args).mainClass;
-  return main !== null && main === parseJavaArgs(b.args).mainClass && (a.module ?? a.cwd) === (b.module ?? b.cwd);
-}
-
 /**
  * Selects the configuration for a gutter / context run: a saved or detected
  * configuration with the same id is reused, otherwise `config` becomes a
@@ -375,10 +346,8 @@ function sameApplication(a: RunConfig, b: RunConfig): boolean {
  */
 export function adoptTemporary(config: RunConfig): RunConfig {
   const state = useRun.getState();
-  // IDEA's `findExistingConfiguration`: a configuration the user keeps for this context wins.
-  const existing =
-    state.configs.find((c) => c.id === config.id) ??
-    state.configs.find((c) => !state.temporary.includes(c.id) && sameApplication(c, config));
+  // Reuse the saved configuration for the same context.: a configuration the user keeps for this context wins.
+  const existing = state.configs.find((c) => c.id === config.id);
   if (existing && !state.temporary.includes(config.id)) {
     selectConfig(existing.id);
     return existing;
@@ -445,7 +414,9 @@ export async function saveEditedConfigs(draft: readonly RunConfig[], removedDete
     const before = configs.find((o) => o.id === c.id);
     return !!before && JSON.stringify(before) === JSON.stringify(c);
   };
-  const kept = temporary.filter((id) => draft.some((c) => c.id === id && unchanged(c)));
+  const kept = temporary.filter(
+    (id) => configs.some((c) => c.id === id && !showRunConfig(c)) || draft.some((c) => c.id === id && unchanged(c)),
+  );
   if (kept.length !== temporary.length) {
     useRun.setState({
       configs: configs.filter((c) => !temporary.includes(c.id) || kept.includes(c.id)),
@@ -461,11 +432,14 @@ export async function saveEditedConfigs(draft: readonly RunConfig[], removedDete
 
 /** Persists user configurations and reloads the merged list. */
 export async function saveUserConfigs(user: RunConfig[], removedDetectedIds: string[] = []): Promise<void> {
-  user = await Promise.all(
-    user.map(async (config) =>
-      isJvmApplication(config) && config.module == null ? { ...config, module: await findJavaModule(config) } : config,
+  const { configs, temporary } = useRun.getState();
+  const ids = new Set(user.map((config) => config.id));
+  user = [
+    ...user,
+    ...configs.filter(
+      (config) => !showRunConfig(config) && !config.detected && !temporary.includes(config.id) && !ids.has(config.id),
     ),
-  );
+  ];
   await call(
     commands.runSaveConfigs(
       user.map((c) => ({ ...c, detected: false })),
@@ -573,7 +547,7 @@ function newRuntime(config: RunConfig): SessionRuntime {
   const stdout =
     framework === "go"
       ? new GoTestOutput(feed)
-      : framework === "phpunit" || framework === "jvm"
+      : framework === "phpunit"
         ? new TeamcityOutput(feed)
         : framework === "ruby" && config.kind !== "rspec"
           ? new RubyTestOutput(feed)
@@ -608,8 +582,16 @@ export function setBeforeLaunchRunner(runner: BeforeLaunchRunner | null) {
   beforeLaunch = runner;
 }
 
+export function canLaunch(config: RunConfig, chain: readonly string[] = []): boolean {
+  const issue = runConfigIssue(config, useRun.getState().configs, chain);
+  if (!issue) return true;
+  notifications().notify({ group: "run", level: "warning", title: "Cannot run configuration", body: tx(issue) });
+  return false;
+}
+
 /** Runs `config`'s before launch tasks (none: true). `chain` holds the configurations already launching. */
 export async function prepareLaunch(config: RunConfig, chain: readonly string[] = []): Promise<boolean> {
+  if (!canLaunch(config, chain)) return false;
   if (!config.beforeLaunch?.length || !beforeLaunch) return true;
   return beforeLaunch(config, [...chain, config.id]);
 }
@@ -650,6 +632,7 @@ export async function startRun(
     chain?: readonly string[];
   } = {},
 ): Promise<RunSession | null> {
+  if (!canLaunch(config, options.chain) || (options.launch && !canLaunch(options.launch, options.chain))) return null;
   if (config.kind === "compound") {
     await startCompound(config, options.chain);
     return null;
@@ -747,15 +730,7 @@ export async function startRun(
   const rt = runtimes.get(sessionId)!;
   const generation = rt.generation;
   if (options.onLine) rt.lineListeners.push(options.onLine);
-  let browserOpened = false;
   rt.lineListeners.push((line) => {
-    if (config.kind === "tomcat" && /Server startup in/.test(line)) {
-      patchSession(sessionId, { httpPort: Number(config.params?.httpPort || "8080") });
-      if (!browserOpened && config.params?.openBrowser === "true") {
-        browserOpened = true;
-        void openUrl(tomcatBrowserUrl(config));
-      }
-    }
     const port = startedPort(line);
     if (port !== null && runtimes.get(sessionId)?.generation === generation && getSession(sessionId)?.httpPort !== port)
       patchSession(sessionId, { httpPort: port });
@@ -785,33 +760,16 @@ export async function startRun(
   };
   try {
     let launch = options.launch ?? config;
-    // "Build and run using: Gradle": the module's Gradle build compiles and launches it.
-    const delegated = isJvmApplication(launch) ? await gradleDelegation(launch) : null;
-    if (runtimes.get(sessionId)?.generation !== generation) return getSession(sessionId) ?? null;
-    if (delegated) launch = delegated;
-    else if (isJvmApplication(launch)) {
-      const resolved = await resolveJvmApplication(sessionId, launch);
-      if (runtimes.get(sessionId)?.generation !== generation) return getSession(sessionId) ?? null;
-      if (!resolved) {
-        patchSession(sessionId, {
-          status: getSession(sessionId)?.stopped ? "finished" : "failed",
-          endedAt: Date.now(),
-        });
-        return getSession(sessionId) ?? null;
-      }
-      launch = resolved;
-    }
     const prepare = typeFor(launch.kind)?.prepareLaunch;
     if (prepare) {
       launch = await prepare(launch);
-      if (launch.kind === "tomcat") useRun.setState({ activeSession: sessionId });
       if (runtimes.get(sessionId)?.generation !== generation) return getSession(sessionId) ?? null;
     }
     // Debug launches read the agent's output lines: never through a terminal.
     if ((options.launch || launch.isTest) && launch.emulateTerminal) launch = { ...launch, emulateTerminal: false };
     if (launch.emulateTerminal) rt.terminal = new TerminalOutput();
     patchSession(sessionId, { terminal: !!launch.emulateTerminal });
-    const started = launch.isTest ? await gradleTestLaunch(withTestReporting(launch)) : launch;
+    const started = launch.isTest ? withTestReporting(launch) : launch;
     if (runtimes.get(sessionId)?.generation !== generation) return getSession(sessionId) ?? null;
     const processStarted = performance.now();
     const info = await startWithRemedies(started, () => call(commands.runStart(started, channel)));
@@ -851,64 +809,6 @@ function revealSession(sessionId: string) {
   }
 }
 
-/**
- * Builds the module (jdtls workspace build) and resolves `${classpath}` and the
- * project JDK of a Java application configuration. Null (and a console message) on failure.
- */
-async function resolveJvmApplication(sessionId: string, config: RunConfig): Promise<RunConfig | null> {
-  const say = (text: string, kind: OutputChunk["kind"] = "system") => {
-    enqueue(sessionId, { kind, text } as OutputChunk);
-    flush(sessionId);
-  };
-  const parsed = parseJavaArgs(config.args);
-  if (!parsed.mainClass) {
-    say(`No main class in '${config.name}': expected java [options] -cp \${classpath} <main class> [args]\n`, "stderr");
-    return null;
-  }
-  if (!parsed.classpath) return { ...config, args: [...consoleVmArgs(config), ...config.args] };
-  const rt = runtime(sessionId)!;
-  const request = { id: nextRequestId(), controller: new AbortController() };
-  rt.resolveRequest = request;
-  try {
-    const { info, resolved } = await prepareJavaLaunch(config, {
-      request: request.id,
-      signal: request.controller.signal,
-      report: say,
-    });
-    // No installed JDK is new enough for the module: offer to download one.
-    const jdkHint = info.hints.find((h) => downloadJdkActions(h).length);
-    if (jdkHint)
-      notifications().notify({
-        group: "run",
-        level: "warning",
-        key: "run.jdk-missing",
-        title: `No JDK can run '${config.name}'`,
-        body: jdkHint,
-        actions: downloadJdkActions(jdkHint),
-      });
-    return resolved;
-  } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
-    if (request.controller.signal.aborted || isCancelled(e)) {
-      if (runtimes.get(sessionId) === rt && rt.resolveRequest === request) patchSession(sessionId, { stopped: true });
-      return null;
-    }
-    say(`Cannot resolve the classpath: ${message}\n`, "stderr");
-    // jdtls can't start without a newer JDK: "Download JDK 25".
-    const actions = downloadJdkActions(message);
-    notifications().notify({
-      group: "run",
-      level: "error",
-      title: `Cannot run '${config.name}'`,
-      body: message,
-      actions,
-    });
-    return null;
-  } finally {
-    if (rt.resolveRequest === request) delete rt.resolveRequest;
-  }
-}
-
 /** Exit codes that arrived before `runStart` resolved (keyed by run id). */
 const pendingExits = new Map<RunId, number | null>();
 
@@ -928,17 +828,6 @@ function finishSession(sessionId: string, code: number | null) {
       rt.console.flush();
       if (rt.tests && rt.parser) {
         rt.tests.apply(rt.parser.end?.() ?? []);
-        // Surefire / Gradle print only failures and class totals: per-test results come from the XML reports.
-        if (frameworkFor(session.config) === "jvm") {
-          const reports = await jvmReports(session);
-          const tests = rt.tests;
-          // Tests the run reported already (Gradle's init script, Surefire failures) keep their output.
-          tests.apply(testReportEvents(reports).filter((e) => !("path" in e) || !tests.hasResult(e.path)));
-          moveToReportedClasses(
-            rt.tests,
-            reports.map((r) => r.className),
-          );
-        }
         if (runtimes.get(sessionId) !== rt) return;
         rt.tests.finish(code);
         recordTestStates(rt.tests);
@@ -953,35 +842,6 @@ function finishSession(sessionId: string, code: number | null) {
       }
     })();
   }, 30);
-}
-
-async function jvmReports(session: RunSession): Promise<TestCaseReport[]> {
-  if (!isTauri()) return [];
-  try {
-    // Report files are written during the run; allow for coarse file-system timestamps.
-    return await call(commands.runTestReports(session.config.cwd ?? null, session.startedAt - 2000));
-  } catch {
-    return [];
-  }
-}
-
-/** JUnit XML report cases → test tree events (`[class, method]`, failure output and source line). */
-export function testReportEvents(reports: readonly TestCaseReport[]): TestEvent[] {
-  const events: TestEvent[] = [];
-  for (const r of reports) {
-    if (!r.className || !r.name) continue;
-    const path = [r.className, r.name];
-    events.push({ type: "result", path, status: r.status, durationMs: r.durationMs ?? undefined });
-    if (r.status !== "failed") continue;
-    const text = [r.message, r.output].filter(Boolean).join("\n");
-    for (const line of text.split("\n").slice(0, 200)) events.push({ type: "output", path, line });
-    const outer = r.className.split("$")[0]!;
-    const frame = new RegExp(
-      `at (?:\\S*/)?(${outer.replace(/[.$]/g, "\\$&")}(?:\\$[\\w$]+)?)\\.[^()\\n]+\\(([\\w$-]+\\.(?:java|kt|groovy|scala)):(\\d+)\\)`,
-    ).exec(r.output ?? "");
-    if (frame) events.push({ type: "location", path, location: jvmFrameTarget(frame[1], frame[2]!, Number(frame[3])) });
-  }
-  return events;
 }
 
 function notifyExit(sessionId: string, code: number | null) {

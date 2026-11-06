@@ -518,7 +518,6 @@ export const moveStatementDown = moveStatement(false);
 // --- complete statement -------------------------------------------------------
 
 export const SEMICOLON_LANGS = new Set([
-  "java",
   "c",
   "cpp",
   "csharp",
@@ -531,7 +530,6 @@ export const SEMICOLON_LANGS = new Set([
   "dart",
   "objective-c",
   "objective-cpp",
-  "groovy",
   "zig",
 ]);
 /** Blocks close with a keyword (`end`) or by indentation: never complete them with braces. */

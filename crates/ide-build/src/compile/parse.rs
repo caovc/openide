@@ -1,5 +1,5 @@
 //! Compiler output → messages. One [`OutputParser`] per build step consumes the
-//! output line by line; multi-line messages (javac's source / caret lines,
+//! output line by line; multi-line messages (TypeScript details,
 //! `symbol:` / `location:` details, tsc message chains) are completed by the
 //! following lines, so callers must call [`OutputParser::finish`] at the end.
 //!
@@ -12,10 +12,6 @@ use serde_json::Value;
 /// Output dialect of a build step.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Format {
-    /// Maven: `[ERROR] /p/A.java:[12,5] msg`, plus Kotlin and javac forms.
-    Maven,
-    /// Gradle: javac's `A.java:12: error: msg` and Kotlin's `e: file:///p/A.kt:12:5 msg`.
-    Gradle,
     /// `cargo --message-format=json`.
     Cargo,
     /// `tsc`: `a.ts(12,5): error TS2322: msg` or the pretty `a.ts:12:5 - error TS2322: msg`.
@@ -29,7 +25,7 @@ pub(crate) enum Format {
 /// What a printed column counts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ColUnit {
-    /// Unicode scalar values (javac, kotlinc, rustc).
+    /// Unicode scalar values (rustc).
     Char,
     /// UTF-16 code units (tsc).
     Utf16,
@@ -89,8 +85,6 @@ pub(crate) struct Parsed {
 /// A message waiting for its detail lines.
 struct Pending {
     msg: RawMessage,
-    /// javac (Gradle) prints the source line and a caret line after the header: lines still expected.
-    source_lines: u8,
 }
 
 pub(crate) struct OutputParser {
@@ -156,106 +150,6 @@ fn path_line_col(s: &str) -> Option<(&str, u32, Option<u32>, &str)> {
 
 fn looks_like_source_path(p: &str) -> bool {
     !p.is_empty() && !p.contains(' ') && p.rsplit(['/', '\\']).next().is_some_and(|name| name.contains('.'))
-}
-
-/// `[12,5] msg` (Maven) → (12, 5, msg).
-fn bracket_pos(s: &str) -> Option<(u32, Option<u32>, &str)> {
-    let inner = s.strip_prefix('[')?;
-    let (pos, rest) = inner.split_once(']')?;
-    let (line, col) = match pos.split_once(',') {
-        Some((l, c)) => (num(l)?, num(c)),
-        None => (num(pos)?, None),
-    };
-    Some((line, col, rest.trim_start()))
-}
-
-/// `file:///p/A.kt` → `/p/A.kt` (percent-decoded).
-fn from_file_uri(s: &str) -> String {
-    let Some(rest) = s.strip_prefix("file://") else { return s.to_owned() };
-    let hex = |b: u8| (b as char).to_digit(16).and_then(|d| u8::try_from(d).ok());
-    let bytes = rest.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'%'
-            && let (Some(h), Some(l)) = (bytes.get(i + 1).and_then(|b| hex(*b)), bytes.get(i + 2).and_then(|b| hex(*b)))
-        {
-            out.push(h * 16 + l);
-            i += 3;
-            continue;
-        }
-        out.push(bytes[i]);
-        i += 1;
-    }
-    let path = String::from_utf8_lossy(&out).into_owned();
-    // `file:///C:/x` on Windows.
-    if path.len() > 2 && path.as_bytes()[0] == b'/' && path.as_bytes()[2] == b':' { path[1..].to_owned() } else { path }
-}
-
-/// Kotlin: `file:///p/A.kt:12:5 msg` or `/p/A.kt: (12, 5): msg`, after the `e: ` / `w: ` prefix.
-fn kotlin_location(s: &str, severity: Severity) -> Option<RawMessage> {
-    if let Some((path, rest)) = s.split_once(": (") {
-        let (pos, msg) = rest.split_once(')')?;
-        let (l, c) = pos.split_once(',')?;
-        let msg = msg.trim_start_matches(':').trim();
-        return Some(RawMessage::new(severity, msg, ColUnit::Char).at(&from_file_uri(path), num(l)?, num(c)));
-    }
-    let (path, line, col, rest) = path_line_col(s)?;
-    let msg = rest.trim_start_matches(':').trim();
-    if !looks_like_source_path(path) || msg.is_empty() {
-        return None;
-    }
-    Some(RawMessage::new(severity, msg, ColUnit::Char).at(&from_file_uri(path), line, col))
-}
-
-fn kotlin_line(line: &str) -> Option<RawMessage> {
-    let (severity, rest) = if let Some(r) = line.strip_prefix("e: ") {
-        (Severity::Error, r)
-    } else {
-        let r = line.strip_prefix("w: ")?;
-        (Severity::Warning, r)
-    };
-    kotlin_location(rest, severity)
-}
-
-/// javac: `A.java:12: error: msg` / `A.java:12: warning: [deprecation] msg`.
-fn javac_header(line: &str) -> Option<RawMessage> {
-    let (path, ln, col, rest) = path_line_col(line)?;
-    if !looks_like_source_path(path) {
-        return None;
-    }
-    let rest = rest.trim_start_matches(':').trim_start();
-    let (severity, msg) = if let Some(m) = rest.strip_prefix("error:") {
-        (Severity::Error, m)
-    } else {
-        let m = rest.strip_prefix("warning:")?;
-        (Severity::Warning, m)
-    };
-    Some(RawMessage::new(severity, msg.trim(), ColUnit::Char).at(path, ln, col))
-}
-
-/// Maven: `[ERROR] /p/A.java:[12,5] msg`, `[WARNING] …`, and Kotlin / javac forms after the level.
-fn maven_line(line: &str) -> Option<RawMessage> {
-    let (severity, rest) = if let Some(r) = line.strip_prefix("[ERROR] ") {
-        (Severity::Error, r)
-    } else {
-        let r = line.strip_prefix("[WARNING] ")?;
-        (Severity::Warning, r)
-    };
-    let rest = rest.trim_start();
-    if let Some((path, pos)) = rest.split_once(":[")
-        && looks_like_source_path(path)
-        && let Some((ln, col, msg)) = bracket_pos(&format!("[{pos}"))
-    {
-        return Some(RawMessage::new(severity, msg, ColUnit::Char).at(path, ln, col));
-    }
-    if let Some(m) = kotlin_line(rest) {
-        return Some(m);
-    }
-    if rest.starts_with("file://") || rest.contains(": (") {
-        return kotlin_location(rest, severity);
-    }
-    None
 }
 
 /// tsc: `a.ts(12,5): error TS2322: msg` or `a.ts:12:5 - error TS2322: msg`.
@@ -367,35 +261,9 @@ impl OutputParser {
     fn continue_pending(&mut self, line: &str) -> bool {
         let format = self.format;
         let Some(p) = &mut self.pending else { return false };
-        if p.source_lines > 0 {
-            let t = line.trim_end();
-            if t.trim_start() == "^" {
-                if p.msg.col.is_none() {
-                    p.msg.col = u32::try_from(t.chars().count()).ok();
-                }
-                p.source_lines = 0;
-                return true;
-            }
-            if p.source_lines == 2 {
-                p.source_lines = 1;
-                return true;
-            }
-            p.source_lines = 0;
-        }
-        // Maven repeats compiler messages in its failure summary with every line prefixed.
-        let body = match format {
-            Format::Maven => line
-                .strip_prefix("[ERROR]")
-                .or_else(|| line.strip_prefix("[WARNING]"))
-                .map_or(line, |r| r.strip_prefix(' ').unwrap_or(r)),
-            _ => line,
-        };
-        if matches!(format, Format::Maven | Format::Gradle | Format::Tsc)
-            && body.starts_with("  ")
-            && !body.trim().is_empty()
-        {
+        if format == Format::Tsc && line.starts_with("  ") && !line.trim().is_empty() {
             p.msg.text.push('\n');
-            p.msg.text.push_str(body.trim());
+            p.msg.text.push_str(line.trim());
             return true;
         }
         false
@@ -419,19 +287,13 @@ impl OutputParser {
         }
         self.flush(&mut out.messages);
         let parsed = match self.format {
-            Format::Maven => maven_line(&line),
-            Format::Gradle => javac_header(&line).or_else(|| kotlin_line(&line)),
             Format::Tsc => tsc_line(&line),
             Format::Go => go_line(&line),
             Format::Gcc => gcc_line(&line),
             Format::Cargo => None,
         };
         if let Some(msg) = parsed {
-            let javac = self.format == Format::Gradle
-                && msg.unit == ColUnit::Char
-                && !line.starts_with("e: ")
-                && !line.starts_with("w: ");
-            self.pending = Some(Pending { msg, source_lines: if javac { 2 } else { 0 } });
+            self.pending = Some(Pending { msg });
         }
         out
     }
@@ -459,81 +321,6 @@ mod tests {
 
     fn pos(m: &RawMessage) -> (Severity, &str, u32, Option<u32>) {
         (m.severity, m.path.as_deref().unwrap(), m.line.unwrap(), m.col)
-    }
-
-    #[test]
-    fn maven_javac() {
-        let out = parse(
-            Format::Maven,
-            "[INFO] --- compiler:3.13.0:compile (default-compile) @ demo ---\n\
-             [ERROR] COMPILATION ERROR : \n\
-             [ERROR] /p/src/main/java/a/A.java:[12,5] cannot find symbol\n\
-             \x20 symbol:   class Foo\n\
-             \x20 location: class a.A\n\
-             [WARNING] /p/src/main/java/a/B.java:[3,8] [deprecation] old() in a.C has been deprecated\n\
-             [INFO] 1 error\n\
-             [ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.13.0:compile\n",
-        );
-        assert_eq!(out.len(), 2, "{out:?}");
-        assert_eq!(pos(&out[0]), (Severity::Error, "/p/src/main/java/a/A.java", 12, Some(5)));
-        assert_eq!(out[0].text, "cannot find symbol\nsymbol:   class Foo\nlocation: class a.A");
-        assert_eq!(pos(&out[1]), (Severity::Warning, "/p/src/main/java/a/B.java", 3, Some(8)));
-        assert_eq!(out[1].unit, ColUnit::Char);
-    }
-
-    #[test]
-    fn maven_detail_lines_with_level_prefix_and_kotlin() {
-        let out = parse(
-            Format::Maven,
-            "[ERROR] /p/A.java:[7,20] incompatible types: String cannot be converted to int\n\
-             [ERROR] -> [Help 1]\n\
-             [ERROR] file:///p/src/K%20t.kt:4:9 Unresolved reference 'x'.\n\
-             [WARNING] /p/src/K.kt: (2, 3): Variable 'y' is never used\n",
-        );
-        assert_eq!(out.len(), 3, "{out:?}");
-        assert_eq!(out[0].text, "incompatible types: String cannot be converted to int");
-        assert_eq!(pos(&out[1]), (Severity::Error, "/p/src/K t.kt", 4, Some(9)));
-        assert_eq!(pos(&out[2]), (Severity::Warning, "/p/src/K.kt", 2, Some(3)));
-        assert_eq!(out[2].text, "Variable 'y' is never used");
-    }
-
-    #[test]
-    fn gradle_javac_with_caret_column() {
-        let out = parse(
-            Format::Gradle,
-            "> Task :compileJava\n\
-             /p/src/main/java/a/A.java:12: error: cannot find symbol\n\
-             \x20       Foo foo = new Foo();\n\
-             \x20       ^\n\
-             \x20 symbol:   class Foo\n\
-             \x20 location: class A\n\
-             /p/src/main/java/a/A.java:20: warning: [removal] finalize() has been deprecated\n\
-             \x20   protected void finalize() {}\n\
-             \x20                  ^\n\
-             1 error\n\
-             1 warning\n\
-             > Task :compileJava FAILED\n",
-        );
-        assert_eq!(out.len(), 2, "{out:?}");
-        assert_eq!(pos(&out[0]), (Severity::Error, "/p/src/main/java/a/A.java", 12, Some(9)));
-        assert_eq!(out[0].text, "cannot find symbol\nsymbol:   class Foo\nlocation: class A");
-        assert_eq!(pos(&out[1]), (Severity::Warning, "/p/src/main/java/a/A.java", 20, Some(20)));
-        assert_eq!(out[1].text, "[removal] finalize() has been deprecated");
-    }
-
-    #[test]
-    fn gradle_kotlin() {
-        let out = parse(
-            Format::Gradle,
-            "> Task :app:compileKotlin FAILED\n\
-             e: file:///p/app/src/main/kotlin/Main.kt:12:5 Unresolved reference: foo\n\
-             w: file:///p/app/src/main/kotlin/Main.kt:3:9 Parameter 'args' is never used\n\
-             e: Compilation error. See log for more details\n",
-        );
-        assert_eq!(out.len(), 2, "{out:?}");
-        assert_eq!(pos(&out[0]), (Severity::Error, "/p/app/src/main/kotlin/Main.kt", 12, Some(5)));
-        assert_eq!(out[0].text, "Unresolved reference: foo");
-        assert_eq!(pos(&out[1]), (Severity::Warning, "/p/app/src/main/kotlin/Main.kt", 3, Some(9)));
     }
 
     #[test]
@@ -614,8 +401,6 @@ mod tests {
     #[test]
     fn helpers() {
         assert_eq!(strip_ansi("\x1b[1;31merror\x1b[0m: x"), "error: x");
-        assert_eq!(from_file_uri("file:///a/b%20c.kt"), "/a/b c.kt");
-        assert_eq!(from_file_uri("file:///C:/a.kt"), "C:/a.kt");
         assert_eq!(path_line_col("C:\\a\\b.go:3:4: x"), Some(("C:\\a\\b.go", 3, Some(4), ": x")));
         assert_eq!(path_line_col("no position here"), None);
     }

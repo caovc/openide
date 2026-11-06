@@ -262,7 +262,6 @@ export const vscodeMacos: Record<string, string[]> = {
   "run.stop": ["Shift+F5"],
   "run.chooseConfig": [],
   "run.editConfigs": [],
-  "run.updateApplication": [],
   "run.rerun": [],
   "coverage.manageReports": [],
   "web.openInBrowser": [],

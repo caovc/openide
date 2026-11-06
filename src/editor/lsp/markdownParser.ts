@@ -2,8 +2,8 @@
 import { Marked } from "marked";
 import DOMPurify from "dompurify";
 
-/** DOMPurify's default link schemes plus `file:` and jdtls' `jdt:` (library classes). */
-const ALLOWED_URI = /^(?:(?:(?:f|ht)tps?|mailto|tel|file|jdt):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i;
+/** DOMPurify's default link schemes plus `file:`. */
+const ALLOWED_URI = /^(?:(?:(?:f|ht)tps?|mailto|tel|file):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i;
 
 const marked = new Marked({ gfm: true, breaks: false });
 

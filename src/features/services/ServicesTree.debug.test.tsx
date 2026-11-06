@@ -25,14 +25,14 @@ vi.mock("@tanstack/react-virtual", () => ({
 const config: RunConfig = {
   id: "gateway",
   name: "Gateway",
-  kind: "spring-boot",
-  command: "java",
+  kind: "python",
+  command: "python",
   args: [],
   cwd: null,
   env: {},
   detected: true,
   isTest: false,
-  debugAdapter: "java-debug",
+  debugAdapter: "debugpy",
 };
 const summary = (id: number, extra: Partial<DebugServiceSession> = {}): DebugServiceSession => ({
   id,
@@ -58,7 +58,7 @@ beforeEach(() => {
     roots: {},
     selectedKey: null,
     selectedKeys: new Set(),
-    expanded: new Set(["run:type:spring-boot"]),
+    expanded: new Set(["run:type:python"]),
   });
   dispose = registerServiceProvider(runServiceProvider);
 });
@@ -128,13 +128,13 @@ it("shows the owning Run output for attached debugging and overrides both sets o
   const s = await startRun(c);
   expect(s).not.toBeNull();
   const active = { ...s!, config, status: "running" as const, runId: 7 };
-  runtime(s!.id)!.console.append({ kind: "stdout", text: "Maven application log\n" });
+  runtime(s!.id)!.console.append({ kind: "stdout", text: "Python application log\n" });
   useRun.setState({ configs: [config], sessions: [active] });
   const d = summary(1, { processId: 7 });
   useDebugRunSessions.setState({ serviceSessions: [d] });
   render(<ServicesTreeView />);
   select();
-  expect(screen.getByRole("log")).toHaveTextContent("Maven application log");
+  expect(screen.getByRole("log")).toHaveTextContent("Python application log");
   const actions = within(screen.getByRole("toolbar", { name: "Run actions" }));
   fireEvent.click(actions.getByRole("button", { name: "Rerun" }));
   expect(d.rerun).toHaveBeenCalledOnce();
@@ -145,12 +145,12 @@ it("shows the owning Run output for attached debugging and overrides both sets o
   expect(actions.getByRole("button", { name: "Stop" })).toBeEnabled();
 });
 
-it("group Stop stops all roots but terminates a shared Maven process only once", async () => {
+it("group Stop stops all roots but terminates a shared Python process only once", async () => {
   const first = summary(1, { processId: 7 }),
     second = summary(2, { processId: 7 });
   useDebugRunSessions.setState({ serviceSessions: [first, second] });
   render(<ServicesTreeView />);
-  fireEvent.mouseDown(within(screen.getByRole("tree")).getByText("Spring Boot").closest('[role="treeitem"]')!);
+  fireEvent.mouseDown(within(screen.getByRole("tree")).getByText("Python").closest('[role="treeitem"]')!);
   fireEvent.click(toolbar().getByRole("button", { name: "Stop" }));
   await vi.waitFor(() => expect(second.stop).toHaveBeenCalledOnce());
   expect(first.stop).toHaveBeenCalledExactlyOnceWith({ stopProcess: false });

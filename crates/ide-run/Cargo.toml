@@ -18,12 +18,10 @@ tokio.workspace = true
 portable-pty.workspace = true
 parking_lot.workspace = true
 tracing.workspace = true
-zip.workspace = true
 quick-xml = "0.42"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
 [dev-dependencies]
-ide-build = { path = "../ide-build" }
 tempfile.workspace = true

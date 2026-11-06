@@ -27,8 +27,6 @@ import {
 } from "@/workbench/contributions";
 import { commandLine, configIcon, KIND_OPTIONS, kindLabel } from "./configs";
 import { SessionPanel } from "./RunView";
-import { showApplicationUpdate } from "./applicationUpdate";
-import { isUpdatable } from "./updatePolicies";
 import {
   configRemoved,
   loadConfigs,
@@ -65,7 +63,7 @@ const CONFIG_PREFIX = "run:config:";
 const STORAGE_KEY = "openidea.services.runTypes:";
 const RAN_KEY = "openidea.services.ran:";
 /** Types shown in Services until the user changes the list. */
-export const DEFAULT_TYPES: readonly string[] = ["spring-boot"];
+export const DEFAULT_TYPES: readonly string[] = ["python", "r"];
 
 // ---------------------------------------------------------------------------
 // Types added to Services, per project
@@ -388,17 +386,6 @@ function actions(item: ServiceTreeItem): ServiceItemAction[] {
     },
     { id: "debug", title: "Debug", icon: "debug", disabled: !!debugging && !debugging.rerun, run: () => debug(r) },
     stop,
-    ...(isUpdatable(r.config)
-      ? [
-          {
-            id: "update",
-            title: "Update Application",
-            icon: "refresh",
-            disabled: !live,
-            run: () => showApplicationUpdate(r.session?.run?.id ?? (debugging ? `debug:${debugging.id}` : undefined)),
-          },
-        ]
-      : []),
   ];
 }
 

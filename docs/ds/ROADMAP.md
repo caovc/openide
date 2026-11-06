@@ -23,5 +23,9 @@ U1 → U2 → U3 / U4 → U5 / U6 → U7 Console → U8 编辑器 Run → U9 wid
 ## Later (platform)
 
 - U10 Windows SAS（后置）：**有条件可行**——不走纯 WASM 插件承载 COM 会话；推荐 Tauri/`ide-host` 托管 Windows .NET COM 侧车（复用 SasDesktop.Core/`ComSasSession`），再接 Console / Editor Run / TableProvider。可行性 [SAS-PLUGIN-FEASIBILITY.md](./SAS-PLUGIN-FEASIBILITY.md)；方案与分阶段计划 [SAS-PLUGIN-PLAN.md](./SAS-PLUGIN-PLAN.md)。排在 U1–U9 核心之后；实现前须 COLLAB 认领独立路径。
-- U11 JVM 硬移除（阶段 B / Later）：在阶段 A 默认软隐藏稳定后，单独认领并删除 Java / Kotlin / Scala / Groovy / JSP / Clojure 语言包、JDT LS / java-debug / Kotlin debugger、Maven / Gradle / Spring / Tomcat / Android 相关实现与资源；先审计跨语言共用 SDK / run / DAP 接缝和旧配置迁移，再删依赖、测试、资源。保留 Python / R / Jupyter / Ark、Console 与编辑器 Run 路径；独立构建与真实 runtime 回归验收。本次仅规划，未删除 crate、语言 TOML 或 javaDebug.ts。
+- U11 JVM 硬移除（用户已批准，当前集成批次）：在阶段 A 默认软隐藏稳定后，单独认领并删除 Java / Kotlin / Scala / Groovy / JSP / Clojure 语言包、JDT LS / java-debug / Kotlin debugger、Maven / Gradle / Spring / Tomcat / Android 相关实现与资源；先审计跨语言共用 SDK / run / DAP 接缝和旧配置迁移，再删依赖、测试、资源。保留 Python / R / Jupyter / Ark、Console 与编辑器 Run 路径；独立构建与真实 runtime 回归验收。本次已分域实施，状态与验收以 BOARD 和 U11报告为准；不可把单域通过等同于整体完成。
 - U12 Python / R 包可视化管理：两者能力有差异须都支持；R 另需包文档浏览。路径与验收谓词认领时明确；排在 U9 之后，不打断当前数据探索。
+
+## 持续功能研究
+
+[FEATURE-BACKLOG.md](FEATURE-BACKLOG.md)按P0/P1/P2维护候选工作流、公开来源和真实验收；协调者确认接口/所有权后分派。Python/R调试为DS-04A..D核心任务；Python/R 环境支持 DS-01E0–E4 同列 P0：venv、R版本/包库、renv激活及运行调试一致性。Conda/Mamba、uv、Poetry完整管理器与renv snapshot/restore列P1；先完成核心闭环，再扩展widgets、包管理和Quarto。具体任务见 [环境计划](research/2026-11-06-environments.md)。

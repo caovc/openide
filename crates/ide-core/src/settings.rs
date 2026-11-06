@@ -616,6 +616,8 @@ pub struct LanguagesSettings {
     pub prettier: ExternalFormatterSettings,
     pub oxfmt: ExternalFormatterSettings,
     pub ruff: ExternalFormatterSettings,
+    /// Inert compatibility data from earlier JVM-enabled releases. Retained on save;
+    /// never consumed by SDK discovery, execution, debugging or language services.
     pub java: JavaSettings,
     pub ruby: RubySettings,
     pub markdown: MarkdownSettings,
@@ -841,9 +843,14 @@ pub struct GoBuildTags {
     pub experiments: String,
 }
 
+/// Legacy data-only schema. It does not enable JVM tooling.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Type)]
 #[serde(default, rename_all = "camelCase")]
 pub struct JavaSettings {
+    /// Unknown historical keys are preserved rather than discarded on unrelated edits.
+    #[serde(flatten)]
+    #[specta(type = BTreeMap<String, specta_typescript::Unknown>)]
+    pub legacy_extra: BTreeMap<String, serde_json::Value>,
     /// Project JDK home; empty = per module, the installed JDK matching the
     /// Java version it targets.
     pub jdk: String,
@@ -854,16 +861,19 @@ pub struct JavaSettings {
     /// Extra JVM options for the Java language server (jdtls), space-separated
     /// (VS Code's `java.jdt.ls.vmargs`).
     pub jdtls_vm_args: String,
-    /// Build Tools › Maven.
+    /// Legacy Maven settings retained for round-trip compatibility only.
     pub maven: MavenSettings,
-    /// Build Tools › Gradle.
+    /// Legacy Gradle settings retained for round-trip compatibility only.
     pub gradle: GradleSettings,
 }
 
-/// Build Tools › Gradle.
+/// Legacy Gradle settings retained for round-trip compatibility only.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Type)]
 #[serde(default, rename_all = "camelCase")]
 pub struct GradleSettings {
+    #[serde(flatten)]
+    #[specta(type = BTreeMap<String, specta_typescript::Unknown>)]
+    pub legacy_extra: BTreeMap<String, serde_json::Value>,
     /// Linked build directories; absent preserves automatic discovery, empty unlinks all builds.
     pub linked_projects: Option<Vec<String>>,
     /// Empty = Project JDK; otherwise a JDK home.
@@ -896,10 +906,13 @@ pub enum GradleDistribution {
     Local,
 }
 
-/// Build Tools › Maven.
+/// Legacy Maven settings retained for round-trip compatibility only.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Type)]
 #[serde(default, rename_all = "camelCase")]
 pub struct MavenSettings {
+    #[serde(flatten)]
+    #[specta(type = BTreeMap<String, specta_typescript::Unknown>)]
+    pub legacy_extra: BTreeMap<String, serde_json::Value>,
     /// Project-relative root POMs removed from the Maven project model.
     pub unlinked_projects: Vec<String>,
     /// Project-relative POMs outside the root reactor added as independent top-level projects.
@@ -1187,6 +1200,7 @@ mod gradle_settings_tests {
                 user_home: "/cache/gradle".into(),
                 run_using: GradleRunUsing::Ide,
                 linked_projects: Some(vec!["backend".into(), "../shared".into()]),
+                ..Default::default()
             };
             let restored: Settings = serde_json::from_str(&serde_json::to_string(&settings).unwrap()).unwrap();
             assert_eq!(restored.languages.java.gradle, settings.languages.java.gradle);
@@ -1207,5 +1221,38 @@ mod go_module_tests {
                 .unwrap();
         assert!(!configured.modules.auto_vendor);
         assert_eq!(configured.modules.env["GOPRIVATE"], "example.com/private");
+    }
+}
+
+#[cfg(test)]
+mod legacy_jvm_settings_tests {
+    use super::*;
+
+    #[test]
+    fn unrelated_settings_edits_preserve_known_and_unknown_legacy_values() {
+        let historical = serde_json::json!({
+            "languages": {"java": {
+                "jdk": "/custom/jdk", "jdtlsJdk": "/importer/jdk", "jdtlsVmArgs": "-Xmx4g",
+                "futureSetting": {"enabled": false, "nested": [1, "value", null]},
+                "maven": {"home": "/maven", "daemon": true, "mvndHome": "/mvnd", "customRepository": "https://repo.example"},
+                "gradle": {"linkedProjects": [], "distribution": "local", "home": "/gradle", "runUsing": "ide", "futureOption": 42}
+            }}
+        });
+        let mut settings: Settings = serde_json::from_value(historical.clone()).unwrap();
+        settings.languages.python.interpreter = "/python/new".into();
+        let saved = serde_json::to_value(&settings).unwrap();
+        fn retains(saved: &serde_json::Value, original: &serde_json::Value) {
+            if let Some(fields) = original.as_object() {
+                for (key, value) in fields {
+                    retains(&saved[key], value);
+                }
+            } else {
+                assert_eq!(saved, original);
+            }
+        }
+        retains(&saved["languages"]["java"], &historical["languages"]["java"]);
+        assert_eq!(saved["languages"]["python"]["interpreter"], "/python/new");
+        let again: Settings = serde_json::from_value(saved).unwrap();
+        assert_eq!(again.languages.java, settings.languages.java);
     }
 }

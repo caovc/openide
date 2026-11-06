@@ -59,34 +59,31 @@ describe("run configurations in Services", () => {
   const dev = config("dev", "npm");
   const scratch = config("context:file", "python");
 
-  it.each(["spring-boot", "node", "python", "go", "cargo"])(
-    "shows configured %s debug roots without a Run session",
-    (kind) => {
-      const c = config("debug-app", kind);
-      const d: DebugServiceSession = {
-        id: 1,
-        config: c,
-        status: "running",
-        processId: null,
-        startedAt: 2,
-        stop: async () => {},
-        rerun: null,
-        show: () => {},
-      };
-      const build = (status: DebugServiceSession["status"]) => runServiceItems([c], [], [], [], {}, [{ ...d, status }]);
-      expect(build("running")[0]?.children?.[0]).toMatchObject({
-        key: "run:config:debug-app",
-        detail: "Debugging",
-        icon: "debug",
-        dim: false,
-      });
-      expect(build("paused")[0]?.children?.[0]?.detail).toBe("Suspended");
-      expect(build("terminated")[0]?.children?.[0]).toMatchObject({ detail: "Finished", dim: true });
-    },
-  );
+  it.each(["r", "node", "python", "go", "cargo"])("shows configured %s debug roots without a Run session", (kind) => {
+    const c = config("debug-app", kind);
+    const d: DebugServiceSession = {
+      id: 1,
+      config: c,
+      status: "running",
+      processId: null,
+      startedAt: 2,
+      stop: async () => {},
+      rerun: null,
+      show: () => {},
+    };
+    const build = (status: DebugServiceSession["status"]) => runServiceItems([c], [], [], [], {}, [{ ...d, status }]);
+    expect(build("running")[0]?.children?.[0]).toMatchObject({
+      key: "run:config:debug-app",
+      detail: "Debugging",
+      icon: "debug",
+      dim: false,
+    });
+    expect(build("paused")[0]?.children?.[0]?.detail).toBe("Suspended");
+    expect(build("terminated")[0]?.children?.[0]).toMatchObject({ detail: "Finished", dim: true });
+  });
 
   it("does not reuse an old Run port for a new direct debug launch or double-count an attachment", () => {
-    const c = config("app", "spring-boot");
+    const c = config("app", "r");
     const r = session("run", c, "finished", 1, { runId: 7, httpPort: 8080 });
     const d: DebugServiceSession = {
       id: 1,
@@ -111,15 +108,15 @@ describe("run configurations in Services", () => {
 
   it("applies display order to detected and saved configurations of every language", () => {
     const configs = [
-      config("java-a", "spring-boot"),
-      config("java-b", "spring-boot"),
+      config("java-a", "r"),
+      config("java-b", "r"),
       config("node-a", "npm"),
       { ...config("node-b", "npm"), detected: false },
       config("py-a", "python"),
       config("py-b", "python"),
     ];
-    const items = runServiceItems(configs, [], ["spring-boot", "npm", "python"], [], {
-      "spring-boot": ["java-b", "java-a"],
+    const items = runServiceItems(configs, [], ["r", "npm", "python"], [], {
+      r: ["java-b", "java-a"],
       npm: ["node-b", "node-a"],
       python: ["py-b", "py-a"],
     });
@@ -195,16 +192,16 @@ describe("run configurations in Services", () => {
     expect(sessionStatus(session("a", build, "finished", 0))).toBe("Finished");
   });
 
-  it("shows Spring Boot by default, hidden while the project has none", () => {
-    const app = config("spring:app", "spring-boot");
+  it("shows R by default, hidden while the project has none", () => {
+    const app = config("spring:app", "r");
     expect(runServiceItems([build], [], DEFAULT_TYPES)).toEqual([]);
     const items = runServiceItems([build, app], [], DEFAULT_TYPES);
-    expect(items.map((i) => [i.key, i.label, i.expanded])).toEqual([["run:type:spring-boot", "Spring Boot", true]]);
+    expect(items.map((i) => [i.key, i.label, i.expanded])).toEqual([["run:type:r", "R", true]]);
     expect(items[0]!.children!.map((c) => [c.label, c.detail, c.dim])).toEqual([["spring:app", undefined, true]]);
   });
 
   it("shows the HTTP port of a running application instead of its state", () => {
-    const app = config("spring:app", "spring-boot");
+    const app = config("spring:app", "r");
     const running = session("s1", app, "running", 1, { httpPort: 8080 });
     expect(sessionDetail(running)).toBe(":8080");
     expect(sessionDetail(session("s1", app, "running", 1))).toBe("Running");
@@ -216,13 +213,13 @@ describe("run configurations in Services", () => {
 describe("types added to Services", () => {
   beforeEach(() => localStorage.clear());
 
-  it("defaults to Spring Boot and persists the user's list per project", () => {
-    expect(readTypes("/p")).toEqual(["spring-boot"]);
+  it("defaults to R and persists the user's list per project", () => {
+    expect(readTypes("/p")).toEqual(["python", "r"]);
     localStorage.setItem("openidea.services.runTypes:/p", JSON.stringify(["npm"]));
     expect(readTypes("/p")).toEqual(["npm"]);
     localStorage.setItem("openidea.services.runTypes:/p", "[]");
     expect(readTypes("/p")).toEqual([]);
-    expect(readTypes("/q")).toEqual(["spring-boot"]);
+    expect(readTypes("/q")).toEqual(["python", "r"]);
   });
 });
 
@@ -284,7 +281,7 @@ describe("embedded web server port", () => {
 });
 
 describe("removing a workspace member from Services", () => {
-  const main = { ...config("app", "spring-boot"), cwd: "/w/main" };
+  const main = { ...config("app", "r"), cwd: "/w/main" };
   const vue = { ...config("dev", "npm"), cwd: "/w/vue" };
 
   beforeEach(() => {
@@ -303,7 +300,7 @@ describe("removing a workspace member from Services", () => {
       temporary: ["dev"],
       sessions: [session("s1", main, "finished", 1), session("s2", vue, "running", 2, { runId: 7 })],
     });
-    localStorage.setItem("openidea.services.runTypes:/w/main", JSON.stringify(["spring-boot", "npm"]));
+    localStorage.setItem("openidea.services.runTypes:/w/main", JSON.stringify(["r", "npm"]));
     localStorage.setItem("openidea.services.ran:/w/main", JSON.stringify(["app", "dev"]));
 
     await cleanupRemovedProject("/w/vue");
@@ -312,7 +309,7 @@ describe("removing a workspace member from Services", () => {
     expect(s.sessions.map((x) => x.id)).toEqual(["s1"]);
     expect(s.configs.map((c) => c.id)).toEqual(["app"]);
     expect(s.temporary).toEqual([]);
-    expect(readTypes("/w/main")).toEqual(["spring-boot"]);
+    expect(readTypes("/w/main")).toEqual(["r"]);
     expect(readRan("/w/main")).toEqual(["app"]);
     expect(ipc.runConfigs).toHaveBeenCalled();
   });

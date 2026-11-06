@@ -41,11 +41,6 @@ const TYPE_CLASS: Record<string, string> = {
   method: "function",
   macro: "macro",
   decorator: "annotation",
-  // jdtls extensions
-  annotation: "annotation",
-  annotationMember: "function",
-  record: "type",
-  recordComponent: "property",
   attribute: "annotation",
   enumMember: "constant",
   property: "property",
@@ -166,8 +161,6 @@ export function semanticRanges(
     for (let b = 0; b < tokenModifiers.length; b++) if (mods & (1 << b)) names.push(tokenModifiers[b]!);
     const classes: string[] = [];
     let base = Object.hasOwn(TYPE_CLASS, type) ? TYPE_CLASS[type] : undefined;
-    // jdtls marks constructors as a class with a `constructor` modifier; IDEA colours them as methods.
-    if (names.includes("constructor")) base = "function";
     const constant =
       names.includes("constant") || (type === "variable" && names.includes("readonly") && names.includes("static"));
     if (constant && (type === "variable" || type === "property")) base = "constant";

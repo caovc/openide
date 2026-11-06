@@ -105,25 +105,6 @@ function goArgs(base: string[], paths: string[][]): string[] | null {
   return ["test", ...withoutGoSelection(parts.flags), ...run, ...targets, ...parts.program];
 }
 
-function jvmArgs(config: RunConfig, paths: string[][]): string[] | null {
-  const tests = paths
-    .filter((p) => p.length >= 2)
-    .map((p) => ({ cls: p[0]!, method: p[p.length - 1]!.replace(/\(\)$/, "") }));
-  const classes = unique(paths.filter((p) => p.length === 1).map((p) => p[0]!));
-  if (!tests.length && !classes.length) return null;
-  if (config.kind === "maven" || /\bmvnw?\b/.test(config.command)) {
-    const byClass = new Map<string, string[]>();
-    for (const t of tests) byClass.set(t.cls, [...(byClass.get(t.cls) ?? []), t.method]);
-    const specs = [
-      ...[...byClass].map(([cls, ms]) => `${cls}#${unique(ms).join("+")}`),
-      ...classes.filter((c) => !byClass.has(c)),
-    ];
-    return [...config.args.filter((a) => !a.startsWith("-Dtest=")), `-Dtest=${specs.join(",")}`];
-  }
-  const filters = [...unique(tests.map((t) => `${t.cls}.${t.method}`)), ...classes];
-  return [...dropFlag(config.args, ["--tests"]), ...filters.flatMap((f) => ["--tests", f])];
-}
-
 /** Leaf test paths under the given nodes (a node without reported children stands for itself). */
 export function leafTestPaths(nodes: readonly TestNode[]): string[][] {
   const out: string[][] = [];
@@ -170,9 +151,6 @@ export function testsConfig(config: RunConfig, paths: string[][], name: string):
       break;
     case "go":
       args = goArgs(config.args, paths);
-      break;
-    case "jvm":
-      args = jvmArgs(config, paths);
       break;
     default:
       args = null;

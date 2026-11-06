@@ -1,7 +1,7 @@
 import { StringStream, type StreamParser } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
 
-export type InterpolationDialect = "Kotlin" | "Scala" | "Dart" | "Groovy" | "C#";
+export type InterpolationDialect = "Dart" | "C#";
 type Literal = {
   quote: string;
   interpolate: boolean;
@@ -39,9 +39,8 @@ export function interpolationParser<S>(base: StreamParser<S>, dialect: Interpola
     token(stream, state) {
       const frame = state.frames.at(-1)!;
       if (frame.name) {
-        if (dialect === "Groovy" && stream.eat(".")) return "punctuation";
         stream.match(/^[\p{L}_][\p{L}\p{N}_]*/u);
-        if (dialect !== "Groovy" || !stream.match(/^\.[\p{L}_]/u, false)) state.frames.pop();
+        state.frames.pop();
         return "variableName";
       }
       const literal = frame.literal;
@@ -71,7 +70,6 @@ export function interpolationParser<S>(base: StreamParser<S>, dialect: Interpola
             break;
           }
           if (dialect === "C#" && literal.quote.length === 1 && (stream.match("{{") || stream.match("}}"))) continue;
-          if (dialect === "Scala" && literal.interpolate && stream.match("$$")) continue;
           if (marker()) break;
           if (stream.next() === "\\" && literal.escape) stream.next();
         }
@@ -102,7 +100,7 @@ export function interpolationParser<S>(base: StreamParser<S>, dialect: Interpola
         quote = text.startsWith(text[0]!.repeat(3)) ? text[0]!.repeat(3) : text[0]!;
         opening = quote;
         const prefix = stream.string.slice(0, from).match(/[\p{L}_][\p{L}\p{N}_]*$/u)?.[0];
-        interpolate = dialect === "Scala" ? !!prefix : !(dialect === "Dart" && prefix === "r");
+        interpolate = prefix !== "r";
       }
       if (opening && style !== "comment" && style !== "string.special") {
         stream.pos = from + opening.length;
@@ -112,10 +110,7 @@ export function interpolationParser<S>(base: StreamParser<S>, dialect: Interpola
           braces,
           interpolate,
           verbatim,
-          escape:
-            !verbatim &&
-            !(["Kotlin", "Scala", "C#"].includes(dialect) && quote.length >= 3) &&
-            !(dialect === "Scala" && stream.string.slice(0, from).endsWith("raw")),
+          escape: !verbatim && !(dialect === "C#" && quote.length >= 3),
           multiline: quote.length >= 3 || verbatim,
         };
         return "string";

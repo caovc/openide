@@ -1,7 +1,6 @@
-//! Root detection from build files, per module directory (multi-module Maven /
-//! Gradle builds, Cargo workspaces and monorepos are found by a bounded walk).
+//! Root detection for supported projects using a bounded workspace walk.
 
-use super::{RootKind, SourceFolder, gradle, maven};
+use super::{RootKind, SourceFolder};
 use std::collections::VecDeque;
 use std::path::Path;
 
@@ -10,8 +9,6 @@ const MAX_DEPTH: usize = 6;
 /// Upper bound on directories visited, so huge trees cost a few milliseconds at most.
 const MAX_DIRS: usize = 4000;
 
-const JVM_LANGS: &[&str] = &["java", "kotlin", "groovy", "scala"];
-const GRADLE_FILES: &[&str] = &["build.gradle.kts", "build.gradle"];
 const PYTHON_FILES: &[&str] = &["pyproject.toml", "setup.py", "setup.cfg", "Pipfile", "requirements.txt"];
 /// Never walked into while looking for modules (outputs, dependencies, VCS).
 const SKIP_DIRS: &[&str] =
@@ -19,11 +16,6 @@ const SKIP_DIRS: &[&str] =
 
 /// Build files whose changes can change the detected roots.
 const BUILD_FILES: &[&str] = &[
-    "pom.xml",
-    "build.gradle",
-    "build.gradle.kts",
-    "settings.gradle",
-    "settings.gradle.kts",
     "Cargo.toml",
     "go.mod",
     "pyproject.toml",
@@ -42,10 +34,6 @@ const ROOT_NAMES: &[&str] = &[
     "test",
     "tests",
     "__tests__",
-    "java",
-    "kotlin",
-    "groovy",
-    "scala",
     "resources",
     "benches",
     "examples",
@@ -56,7 +44,6 @@ const ROOT_NAMES: &[&str] = &[
     ".venv",
     "venv",
     "__pycache__",
-    ".gradle",
 ];
 
 /// Whether a created / changed / removed project-relative path can change the detected roots.
@@ -127,7 +114,7 @@ pub fn detect(root: &Path) -> Vec<SourceFolder> {
                 continue;
             }
             let child = join(&rel, &name);
-            // Roots are not searched for nested modules (`src/main/java` can be huge).
+            // Roots are not searched for nested modules.
             if found.iter().any(|f| *f == child || f.is_empty() && name == "src") {
                 continue;
             }
@@ -153,41 +140,6 @@ fn module_roots(root: &Path, rel: &str, files: &[String], out: &mut Vec<SourceFo
         }
         out.push(SourceFolder { path, kind, detected_from: Some(join(rel, from)) });
     };
-
-    if has("pom.xml") {
-        for lang in JVM_LANGS {
-            add(&format!("src/main/{lang}"), RootKind::Source, "pom.xml");
-            add(&format!("src/test/{lang}"), RootKind::Test, "pom.xml");
-        }
-        add("src/main/resources", RootKind::Resources, "pom.xml");
-        add("src/test/resources", RootKind::TestResources, "pom.xml");
-        if let Ok(text) = std::fs::read_to_string(dir.join("pom.xml")) {
-            for (sub, kind) in maven::extra_roots(&text) {
-                add(&sub, kind, "pom.xml");
-            }
-        }
-        add("target", RootKind::Excluded, "pom.xml");
-    }
-
-    if let Some(file) = GRADLE_FILES.iter().find(|f| has(f)) {
-        for (set, sub) in source_sets(&dir) {
-            let test = gradle::is_test_set(&set);
-            let kind = |lang: &str| match (lang == "resources", test) {
-                (true, true) => RootKind::TestResources,
-                (true, false) => RootKind::Resources,
-                (false, true) => RootKind::Test,
-                (false, false) => RootKind::Source,
-            };
-            add(&format!("src/{set}/{sub}"), kind(&sub), file);
-        }
-        if let Ok(text) = std::fs::read_to_string(dir.join(file)) {
-            for (sub, kind) in gradle::extra_roots(&text) {
-                add(&sub, kind, file);
-            }
-        }
-        add("build", RootKind::Excluded, file);
-        add(".gradle", RootKind::Excluded, file);
-    }
 
     if has("Cargo.toml") {
         add("src", RootKind::Source, "Cargo.toml");
@@ -225,8 +177,7 @@ fn module_roots(root: &Path, rel: &str, files: &[String], out: &mut Vec<SourceFo
     }
 
     if has("package.json") {
-        // A JVM build's `src` holds source sets, not JavaScript.
-        if !has("pom.xml") && !GRADLE_FILES.iter().any(|f| has(f)) {
+        {
             add("src", RootKind::Source, "package.json");
             // Served at `/` by Vite, Next and Create React App: `href="/logo.svg"` resolves here.
             add("public", RootKind::Resources, "package.json");
@@ -265,23 +216,6 @@ fn composer_roots(text: &str) -> Vec<(String, RootKind)> {
                 if !out.iter().any(|(p, _)| *p == sub) {
                     out.push((sub, kind));
                 }
-            }
-        }
-    }
-    out
-}
-
-/// Gradle's conventional `src/<set>/<lang>` folders that exist: `(set, lang)`.
-fn source_sets(dir: &Path) -> Vec<(String, String)> {
-    let mut out = Vec::new();
-    let Ok(sets) = std::fs::read_dir(dir.join("src")) else { return out };
-    let mut sets: Vec<_> = sets.flatten().filter(|e| e.path().is_dir()).collect();
-    sets.sort_by_key(|e| e.file_name());
-    for set in sets {
-        let set_name = set.file_name().to_string_lossy().into_owned();
-        for sub in JVM_LANGS.iter().chain(&["resources"]) {
-            if set.path().join(sub).is_dir() {
-                out.push((set_name.clone(), (*sub).to_owned()));
             }
         }
     }
@@ -390,76 +324,6 @@ mod tests {
     }
 
     #[test]
-    fn maven_conventional_roots_and_target() {
-        let dir = tree(&[
-            "pom.xml",
-            "src/main/java/com/acme/App.java",
-            "src/main/resources/app.yml",
-            "src/test/java/com/acme/AppTest.java",
-            "src/test/resources/",
-            "target/classes/",
-        ]);
-        assert_eq!(
-            summary(&detect(dir.path())),
-            vec![
-                "src/main/java=Source@pom.xml",
-                "src/main/resources=Resources@pom.xml",
-                "src/test/java=Test@pom.xml",
-                "src/test/resources=TestResources@pom.xml",
-                "target=Excluded@pom.xml",
-            ]
-        );
-    }
-
-    #[test]
-    fn maven_multi_module_and_custom_source_directory() {
-        let dir = tree(&["pom.xml", "core/src/main/kotlin/", "core/target/", "app/gen/", "app/src/test/java/"]);
-        fs::write(
-            dir.path().join("app/pom.xml"),
-            "<project><build><sourceDirectory>${project.basedir}/gen</sourceDirectory></build></project>",
-        )
-        .unwrap();
-        fs::write(dir.path().join("core/pom.xml"), "<project/>").unwrap();
-        assert_eq!(
-            summary(&detect(dir.path())),
-            vec![
-                "app/gen=Source@app/pom.xml",
-                "app/src/test/java=Test@app/pom.xml",
-                "core/src/main/kotlin=Source@core/pom.xml",
-                "core/target=Excluded@core/pom.xml",
-            ]
-        );
-    }
-
-    #[test]
-    fn gradle_source_sets_including_custom_and_multiplatform() {
-        let dir = tree(&[
-            "settings.gradle.kts",
-            "build.gradle.kts",
-            "src/main/kotlin/",
-            "src/main/resources/",
-            "src/integrationTest/kotlin/",
-            "src/commonTest/kotlin/",
-            "src/test/resources/",
-            "build/",
-            "lib/build.gradle",
-            "lib/src/main/java/",
-        ]);
-        assert_eq!(
-            summary(&detect(dir.path())),
-            vec![
-                "build=Excluded@build.gradle.kts",
-                "lib/src/main/java=Source@lib/build.gradle",
-                "src/commonTest/kotlin=Test@build.gradle.kts",
-                "src/integrationTest/kotlin=Test@build.gradle.kts",
-                "src/main/kotlin=Source@build.gradle.kts",
-                "src/main/resources=Resources@build.gradle.kts",
-                "src/test/resources=TestResources@build.gradle.kts",
-            ]
-        );
-    }
-
-    #[test]
     fn cargo_go_python_and_node() {
         let dir = tree(&[
             "Cargo.toml",
@@ -506,22 +370,6 @@ mod tests {
     }
 
     #[test]
-    fn first_ecosystem_wins_for_a_shared_folder() {
-        // A Gradle build with a frontend: `build` stays Gradle's, `src` is not a Node root.
-        let dir =
-            tree(&["build.gradle", "package.json", "src/main/java/", "src/test/java/", "build/", "node_modules/"]);
-        assert_eq!(
-            summary(&detect(dir.path())),
-            vec![
-                "build=Excluded@build.gradle",
-                "node_modules=Excluded@package.json",
-                "src/main/java=Source@build.gradle",
-                "src/test/java=Test@build.gradle",
-            ]
-        );
-    }
-
-    #[test]
     fn plain_folders_have_no_roots() {
         let dir = tree(&["src/a.txt", "test/", "build/"]);
         assert!(detect(dir.path()).is_empty());
@@ -529,15 +377,7 @@ mod tests {
 
     #[test]
     fn root_affecting_paths() {
-        for p in [
-            "pom.xml",
-            "a/build.gradle.kts",
-            "src",
-            "core/src/integrationTest",
-            "x/src/main",
-            "target",
-            "web/package.json",
-        ] {
+        for p in ["a/Cargo.toml", "src", "core/src/integrationTest", "x/src/main", "target", "web/package.json"] {
             assert!(affects_roots(Path::new(p)), "{p}");
         }
         for p in ["src/main/java/A.java", "README.md", "docs/guide"] {

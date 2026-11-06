@@ -1,14 +1,12 @@
 //! "External Libraries" of a project (IDEA's library / SDK roots in the
 //! Project view): the folders holding the sources of the project's SDKs and
 //! dependencies — the Python interpreter's standard library and site-packages,
-//! the JDK, `node_modules` packages, Cargo crates and the Rust standard
+//! `node_modules` packages, Cargo crates and the Rust standard
 //! library, GOROOT and the Go module cache.
 //!
 //! Each ecosystem is detected only when the project has its manifest, and its
 //! result is cached until the manifests (or the relevant settings) change.
 //!
-//! Archives are listed as browsable roots (`<archive>!`, see `ide_vfs`): the
-//! JDK's `src.zip` and the Maven / Gradle dependency jars (source attachments resolved by JDT).
 
 use crate::exe;
 use crate::exec::{query_in, which};
@@ -26,7 +24,7 @@ use std::time::{Duration, SystemTime};
 pub struct LibraryGroup {
     /// Display name, e.g. `Python 3.12 (.venv)`.
     pub name: String,
-    /// `python` | `jdk` | `nodeModules` | `nodeCore` | `rust` | `cargo` | `go` | `goModules` | `maven` | `gradle`.
+    /// `python` | `nodeModules` | `nodeCore` | `rust` | `cargo` | `go` | `goModules`.
     pub kind: String,
     pub roots: Vec<LibraryRoot>,
 }
@@ -35,7 +33,7 @@ pub struct LibraryGroup {
 #[serde(rename_all = "camelCase")]
 pub struct LibraryRoot {
     /// Folder name, e.g. `python3.12` or `site-packages`, the package (`serde 1.0.200`)
-    /// or the archive (`src.zip`, `guava-33.0.0-jre-sources.jar`).
+    /// or a browsable archive.
     pub name: String,
     /// A folder, or an archive's root (`<archive>!`).
     pub path: ide_core::IpcPath,
@@ -49,33 +47,19 @@ const GRAPH_TIMEOUT: Duration = Duration::from_secs(60);
 const PYTHON_PATHS: &str = "import json,sysconfig;p=sysconfig.get_paths();\
 print(json.dumps([p.get(k) for k in ('stdlib','platstdlib','purelib','platlib')]))";
 
-const JAVA_MANIFESTS: &[&str] =
-    &["pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts"];
 const NODE_MANIFESTS: &[&str] = &["package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "bun.lockb"];
 const CARGO_MANIFESTS: &[&str] = &["Cargo.toml", "Cargo.lock", "rust-toolchain", "rust-toolchain.toml"];
 const GO_MANIFESTS: &[&str] = &["go.mod", "go.sum", "go.work"];
 const RUBY_MANIFESTS: &[&str] = &["Gemfile", "Gemfile.lock", ".ruby-version", ".tool-versions", "mise.toml"];
 
-/// A Maven / Gradle dependency of the project, from the build model.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct BuildDependency {
-    /// Resolved by Gradle (else Maven): looked up in the Gradle cache first.
-    pub gradle: bool,
-    pub group: String,
-    pub artifact: String,
-    pub version: String,
-}
-
 /// The project's library groups; empty when no SDK is configured. Runs the
 /// toolchains (in parallel), so call it off the UI / command thread.
-/// `dependencies` (from the build model) are listed when their jars are in the local repositories.
-pub fn project_libraries(root: &Path, settings: &Settings, dependencies: &[BuildDependency]) -> Vec<LibraryGroup> {
+pub fn project_libraries(root: &Path, settings: &Settings) -> Vec<LibraryGroup> {
     type Detect = fn(&Path, &Settings) -> Vec<LibraryGroup>;
-    let detectors: [Detect; 6] = [python_groups, jdk_groups, node_groups, rust_groups, go_groups, ruby_groups];
+    let detectors: [Detect; 5] = [python_groups, node_groups, rust_groups, go_groups, ruby_groups];
     std::thread::scope(|s| {
         let handles: Vec<_> = detectors.iter().map(|d| s.spawn(move || d(root, settings))).collect();
-        let deps = s.spawn(|| dependency_groups(root, settings, dependencies));
-        handles.into_iter().chain([deps]).flat_map(|h| h.join().unwrap_or_default()).collect()
+        handles.into_iter().flat_map(|h| h.join().unwrap_or_default()).collect()
     })
 }
 
@@ -211,149 +195,6 @@ fn ruby_groups(root: &Path, s: &Settings) -> Vec<LibraryGroup> {
         out.extend(group(name, "ruby", named_roots(stdlib)));
         out.extend(group("Gems", "gems", named_roots(gems)));
         out
-    })
-}
-
-// ------------------------------------------------------------------ jdk
-
-fn jdk_groups(root: &Path, s: &Settings) -> Vec<LibraryGroup> {
-    let Some(files) = manifests(root, JAVA_MANIFESTS) else { return Vec::new() };
-    cached(root, "jdk", s.languages.java.jdk.clone(), &files, || {
-        let jdk = crate::apply::project_jdk(root, s).or_else(|| {
-            crate::java::pick_jdk(&crate::java::installed_jdks(), crate::java::project_java_version(root)).cloned()
-        });
-        jdk.and_then(|j| jdk_library(&j)).into_iter().collect()
-    })
-}
-
-/// The JDK home and its sources (`lib/src.zip`, `src.zip` in JDK 8) as library roots.
-pub(crate) fn jdk_library(jdk: &crate::java::Jdk) -> Option<LibraryGroup> {
-    let name = jdk_name(&jdk.home).unwrap_or_else(|| format!("JDK {}", jdk.major));
-    let mut roots = named_roots(vec![(name.clone(), jdk.home.clone())]);
-    if let Some(src) = ["lib/src.zip", "src.zip"].iter().map(|r| jdk.home.join(r)).find(|p| p.is_file()) {
-        roots.push(LibraryRoot { name: "src.zip".into(), path: ide_vfs::archive_root(&src).into() });
-    }
-    group(name, "jdk", roots)
-}
-
-/// `temurin-21` for `…/temurin-21.jdk/Contents/Home` (macOS bundles) or `…/temurin-21`.
-pub(crate) fn jdk_name(home: &Path) -> Option<String> {
-    let dir = if home.ends_with("Contents/Home") { home.parent()?.parent()? } else { home };
-    let name = dir.file_name()?.to_string_lossy();
-    Some(name.strip_suffix(".jdk").unwrap_or(&name).to_owned())
-}
-
-// ------------------------------------------------------------------ maven / gradle
-
-fn dependency_groups(root: &Path, s: &Settings, deps: &[BuildDependency]) -> Vec<LibraryGroup> {
-    if deps.is_empty() {
-        return Vec::new();
-    }
-    let maven_repo = crate::apply::maven_local_repository(root, s).or_else(default_maven_repository);
-    let gradle_home = gradle_user_home();
-    let files: Vec<PathBuf> = JAVA_MANIFESTS.iter().map(|n| root.join(n)).collect();
-    let key = format!("{maven_repo:?}\n{gradle_home:?}\n{deps:?}");
-    cached(root, "buildDependencies", key, &files, || {
-        dependency_libraries(deps, maven_repo.as_deref(), gradle_home.as_deref())
-    })
-}
-
-/// `~/.m2/repository` (Settings › Maven › Local repository overrides it).
-fn default_maven_repository() -> Option<PathBuf> {
-    Some(crate::home_dir()?.join(".m2/repository"))
-}
-
-/// `$GRADLE_USER_HOME`, else `~/.gradle`.
-fn gradle_user_home() -> Option<PathBuf> {
-    std::env::var_os("GRADLE_USER_HOME").map(PathBuf::from).or_else(|| Some(crate::home_dir()?.join(".gradle")))
-}
-
-/// One `Maven: g:a:v` / `Gradle: g:a:v` group per dependency whose jar is in a
-/// local repository, its root being the binary jar so Java classes open through JDT's source provider.
-pub(crate) fn dependency_libraries(
-    deps: &[BuildDependency],
-    maven_repo: Option<&Path>,
-    gradle_home: Option<&Path>,
-) -> Vec<LibraryGroup> {
-    let mut deps: Vec<&BuildDependency> = deps.iter().collect();
-    deps.sort();
-    deps.dedup();
-    deps.into_iter()
-        .filter_map(|d| {
-            let maven = || maven_repo.and_then(|r| maven_jar(r, d));
-            let gradle = || gradle_home.and_then(|h| gradle_jar(h, d));
-            let jar = if d.gradle { gradle().or_else(maven) } else { maven().or_else(gradle) }?;
-            let tool = if d.gradle { "Gradle" } else { "Maven" };
-            let name = jar.file_name()?.to_string_lossy().into_owned();
-            group(
-                format!("{tool}: {}:{}:{}", d.group, d.artifact, d.version),
-                &tool.to_lowercase(),
-                vec![LibraryRoot { name, path: ide_vfs::archive_root(&jar).into() }],
-            )
-        })
-        .collect()
-}
-
-/// The `.toml` of a version catalog published as `group:artifact:version` (Gradle's
-/// `version-catalog` plugin) that a build imports with `from("…")`: from Gradle's cache, else
-/// the local Maven repository. `None` until a build has downloaded it.
-pub fn published_version_catalog(root: &Path, s: &Settings, coordinates: &str) -> Option<PathBuf> {
-    let mut parts = coordinates.trim().split(':');
-    let d = BuildDependency {
-        gradle: true,
-        group: parts.next()?.to_owned(),
-        artifact: parts.next()?.to_owned(),
-        version: parts.next()?.to_owned(),
-    };
-    if parts.next().is_some() || !valid_coordinate(&d) {
-        return None;
-    }
-    let file = format!("{}-{}.toml", d.artifact, d.version);
-    let gradle = crate::apply::setting_path(root, &s.languages.java.gradle.user_home).or_else(gradle_user_home);
-    let cached = gradle.and_then(|home| {
-        let dir = home.join("caches/modules-2/files-2.1").join(&d.group).join(&d.artifact).join(&d.version);
-        let mut found: Vec<PathBuf> =
-            std::fs::read_dir(dir).ok()?.flatten().map(|e| e.path().join(&file)).filter(|p| p.is_file()).collect();
-        found.sort();
-        found.into_iter().next()
-    });
-    cached.or_else(|| {
-        let repo = crate::apply::maven_local_repository(root, s).or_else(default_maven_repository)?;
-        let path = repo.join(d.group.replace('.', "/")).join(&d.artifact).join(&d.version).join(&file);
-        path.is_file().then_some(path)
-    })
-}
-
-/// No path separators, interpolations or `..` segments (coordinates become paths).
-fn valid_coordinate(d: &BuildDependency) -> bool {
-    [&d.group, &d.artifact, &d.version]
-        .iter()
-        .all(|p| !p.is_empty() && !p.contains(['/', '\\', '$']) && !p.split('.').any(str::is_empty))
-}
-
-/// `<repo>/<group as path>/<artifact>/<version>/<artifact>-<version>(-sources).jar`.
-pub(crate) fn maven_jar(repo: &Path, d: &BuildDependency) -> Option<PathBuf> {
-    if !valid_coordinate(d) {
-        return None;
-    }
-    let dir = repo.join(d.group.replace('.', "/")).join(&d.artifact).join(&d.version);
-    [".jar", "-sources.jar"]
-        .iter()
-        .map(|suffix| dir.join(format!("{}-{}{suffix}", d.artifact, d.version)))
-        .find(|p| p.is_file())
-}
-
-/// `<gradle home>/caches/modules-2/files-2.1/<group>/<artifact>/<version>/<hash>/<artifact>-<version>(-sources).jar`.
-pub(crate) fn gradle_jar(home: &Path, d: &BuildDependency) -> Option<PathBuf> {
-    if !valid_coordinate(d) {
-        return None;
-    }
-    let dir = home.join("caches/modules-2/files-2.1").join(&d.group).join(&d.artifact).join(&d.version);
-    let mut hashes: Vec<PathBuf> = std::fs::read_dir(dir).ok()?.flatten().map(|e| e.path()).collect();
-    hashes.sort();
-    [".jar", "-sources.jar"].iter().find_map(|suffix| {
-        let file = format!("{}-{}{suffix}", d.artifact, d.version);
-        hashes.iter().map(|h| h.join(&file)).find(|p| p.is_file())
     })
 }
 
@@ -561,25 +402,6 @@ pub(crate) fn parse_go_modules(text: &str) -> Vec<(String, PathBuf)> {
 mod go_cache_tests {
     use super::*;
 
-    #[test]
-    fn finds_published_version_catalogs_in_the_gradle_cache_and_maven_repository() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path();
-        let mut s = Settings::default();
-        s.languages.java.gradle.user_home = root.join("gradle").to_string_lossy().into_owned();
-        s.languages.java.maven.local_repository = root.join("m2").to_string_lossy().into_owned();
-        let cached = root.join("gradle/caches/modules-2/files-2.1/com.acme/catalog/1.2/abc123/catalog-1.2.toml");
-        std::fs::create_dir_all(cached.parent().unwrap()).unwrap();
-        std::fs::write(&cached, "[libraries]").unwrap();
-        assert_eq!(published_version_catalog(root, &s, "com.acme:catalog:1.2"), Some(cached));
-        let local = root.join("m2/com/acme/other/2.0/other-2.0.toml");
-        std::fs::create_dir_all(local.parent().unwrap()).unwrap();
-        std::fs::write(&local, "[libraries]").unwrap();
-        assert_eq!(published_version_catalog(root, &s, " com.acme:other:2.0 "), Some(local));
-        for missing in ["com.acme:catalog:9", "com.acme:catalog", "a:b:c:d", "../x:y:z"] {
-            assert_eq!(published_version_catalog(root, &s, missing), None, "{missing}");
-        }
-    }
     #[test]
     fn vendor_roots_include_local_replacements_once() {
         let dir = tempfile::tempdir().unwrap();

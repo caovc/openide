@@ -9,8 +9,6 @@ const KIND_LABELS: Record<string, string> = {
   deno: "Deno",
   bun: "Bun",
   cargo: "Cargo",
-  gradle: "Gradle",
-  maven: "Maven",
   go: "Go",
   python: "Python",
   pytest: "pytest",
@@ -22,12 +20,8 @@ const KIND_LABELS: Record<string, string> = {
   shell: "Shell Script",
   program: "Program",
   compound: "Compound",
-  application: "Application",
-  "spring-boot": "Spring Boot",
   node: "Node.js",
-  "java-file": "Java Single File",
   rustc: "Rust Single File",
-  kotlinc: "Kotlin Single File",
   cc: "C/C++ Single File",
   native: "Native Executable",
   ruby: "Ruby",
@@ -38,8 +32,6 @@ const KIND_LABELS: Record<string, string> = {
   swift: "Swift",
   dart: "Dart",
   elixir: "Elixir",
-  "scala-cli": "Scala CLI",
-  kotlin: "Kotlin Script",
 };
 
 export const KIND_OPTIONS = Object.entries(KIND_LABELS)
@@ -59,8 +51,6 @@ export function configIcon(config: Pick<RunConfig, "kind" | "isTest">): string {
       return "gutter-run-all";
     case "program":
       return "file-binary";
-    case "spring-boot":
-      return "spring-boot";
     case "npm":
     case "bun":
       return "file-npm";
@@ -68,10 +58,6 @@ export function configIcon(config: Pick<RunConfig, "kind" | "isTest">): string {
       return "file-ts";
     case "cargo":
       return "file-cargo";
-    case "gradle":
-      return "file-gradle";
-    case "maven":
-      return "file-maven";
     case "dotnet":
     case "dotnet-test":
       return "file-csharp";
@@ -79,10 +65,6 @@ export function configIcon(config: Pick<RunConfig, "kind" | "isTest">): string {
       return "file-go";
     case "node":
       return "file-js";
-    case "application":
-      return "class";
-    case "java-file":
-      return "file-java";
     case "rustc":
       return "file-rust";
     case "cc":
@@ -105,12 +87,6 @@ export function configIcon(config: Pick<RunConfig, "kind" | "isTest">): string {
       return "file-dart";
     case "elixir":
       return "file-elixir";
-    case "scala-cli":
-      return "file-scala";
-    case "kotlinc":
-      return "file-kotlin";
-    case "kotlin":
-      return "file-kotlin-script";
     case "native":
       return "file-binary";
     case "python":

@@ -30,8 +30,6 @@ import {
 } from "./store";
 import { TestTreeView, formatDuration } from "./TestTreeView";
 import { StackTracePanel, closeStackTrace, useStackTraces, type StackTraceTab } from "./stackTrace";
-import { showApplicationUpdate, useApplicationUpdates } from "./applicationUpdate";
-import { isUpdatable } from "./updatePolicies";
 import { configIcon } from "./configs";
 import styles from "./Run.module.css";
 import { tx } from "@/platform/i18n";
@@ -64,7 +62,6 @@ export function SessionPanel({
   onDebug?: (() => void) | null;
   onStop?: () => void;
 }) {
-  const updating = useApplicationUpdates((s) => s.ids.has(session.id));
   const version = useRun((s) => s.versions[session.id] ?? 0);
   const rt = runtime(session.id);
   const [follow, setFollow] = useState(true);
@@ -175,15 +172,7 @@ export function SessionPanel({
           disabled={!running && !onStop}
           onClick={onStop ?? (() => void stopSession(session.id))}
         />
-        {isUpdatable(session.config) && (
-          <IconButton
-            icon="refresh"
-            title="Update Application"
-            shortcut={shortcutLabel("run.updateApplication")}
-            disabled={session.status !== "running" || updating}
-            onClick={() => showApplicationUpdate(session.id)}
-          />
-        )}
+
         <div className={styles.toolbarSep} />
         {!rt.terminal && (
           <>

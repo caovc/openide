@@ -9,7 +9,6 @@ import { executeAction, getAction } from "@/platform/actions";
 import { call, commands, isTauri, type RunConfig } from "@/platform/ipc";
 import { useProject } from "@/platform/project";
 import { validateProjectStructure } from "@/platform/languageSettings";
-import { useBuildModel } from "@/platform/buildModel";
 import { isVirtualUri } from "@/platform/virtualDocs";
 import { showContextMenu, type MenuItem } from "@/ui";
 import {
@@ -50,14 +49,8 @@ async function ensureConfigs() {
 export function projectContentRoots(): string[] {
   const own = validateProjectStructure(useProject.getState().settings?.projectStructure).contentRoots;
   // The build model keeps the folders of modules outside the project absolute.
-  const gradle = (useBuildModel.getState().model?.gradle ?? [])
-    .flatMap((g) => g.projects)
-    .map((p) => p.dir)
-    .filter((d) => isAbsolute(d));
-  return [...new Set([...own, ...gradle])];
+  return [...new Set(own)];
 }
-
-const isAbsolute = (p: string) => p.startsWith("/") || /^[A-Za-z]:[\\/]/.test(p);
 
 /**
  * The project side of every run input (editor, gutter, menus, actions): built in one place
@@ -335,7 +328,7 @@ function peekContent(path: string): string | undefined {
 /** Whether the file's runnability depends on its text (`package main`, `fn main`, `#!`…). */
 function needsContent(path: string): boolean {
   const name = path.slice(path.lastIndexOf("/") + 1);
-  return /\.(go|rs|java|kt|c|cpp|cc|cxx)$/.test(name) || !name.includes(".");
+  return /\.(go|rs|c|cpp|cc|cxx)$/.test(name) || !name.includes(".");
 }
 
 export async function prepareMenu(_menu: ContextMenuId, ctx: MenuGroupContext): Promise<void> {

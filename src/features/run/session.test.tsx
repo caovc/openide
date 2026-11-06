@@ -111,7 +111,7 @@ describe("restart", () => {
 
 describe("HTTP port", () => {
   it("is taken from the web server's started line and cleared on rerun", async () => {
-    const app = config("app", { kind: "spring-boot" });
+    const app = config("app", { kind: "python" });
     const session = (await startRun(app))!;
     runtime(session.id)!.console.append({ kind: "stdout", text: "Tomcat started on port 8085 (http)\n" });
     expect(useRun.getState().sessions[0]!.httpPort).toBe(8085);

@@ -8,11 +8,9 @@
 //! |---|---|---|
 //! | Node.js (scripts, npm scripts) | `node --cpu-prof` (via `NODE_OPTIONS`) | `.cpuprofile` JSON |
 //! | Python | `py-spy record --format raw` | collapsed stacks |
-//! | JVM applications | async-profiler agent (`JAVA_TOOL_OPTIONS`) | collapsed stacks |
 //! | native / `cargo run` (Linux) | `perf record -g`, then `perf script` | perf script text |
 
 mod formats;
-mod jvm;
 mod plan;
 mod tree;
 
@@ -62,7 +60,7 @@ pub struct MethodStat {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Profile {
-    /// `node --cpu-prof`, `py-spy`, `async-profiler`, `perf`.
+    /// `node --cpu-prof`, `py-spy`, `perf`.
     pub profiler: String,
     /// `ms` (time-weighted) or `samples`.
     pub unit: String,
@@ -83,8 +81,8 @@ pub enum ProfileSpec {
     /// out when another one did.
     CpuProfiles { dir: IpcPath, root: IpcPath },
     /// Collapsed-stack files with extension `ext` in `dir`; relative frame files resolve
-    /// against `base`. `jvm_root`: map JVM class frames to sources below it.
-    Folded { profiler: String, dir: IpcPath, ext: String, base: IpcPath, jvm_root: Option<IpcPath> },
+    /// against `base`.
+    Folded { profiler: String, dir: IpcPath, ext: String, base: IpcPath },
     /// `perf script -i <data>` output.
     Perf { perf: String, data: IpcPath, cwd: IpcPath, env: BTreeMap<String, String> },
 }
@@ -144,18 +142,14 @@ pub fn collect(spec: &ProfileSpec) -> IdeResult<Profile> {
             }
             Ok(b.finish("node --cpu-prof", "ms"))
         }
-        ProfileSpec::Folded { profiler, dir, ext, base, jvm_root } => {
+        ProfileSpec::Folded { profiler, dir, ext, base } => {
             for f in files_with_ext(dir, ext) {
                 formats::add_folded(&mut b, &std::fs::read_to_string(&f)?, base);
             }
             if b.is_empty() {
                 return Err(nothing_recorded(&format!("{profiler} recorded no samples")));
             }
-            let mut profile = b.finish(profiler, "samples");
-            if let Some(root) = jvm_root {
-                jvm::resolve_sources(&mut profile, root);
-            }
-            Ok(profile)
+            Ok(b.finish(profiler, "samples"))
         }
         ProfileSpec::Perf { perf, data, cwd, env } => {
             if !data.is_file() {

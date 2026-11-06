@@ -26,7 +26,7 @@ describe("External Libraries", () => {
     ]);
   });
 
-  it("gives each ecosystem's groups their icon", () => {
+  it("gives supported ecosystems their icons and legacy or unknown kinds a generic icon", () => {
     const root = librariesRoot(
       ["jdk", "nodeCore", "nodeModules", "rust", "cargo", "go", "goModules", "maven", "gradle", "other"].map(
         (kind) => ({
@@ -37,41 +37,40 @@ describe("External Libraries", () => {
       ),
     )!;
     expect(root.children?.map((g) => g.icon)).toEqual([
-      "file-java",
+      "library",
       "file-js",
       "file-npm",
       "file-rust",
       "file-cargo",
       "file-go",
       "file-gomod",
-      "maven-project",
-      "file-gradle",
+      "library",
+      "library",
       "library",
     ]);
   });
 
-  it("lists archives (src.zip, dependency jars) as browsable roots", () => {
+  it("lists generic source archives as browsable read-only roots", () => {
     const root = librariesRoot([
       {
-        name: "temurin-21",
-        kind: "jdk",
+        name: "Python sources",
+        kind: "python",
         roots: [
-          { name: "temurin-21", path: "/jdk" },
-          { name: "src.zip", path: "/jdk/lib/src.zip!" },
+          { name: "lib", path: "/py/lib" },
+          { name: "sources.zip", path: "/py/sources.zip!" },
         ],
       },
-      { name: "Maven: g:a:1", kind: "maven", roots: [{ name: "a-1-sources.jar", path: "/m2/g/a/1/a-1-sources.jar!" }] },
     ])!;
     expect(root.children?.[0]?.children?.map((c) => c.icon)).toEqual(["folder-library", "file-archive"]);
-    expect(root.children?.[1]).toMatchObject({ label: "< Maven: g:a:1 >", icon: "maven-project" });
-    dispose = setLibraryRoots("test", ["/jdk/lib/src.zip!"]);
-    expect(isLibraryPath("/jdk/lib/src.zip!/java.base/java/lang/String.java")).toBe(true);
+    dispose = setLibraryRoots("test", ["/py/sources.zip!"]);
+    expect(isLibraryPath("/py/sources.zip!/os.py")).toBe(true);
   });
 
   it("refreshes on manifest changes outside node_modules", () => {
     expect(touchesManifest(["/p/src/main.rs", "/p/Cargo.toml"])).toBe(true);
     expect(touchesManifest(["C:\\p\\go.mod"])).toBe(true);
     expect(touchesManifest(["/p/.venv/pyvenv.cfg"])).toBe(true);
+    expect(touchesManifest(["/p/pom.xml", "/p/build.gradle", "/p/settings.gradle.kts"])).toBe(false);
     expect(touchesManifest(["/p/node_modules/react/package.json"])).toBe(false);
     expect(touchesManifest(["/p/src/package.json.bak", "/p/README.md"])).toBe(false);
   });

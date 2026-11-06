@@ -14,10 +14,7 @@ function highlighted(state: EditorState) {
 }
 
 it.each([
-  ["Kotlin", 'val text = """${call({ n ->\n  n + 1\n})} tail"""\nval after = 3'],
-  ["Scala", 'val text = s"""${call({ n =>\n  n + 1\n})} tail"""\nval after = 3'],
   ["Dart", 'var text = """${call(() {\n  return 1;\n})} tail""";\nvar after = 3;'],
-  ["Groovy", 'def text = """${call({ n ->\n  n + 1\n})} tail"""\ndef after = 3'],
   ["C#", 'var text = $@"{call(() => {\n  return 1;\n})} tail";\nvar after = 3;'],
   ["Shell", 'echo "$(echo\n  $((n + 1))\n) tail"\necho 3'],
 ])("%s incremental highlighting agrees with a fresh parse", async (mode, doc) => {

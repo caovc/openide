@@ -1,15 +1,5 @@
 # Third-party licenses
 
-## Project Lombok
-
-`java/lombok/lombok-1.18.48-openidea.3.jar` contains Project Lombok v1.18.48 with the Equinox
-classloader fix from [projectlombok/lombok#4059](https://github.com/projectlombok/lombok/pull/4059),
-the [compact record constructor builder fix](java/lombok/patches/builder-compact-constructor.patch)
-and the ECJ constructor-call fix from [projectlombok/lombok#4089](https://github.com/projectlombok/lombok/pull/4089).
-Copyright (C) 2009-2021 The Project Lombok Authors. MIT license and bundled component
-notices are retained in [java/lombok/LICENSE](java/lombok/LICENSE) and inside the jar.
-Source tag, patch commits and build instructions: [java/lombok/README.md](java/lombok/README.md).
-
 ## JetBrains IntelliJ Platform icons
 
 `src/ui/expui/**` contains SVG icons from the IntelliJ Platform "new UI" (expui)
@@ -139,23 +129,6 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
-## Tools downloaded on request (not bundled)
-
-The tool installer (`crates/ide-tools`, Settings › Languages & Frameworks ›
-Language Servers) downloads third-party language servers and debuggers into the
-user's app-data directory only when the user asks; none of them ships with OpenIDEA.
-
-- **Microsoft java-debug** (Java debugger, loaded into jdtls as a bundle):
-  `com.microsoft.java.debug.plugin-*.jar` from <https://github.com/microsoft/java-debug>,
-  Copyright (c) Microsoft Corporation, licensed under the
-  [Eclipse Public License 1.0](https://github.com/microsoft/java-debug/blob/main/LICENSE.txt)
-  (EPL-1.0; it embeds `commons-io` and `rxjava`/`reactive-streams`, Apache-2.0). OpenIDEA
-  takes the jar from the `vscjava.vscode-java-debug` extension package on Open VSX
-  (<https://open-vsx.org/extension/vscjava/vscode-java-debug>, the extension itself is
-  MIT-licensed), verifies its published SHA-256 and extracts only the jar; it is used
-  unmodified, and its source is available from the repository above.
-- **Eclipse JDT Language Server** (jdtls): EPL-2.0, from download.eclipse.org.
 
 ## en_US / en_GB Hunspell dictionaries
 

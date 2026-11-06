@@ -1,4 +1,3 @@
-import { jvmEnabled } from "@/platform/productProfile";
 /**
  * Settings: the Settings window (⌘,, action `file.settings`) with built-in
  * pages (Appearance, System Settings, Keymap, Editor › General / Font / Code
@@ -52,7 +51,7 @@ export const SettingsWindow = lazyComponent(() => import("./window/SettingsWindo
 const LAUNCH_EVENT = "openidea://launch";
 
 /** New DS projects start with their interpreter, not the upstream JDK setup. */
-const NEW_PROJECTS_PAGE = jvmEnabled() ? "languages.java" : "python.interpreter";
+const NEW_PROJECTS_PAGE = "python.interpreter";
 
 function settingsActions(open: (page?: string, newProjects?: boolean) => void): Action[] {
   return [
@@ -70,7 +69,7 @@ function settingsActions(open: (page?: string, newProjects?: boolean) => void): 
       title: "Settings for New Projects…",
       category: "File",
       icon: "settings",
-      keywords: ["new projects setup", "default settings", "default project", "default jdk", "global settings"],
+      keywords: ["new projects setup", "default settings", "default project", "global settings"],
       run: ({ arg }) => open(typeof arg === "string" ? arg : NEW_PROJECTS_PAGE, true),
     },
     {

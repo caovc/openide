@@ -1,8 +1,7 @@
 /**
  * HTTP Client (IDEA's `.http` / `.rest` files): highlighting, ▶ gutter per
  * request, environments, Run All, and a tool window with the responses and
- * their history, and requests generated from Spring Web mappings in Java /
- * Kotlin sources (`spring/`). Parsing, variable resolution and sending happen in Rust
+ * their history. Parsing, variable resolution and sending happen in Rust
  * (`ide-http`).
  */
 import { activeEditor, registerEditorContribution, registerLanguageMode } from "@/editor/api";
@@ -21,17 +20,6 @@ import { HTTP_LANGUAGE, httpEditorExtension, refreshRequests, requestAtCaret } f
 import { HttpClientHeaderActions, HttpClientView } from "./HttpClientView";
 import { httpLanguageDescription } from "./language";
 import { SERVICE_VIEW, resetHttpClient, runAll, runRequest } from "./store";
-import {
-  GENERATE_CONTROLLER_REQUESTS,
-  GENERATE_REQUEST,
-  generateAtCaret,
-  menuGroupItems,
-  springEditorExtension,
-} from "./spring/editor";
-import { registerSpringEndpointProvider } from "./spring/routeIndex";
-
-const SPRING_WHEN = "editorLangId == java || editorLangId == kotlin";
-
 export const NEW_REQUEST_TEMPLATE = `### Example request
 # Variables come from http-client.env.json / http-client.private.env.json
 # next to this file or in the project root: {{host}}
@@ -113,14 +101,11 @@ async function newRequest(directory?: string) {
 
 export function activate(): () => void {
   const disposers = [
-    registerSpringEndpointProvider(),
     useProject.subscribe((s, prev) => {
       if (s.project?.root !== prev.project?.root) resetHttpClient();
     }),
     registerLanguageMode(httpLanguageDescription),
     registerEditorContribution({ id: "http.requests", order: 56, extensions: httpEditorExtension }),
-    registerEditorContribution({ id: "http.spring", order: 57, extensions: springEditorExtension }),
-    registerMenuGroup({ id: "http.spring", menus: ["editor"], order: 40, items: (_menu, ctx) => menuGroupItems(ctx) }),
     registerServiceView({
       id: SERVICE_VIEW,
       title: "HTTP Client",
@@ -171,24 +156,6 @@ export function activate(): () => void {
             await executeAction("templates.newFromTemplate", newRequestArg(directory));
           else if (isTauri()) await newRequest(directory ?? undefined);
         },
-      },
-      {
-        id: GENERATE_REQUEST,
-        title: "Generate Request in HTTP Client",
-        category: "Tools",
-        icon: "file-http",
-        keywords: ["spring", "request mapping", "rest", "endpoint", "http client"],
-        when: SPRING_WHEN,
-        run: () => generateAtCaret("endpoint"),
-      },
-      {
-        id: GENERATE_CONTROLLER_REQUESTS,
-        title: "Generate Requests for Controller",
-        category: "Tools",
-        icon: "file-http",
-        keywords: ["spring", "request mapping", "rest", "endpoints", "http client"],
-        when: SPRING_WHEN,
-        run: () => generateAtCaret("controller"),
       },
       {
         id: "http.showToolWindow",

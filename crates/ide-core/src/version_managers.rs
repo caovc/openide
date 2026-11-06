@@ -12,12 +12,9 @@ pub const ASDF: &str = "asdf";
 /// A toolchain the version managers install.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Tool {
-    Java,
     Node,
     Python,
     Go,
-    Maven,
-    Gradle,
     Ruby,
 }
 
@@ -25,12 +22,9 @@ impl Tool {
     /// The tool's names in mise and asdf plugins (`nodejs`, `golang` are asdf's).
     pub fn names(self) -> &'static [&'static str] {
         match self {
-            Tool::Java => &["java"],
             Tool::Node => &["node", "nodejs"],
             Tool::Python => &["python"],
             Tool::Go => &["go", "golang"],
-            Tool::Maven => &["maven"],
-            Tool::Gradle => &["gradle"],
             Tool::Ruby => &["ruby"],
         }
     }

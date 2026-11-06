@@ -99,7 +99,7 @@ describe("tools store", () => {
       "rust-analyzer",
       "typescript-language-server",
     ]);
-    expect(filterTools(tools, "kotlin", "missing").map((t) => t.name)).toEqual(["kotlin-lsp"]);
+    expect(filterTools(tools, "gopls", "missing").map((t) => t.name)).toEqual(["gopls"]);
   });
 });
 

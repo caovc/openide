@@ -6,16 +6,12 @@ pub mod dotnet;
 pub mod envfile;
 mod external;
 pub mod go;
-pub mod gradle_jvm;
 pub mod import;
-pub mod java_cmdline;
-pub mod junit;
 mod process;
 pub mod python_path;
 pub mod ruby_preload;
 pub mod ruby_reporter;
 pub mod scope;
-pub mod tomcat;
 mod utf8;
 pub mod which;
 pub mod wrap;
@@ -34,7 +30,7 @@ pub struct RunConfig {
     /// Stable id, e.g. `npm:dev`, `cargo:run:app`, or a uuid for user-defined.
     pub id: String,
     pub name: String,
-    /// `npm` | `cargo` | `gradle` | `maven` | `go` | `python` | `pytest` | `make` | `shell` …
+    /// `npm` | `cargo` | `go` | `python` | `pytest` | `make` | `shell` …
     pub kind: String,
     pub command: String,
     pub args: Vec<String>,
@@ -77,7 +73,7 @@ fn is_true(b: &bool) -> bool {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct RunExtras {
-    /// Owning module, independent of the working directory; also supplies a JVM application's classpath.
+    /// Owning module, independent of the working directory.
     /// Empty means the project root.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[specta(optional)]
@@ -199,24 +195,14 @@ pub struct RunInfo {
 
 pub use external::{EXTERNAL_PREFIX, ExternalDetection, set_external_detection};
 
-/// Detects configs from package.json scripts, Cargo.toml targets, build.gradle(.kts),
-/// pom.xml, go.mod, pyproject/pytest, Makefile.
+/// Detects configurations from supported non-JVM project tools.
 pub fn detect(root: &Path) -> Vec<RunConfig> {
     detect::detect(root)
 }
 
-/// Detects configurations excluding the supplied project-relative Maven POM paths.
-pub fn detect_excluding(root: &Path, excluded_poms: &[PathBuf]) -> Vec<RunConfig> {
-    detect::detect_excluding(root, excluded_poms)
-}
-
 /// Detects configurations with explicit CMake profiles, or legacy discovery when absent.
-pub fn detect_with_profiles(
-    root: &Path,
-    excluded_poms: &[PathBuf],
-    profiles: Option<&[ide_core::settings::CMakeProfile]>,
-) -> Vec<RunConfig> {
-    detect::detect_with_profiles(root, excluded_poms, profiles)
+pub fn detect_with_profiles(root: &Path, profiles: Option<&[ide_core::settings::CMakeProfile]>) -> Vec<RunConfig> {
+    detect::detect_with_profiles(root, profiles)
 }
 
 /// Reads `<root>/.openidea/run.toml`; a missing file yields no configs.
@@ -280,22 +266,39 @@ pub fn user_configs_path(root: &Path) -> PathBuf {
     config::config_path(root)
 }
 
-#[cfg(test)]
-mod linkage_tests {
-    #[test]
-    fn detection_skips_unlinked_maven_roots() {
-        let tmp = tempfile::tempdir().unwrap();
-        for name in ["a", "b"] {
-            std::fs::create_dir(tmp.path().join(name)).unwrap();
-            std::fs::write(tmp.path().join(name).join("pom.xml"), "<project/>").unwrap();
-        }
-        let configs = super::detect_excluding(tmp.path(), &["a/pom.xml".into()]);
-        assert!(configs.iter().any(|c| c.kind == "maven"));
-        assert!(
-            configs
-                .iter()
-                .filter(|c| c.kind == "maven")
-                .all(|c| c.cwd.as_ref().is_some_and(|d| d.as_ref() == std::path::Path::new("b")))
-        );
+/// Compatibility classifier only: legacy records remain readable but cannot launch.
+pub fn is_removed_jvm_kind(kind: &str, adapter: Option<&str>) -> bool {
+    matches!(
+        kind,
+        "application"
+            | "spring-boot"
+            | "tomcat"
+            | "maven"
+            | "gradle"
+            | "remote-jvm"
+            | "java"
+            | "java-file"
+            | "kotlin"
+            | "kotlinc"
+            | "scala"
+            | "scala-cli"
+            | "groovy"
+            | "clojure"
+            | "jsp"
+            | "android"
+    ) || matches!(adapter, Some("java-debug" | "kotlin-debug-adapter"))
+}
+
+pub fn is_removed_jvm_config(config: &RunConfig) -> bool {
+    is_removed_jvm_kind(&config.kind, config.debug_adapter.as_deref())
+}
+
+pub fn ensure_supported_config(config: &RunConfig) -> IdeResult<()> {
+    if is_removed_jvm_config(config) {
+        Err(ide_core::IdeError::unavailable(
+            "JVM run configurations are no longer supported; the saved configuration has been preserved.",
+        ))
+    } else {
+        Ok(())
     }
 }

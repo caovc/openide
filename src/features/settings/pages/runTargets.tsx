@@ -537,12 +537,6 @@ function RunTargetsEditor() {
             onChange={(node) => update({ node })}
             placeholder="node"
           />
-          <TextField
-            label="Java executable"
-            value={current.java}
-            onChange={(java) => update({ java })}
-            placeholder="java"
-          />
         </Section>
       )}
       <div className={styles.note}>
@@ -581,7 +575,6 @@ export const RUN_TARGET_PAGES: PageSpec[] = [
               "Upload changed project files before each run",
               "Python interpreter",
               "Node.js interpreter",
-              "Java executable",
               "Docker connection",
               "Image",
               "Compose files",

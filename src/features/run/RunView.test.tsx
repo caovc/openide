@@ -9,7 +9,7 @@ vi.mock("@/platform/actions", async (orig) => ({ ...(await orig<object>()), exec
 const config = (extra: Partial<RunConfig> = {}): RunConfig => ({
   id: "c",
   name: "c",
-  kind: "spring-boot",
+  kind: "python",
   command: "mvn",
   args: [],
   cwd: null,
@@ -45,13 +45,13 @@ describe("sessionIcon", () => {
   });
 
   it("shows the configuration's own icon once the process ended (IDEA's third state)", () => {
-    expect(sessionIcon(session())).toBe("spring-boot");
+    expect(sessionIcon(session())).toBe("file-python");
     expect(sessionIcon(session({ config: config({ kind: "program" }) }))).toBe("file-binary");
     expect(sessionIcon(session({ config: config({ kind: "npm" }) }))).toBe("file-npm");
   });
 
   it("never shows the error icon for a session the user stopped", () => {
-    expect(sessionIcon(session({ exitCode: 1, stopped: true }))).toBe("spring-boot");
+    expect(sessionIcon(session({ exitCode: 1, stopped: true }))).toBe("file-python");
   });
 });
 

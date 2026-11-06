@@ -7,12 +7,6 @@ export function programName(command: string): string {
   return name.replace(/\.(exe|cmd|bat)$/i, "");
 }
 
-const runsJvmTests = (args: readonly string[]) =>
-  args.some((a) => {
-    const task = a.split(":").pop() ?? a;
-    return ["test", "verify", "check", "integrationTest"].includes(task) || a.startsWith("-Dtest=") || a === "--tests";
-  });
-
 /**
  * Whether a coverage runner is known for `config` (cheap; the backend decides for real):
  * cargo test / run / nextest, go test, Maven / Gradle tests, package.json test scripts,
@@ -28,11 +22,6 @@ export function coverageSupports(config: Pick<RunConfig, "command" | "args" | "k
     }
     case "go":
       return args[0] === "test";
-    case "mvn":
-    case "mvnw":
-    case "gradle":
-    case "gradlew":
-      return runsJvmTests(args);
     case "npm":
     case "pnpm":
     case "yarn":

@@ -53,7 +53,6 @@ export interface RunTargetValid {
   syncBeforeRun: boolean;
   python: string;
   node: string;
-  java: string;
   /** Services tool window Docker connection id; empty = the CLI's daemon. */
   dockerConnection: string;
   image: string;
@@ -111,7 +110,6 @@ export const DEFAULT_RUN_TARGET: RunTargetValid = {
   syncBeforeRun: true,
   python: "",
   node: "",
-  java: "",
   dockerConnection: "",
   image: "",
   composeFiles: [],
@@ -210,7 +208,6 @@ export function validateRunTargets(raw: unknown): RunTargetValid[] {
     syncBeforeRun: bool(o.syncBeforeRun, d.syncBeforeRun),
     python: text(o.python, ""),
     node: text(o.node, ""),
-    java: text(o.java, ""),
     dockerConnection: text(o.dockerConnection, ""),
     image: text(o.image, ""),
     composeFiles: strings(o.composeFiles, []),

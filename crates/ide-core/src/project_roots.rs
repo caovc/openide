@@ -138,8 +138,6 @@ mod tests {
             "package.json",
             "Cargo.toml",
             "go.mod",
-            "pom.xml",
-            "build.gradle.kts",
             "pyproject.toml",
             "composer.json",
             "Gemfile",

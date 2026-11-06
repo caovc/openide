@@ -25,9 +25,7 @@ plugins/
    ├─ string-tools/           # 26 text commands, versioned multi-cursor edits
    ├─ key-promoter/           # action events, storage
    ├─ git-toolbox/            # on-schedule fetch, tasks, VCS, status bar item
-   ├─ checkstyle/             # one-shot process, diagnostics, quick fixes
    ├─ ai-completion/          # inline completion over the network, secrets
-   ├─ mybatis/                # navigation, gutter markers, completion across files
    ├─ csv-editor/             # custom editor sharing the text document
    ├─ excalidraw/             # web view custom editor, file icons, a template
    ├─ graphviz/               # web view with code: live preview, problems from the page, a language
@@ -365,7 +363,7 @@ declaration matches the file's language are called (and loaded):
 ```toml
 [[contributes.providers]]
 kinds = ["definition", "line-markers", "completion"]  # also "inline-completion", "code-actions"
-languages = ["java", "xml"]                           # editor language ids; "*" for any
+languages = ["python", "xml"]                           # editor language ids; "*" for any
 ```
 
 Then `register_plugin!(MyPlugin, providers)` and implement

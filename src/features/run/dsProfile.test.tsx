@@ -6,7 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { RunConfig } from "@/platform/ipc";
 import { showDebugAdapter, showLanguageTool, showRunConfig, showRunKind } from "@/platform/productProfile";
 import { registerRunConfigType, runConfigTypes } from "@/workbench/contributions";
-import { remoteJvmType, pythonRemoteType } from "../debugger/remote";
+import { pythonRemoteType } from "../debugger/remote";
 import { buildRows } from "./ConfigChooser";
 import { treeRows } from "./EditConfigsDialog";
 import { groupConfigs } from "./configs";
@@ -30,7 +30,7 @@ const config = (kind: string, debugAdapter: string | null = null): RunConfig => 
 let off: (() => void)[];
 beforeEach(() => {
   vi.stubEnv("VITE_OPENIDE_JVM", "0");
-  off = [registerBuiltinTypes(), registerRunConfigType(remoteJvmType), registerRunConfigType(pythonRemoteType)];
+  off = [registerBuiltinTypes(), registerRunConfigType(pythonRemoteType)];
 });
 afterEach(() => {
   off.forEach((dispose) => dispose());
@@ -91,22 +91,10 @@ it("suppresses JVM file/caret/gutter and build-directory producers, not Python/R
   expect(produceFile({ ...input, path: "/p/analysis.R", content: "print(42)" }, OPTIMISTIC)?.config?.kind).toBe("r");
 });
 
-it("explicit diagnostic opt-in restores JVM UI and producers", () => {
+it("legacy environment opt-in cannot restore removed JVM features", () => {
   vi.stubEnv("VITE_OPENIDE_JVM", "1");
-  expect(runConfigTypes().map((type) => type.id)).toContain("application");
-  expect(runConfigTypes().map((type) => type.id)).toContain("remote-jvm");
-  expect(showDebugAdapter("java-debug")).toBe(true);
-  expect(
-    produceFile(
-      {
-        root: null,
-        configs: [],
-        path: "/Main.java",
-        content: "public class Main { public static void main(String[] args) {} }",
-      },
-      OPTIMISTIC,
-    ),
-  ).not.toBeNull();
+  expect(runConfigTypes().map((type) => type.id)).not.toContain("application");
+  expect(showDebugAdapter("java-debug")).toBe(false);
 });
 
 it("offers Python, not JVM adapters, in the real configuration form", async () => {
@@ -132,8 +120,8 @@ it("offers Python, not JVM adapters, in the real configuration form", async () =
 
 it("filters JVM tools from the settings tool list, with an explicit diagnostic opt-in", () => {
   const tools = sampleTools();
-  expect(tools.some((tool) => tool.name === "kotlin-lsp")).toBe(true);
+  expect(filterTools(tools, "", "all").some((tool) => tool.name === "kotlin-lsp")).toBe(false);
   expect(filterTools(tools, "", "all").some((tool) => tool.name === "kotlin-lsp")).toBe(false);
   vi.stubEnv("VITE_OPENIDE_JVM", "1");
-  expect(filterTools(tools, "", "all").some((tool) => tool.name === "kotlin-lsp")).toBe(true);
+  expect(filterTools(tools, "", "all").some((tool) => tool.name === "kotlin-lsp")).toBe(false);
 });

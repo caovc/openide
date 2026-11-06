@@ -19,7 +19,7 @@ export function activate() {
     registerToolWindow({
       id: "ds-console",
       title: "Console",
-      icon: "toolwindow-terminal",
+      icon: "toolwindow-ds-console",
       anchor: "bottom",
       order: 11,
       component: ConsoleView,

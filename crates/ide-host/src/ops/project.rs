@@ -175,7 +175,6 @@ pub fn set_settings(
         host.apply_proxy();
     }
     // A new interpreter / toolchain / server executable restarts the language servers it affects.
-    // So do inspections that are compiler options (`ide-sdk` `configure_java_compiler`).
     let code_style = key == "editor"
         || key == "editor.codeStyle"
         || key.starts_with("editor.codeStyle.")
@@ -184,21 +183,14 @@ pub fn set_settings(
     let toolchain = ["languages", "tools", "languageServers", "projectStructure"]
         .iter()
         .any(|k| key == *k || key.starts_with(&format!("{k}.")));
-    // Code style only reaches servers as settings (e.g. jdtls' formatter profile); builds don't depend on it.
+    // Reconfigure language servers after settings changes.
     if code_style || toolchain {
         for project in affected() {
-            if toolchain && let Some(bridge) = &project.kotlin_bridge {
-                bridge.schedule();
-            }
             let lsp = project.lsp.clone();
             host.runtime.spawn(async move { lsp.reconfigure().await });
         }
     }
-    let roots_changed = key == "projectStructure"
-        || key.starts_with("projectStructure.")
-        || "languages.java.maven.unlinkedProjects".starts_with(key)
-        || "languages.java.maven.linkedProjects".starts_with(key)
-        || "languages.java.gradle.linkedProjects".starts_with(key);
+    let roots_changed = key == "projectStructure" || key.starts_with("projectStructure.");
     // Content roots and excludes (files.exclude, ignored names, excluded folders) reach the
     // index and the watchers without reopening the project (the rescan runs in the background).
     if roots_changed || key == "files" || key.starts_with("files.") {

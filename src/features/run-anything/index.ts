@@ -16,7 +16,7 @@ export function activate(): () => void {
         title: "Run Anything…",
         category: "Run",
         icon: "run-anything",
-        keywords: ["command", "shell", "execute", "npm", "mvn", "gradle"],
+        keywords: ["command", "shell", "execute", "npm", "python", "R"],
         when: "projectOpen",
         run: showRunAnything,
       },

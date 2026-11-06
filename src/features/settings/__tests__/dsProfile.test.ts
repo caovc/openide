@@ -7,6 +7,6 @@ it("removes JVM settings from the built-in settings and search registry", () => 
   for (const id of ["python.interpreter", "build.pythonDebugger", "projectStructure"])
     expect(builtinSpec(id)).toBeDefined();
   vi.stubEnv("VITE_OPENIDE_JVM", "1");
-  expect(showSettingsPage("languages.java")).toBe(true);
+  expect(showSettingsPage("languages.java")).toBe(false);
   vi.unstubAllEnvs();
 });

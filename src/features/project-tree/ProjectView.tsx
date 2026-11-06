@@ -49,14 +49,7 @@ import {
 import { badgeKind } from "@/ui/symbolKind";
 import { contextMenuItems, menuGroupContext, newMenuItems } from "./contextMenu";
 import { openNewPopup } from "./newPopupModel";
-import { presentationIcon, useJvmPresentation } from "@/platform/filePresentation";
-import {
-  isModuleFolder,
-  moduleFolderIcon,
-  useProjectPresentation,
-  type BuildPresentation,
-} from "@/platform/projectPresentation";
-import { relativePath } from "@/platform/project";
+import { useFilePresentation } from "@/platform/filePresentation";
 import { folderKind } from "./folderKind";
 import { useHomeDir } from "./home";
 import { keyLike, memberNodes, nodeKeyFor, visibleInfo, type ProjectNode } from "./model";
@@ -125,7 +118,6 @@ function iconFor(
   node: ProjectNode,
   roots: readonly RootFolder[],
   root: string | null,
-  build: BuildPresentation,
   detected: readonly RootFolder[],
   expanded: boolean,
   holdsOpen: boolean,
@@ -133,13 +125,8 @@ function iconFor(
   if (node.placeholder) return node.placeholder === "dir" ? "folder" : "file";
   if (node.icon) return node.icon;
   if (node.dir) {
-    const kind = folderKind(node, roots, root, build, detected);
+    const kind = folderKind(node, roots, root, detected);
     if (kind !== "plain") return folderIconName(kind);
-    const rel = root ? (node.path === root ? "" : relativePath(root, node.path)) : null;
-    // Modules outside the project are keyed by their absolute folder.
-    const key = rel !== null && build.modules.has(rel) ? rel : node.path;
-    const module = root ? moduleFolderIcon(key, node.root, build.modules) : null;
-    if (module) return module;
     return node.root ? "module" : (themedFolderIconName(node.label, expanded, holdsOpen, node.path) ?? "folder");
   }
   return fileIconName(node.label, node.path);
@@ -280,16 +267,11 @@ const Row = memo(function Row({
   const roots = useEffectiveRoots();
   const root = useProjectTree((s) => s.root);
   const detected = useDetectedRoots();
-  const build = useProjectPresentation();
-  const file = useJvmPresentation(node.dir || node.placeholder ? "" : node.path, node.entry?.mtimeMs);
+  const file = useFilePresentation(node.dir || node.placeholder ? "" : node.path, node.entry?.mtimeMs);
   const expanded = useProjectTree((s) => node.dir && s.expanded.has(node.key));
   const holdsOpen = useProjectTree((s) => node.dir && holdsOpenFile(node.path, s.openFiles));
   const icon =
-    node.dir || node.placeholder || node.icon
-      ? iconFor(node, roots, root, build, detected, expanded, holdsOpen)
-      : presentationIcon(node.path, file, roots, root, build.spring);
-  const moduleFolder =
-    node.dir && !node.placeholder && !!root && isModuleFolder(relativePath(root, node.path), node.root, build.modules);
+    node.dir || node.placeholder || node.icon ? iconFor(node, roots, root, detected, expanded, holdsOpen) : file.icon;
   const isEditing =
     !!editing && (node.placeholder ? editing.kind === "new" : editing.kind === "rename" && editing.key === node.key);
   const faded = node.ignored || deco.faded;
@@ -312,9 +294,6 @@ const Row = memo(function Row({
           size={16}
           className={clsx(styles.icon, node.dir && styles.folderIcon, dimIcon && styles.faded)}
         />
-        {!!file?.runnable && icon !== "spring-boot" && icon !== "jvm-test" && (
-          <Icon name="runnable-mark" size={16} className={styles.runnable} />
-        )}
       </span>
       {isEditing && editing ? (
         <InlineEditor
@@ -331,7 +310,6 @@ const Row = memo(function Row({
               // Only the project itself is bold (IDEA); contributed roots like Scratches are not.
               node.root && !node.icon && styles.rootLabel,
               // Maven / Gradle module folders are bold too, as in IDEA.
-              moduleFolder && styles.moduleLabel,
               faded && !deco.color && styles.excluded,
               deco.error && styles.error,
             )}

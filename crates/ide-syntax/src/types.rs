@@ -118,7 +118,7 @@ pub struct LocalSymbol {
     pub references: Vec<Range>,
     /// The resolution is unambiguous. `false` when the scope declares the name
     /// more than once in a language where that is not plain shadowing (JS `var`
-    /// re-declaration, broken Java…): references were split by position and
+    /// re-declaration, broken syntax…): references were split by position and
     /// callers should confirm before renaming.
     pub certain: bool,
     /// The other declarations of the same name in `scope` (empty when `certain`).
@@ -129,7 +129,7 @@ pub struct LocalSymbol {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub enum NotLocalReason {
-    /// Member position (`obj.name`, `name:` labels, `foo()` method names in Java…).
+    /// Member position (`obj.name`, `name:` labels, method names in calls…).
     Member,
     /// Declared at file / class / module level (fields, methods, top-level
     /// functions, imports): visible beyond the local scope.

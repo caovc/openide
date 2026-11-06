@@ -19,7 +19,7 @@ describe("New keymap", () => {
     expect(km["code.generate"]).toContain(key);
     expect(ids.indexOf("project.newFile")).toBeLessThan(ids.indexOf("code.generate"));
     const generate = compileWhen(GENERATE_KEY_WHEN);
-    expect(generate({ editorLangId: "java" })).toBe(true);
+    expect(generate({ editorLangId: "java" })).toBe(false);
     expect(generate({ editorLangId: "rust" })).toBe(true);
     expect(generate({ editorLangId: "python" })).toBe(false);
     expect(generate({ editorLangId: "markdown" })).toBe(false);

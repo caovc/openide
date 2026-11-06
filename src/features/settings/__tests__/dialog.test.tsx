@@ -110,28 +110,6 @@ describe("Settings dialog", () => {
     ]);
   });
 
-  it("finds Gradle JVM and applies project Gradle settings", async () => {
-    useProject.setState({ project: { root: "/project" } as never });
-    const dialog = await openDialog("build.gradle");
-    fireEvent.change(within(dialog).getByLabelText("Search settings"), { target: { value: "Gradle JVM" } });
-    expect(within(dialog).getByRole("tree", { name: "Settings pages" }).textContent).toContain("Gradle");
-    expect(within(dialog).getByLabelText("Gradle JVM")).toBeInTheDocument();
-    await act(async () => stage("build.gradle", "project", "languages.java.gradle.jvm", "/jdk21"));
-    await act(async () => stage("build.gradle", "project", "languages.java.gradle.distribution", "local"));
-    expect(within(dialog).getByPlaceholderText("Gradle installation directory")).toBeInTheDocument();
-    await act(async () => stage("build.gradle", "project", "languages.java.gradle.home", "/gradle"));
-    await act(async () => stage("build.gradle", "project", "languages.java.gradle.userHome", "/gradle-cache"));
-    await act(async () => fireEvent.click(within(dialog).getByRole("button", { name: "Apply" })));
-    expect(settingsSet.mock.calls).toEqual(
-      expect.arrayContaining([
-        ["project", "languages.java.gradle.jvm", '"/jdk21"'],
-        ["project", "languages.java.gradle.distribution", '"local"'],
-        ["project", "languages.java.gradle.home", '"/gradle"'],
-        ["project", "languages.java.gradle.userHome", '"/gradle-cache"'],
-      ]),
-    );
-  });
-
   it("searches pages and highlights matching option labels", async () => {
     const dialog = await openDialog("appearance");
     fireEvent.change(within(dialog).getByLabelText("Search settings"), { target: { value: "soft wrap" } });
@@ -392,9 +370,9 @@ describe("Settings dialog", () => {
   describe("toolchain settings with a project open", () => {
     let global: Settings;
     beforeEach(() => {
-      // Global layer: -Xmx1g; the project overrides it with -Xmx4g.
-      global = setAt(structuredClone(DEFAULT_SETTINGS) as Settings, "languages.java.jdtlsVmArgs", "-Xmx1g");
-      current = setAt(global, "languages.java.jdtlsVmArgs", "-Xmx4g");
+      // Global layer: --edition 2021; the project overrides it with --edition 2024.
+      global = setAt(structuredClone(DEFAULT_SETTINGS) as Settings, "languages.rust.rustfmtArgs", "--edition 2021");
+      current = setAt(global, "languages.rust.rustfmtArgs", "--edition 2024");
       settingsGetGlobal.mockImplementation(async () => global);
       useProject.setState({
         settings: current,
@@ -403,19 +381,19 @@ describe("Settings dialog", () => {
     });
 
     it("edit the project first; Global shows and writes the global layer", async () => {
-      const dialog = await openDialog("languages.java");
+      const dialog = await openDialog("languages.rust");
       expect(within(dialog).getByRole("radio", { name: "This project" })).toHaveAttribute("aria-checked", "true");
-      expect(within(dialog).getByLabelText("JVM options")).toHaveValue("-Xmx4g");
+      expect(within(dialog).getByLabelText("Additional arguments")).toHaveValue("--edition 2024");
 
       fireEvent.click(within(dialog).getByRole("radio", { name: "Global" }));
-      expect(within(dialog).getByLabelText("JVM options")).toHaveValue("-Xmx1g");
+      expect(within(dialog).getByLabelText("Additional arguments")).toHaveValue("--edition 2021");
       expect(within(dialog).getByText(/used by new projects/)).toBeInTheDocument();
 
-      fireEvent.change(within(dialog).getByLabelText("JVM options"), { target: { value: "-Xmx2g" } });
+      fireEvent.change(within(dialog).getByLabelText("Additional arguments"), { target: { value: "--edition 2018" } });
       await act(async () => {
         fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
       });
-      expect(settingsSet.mock.calls).toEqual([["global", "languages.java.jdtlsVmArgs", '"-Xmx2g"']]);
+      expect(settingsSet.mock.calls).toEqual([["global", "languages.rust.rustfmtArgs", '"--edition 2018"']]);
     });
 
     it("Settings for New Projects edits the global layer on every page", async () => {
@@ -425,8 +403,7 @@ describe("Settings dialog", () => {
       });
       const dialog = screen.getByRole("dialog", { name: "Settings for New Projects" });
       expect(within(dialog).queryByRole("radiogroup", { name: "Settings scope" })).toBeNull();
-      expect(within(dialog).getByLabelText("JVM options")).toHaveValue("-Xmx1g");
-      expect(within(dialog).getByLabelText("Language server JDK")).toBeInTheDocument();
+      expect(within(dialog).getByLabelText("Python interpreter")).toBeInTheDocument();
       expect(within(dialog).getByText(/used by new projects/)).toBeInTheDocument();
     });
   });

@@ -1,5 +1,5 @@
 //! Parse + query timings of the structure service on generated sources:
-//! a 5k-line Java file and a 20k-line TypeScript file, as open documents
+//! a 20k-line TypeScript file, as open documents
 //! (cached tree) — the path editor features take.
 //!
 //! `cargo run --release -p ide-syntax --example structure_perf`
@@ -9,19 +9,6 @@ use ide_language::{Syntax, SyntaxCache};
 use ide_syntax::{Snapshot, StructureService};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-
-fn java_source(lines: usize) -> String {
-    let mut s = String::from("package demo;\n\nimport java.util.*;\n\npublic class Big {\n");
-    let mut i = 0;
-    while s.lines().count() < lines - 1 {
-        s.push_str(&format!(
-            "  private int field{i} = {i};\n\n  public int method{i}(int a, List<String> items) {{\n    int total = a + field{i};\n    for (String item : items) {{\n      if (item.length() > total) {{\n        total += item.length() * 2;\n      }}\n    }}\n    Runnable r = () -> System.out.println(total + a);\n    return compute(total, a) + items.size();\n  }}\n\n"
-        ));
-        i += 1;
-    }
-    s.push_str("}\n");
-    s
-}
 
 fn ts_source(lines: usize) -> String {
     let mut s = String::from("import { thing } from './thing';\n\n");
@@ -76,13 +63,10 @@ fn main() {
     let syntax = Arc::new(Syntax::new());
     let cache = Arc::new(SyntaxCache::new(syntax));
     let service = StructureService::new(cache.clone());
-    let java = java_source(5_000);
     // A use of `total` at the end of the file.
     let last = |text: &str, needle: &str| {
         text.lines().enumerate().filter(|(_, l)| l.contains(needle)).last().unwrap().0 as u32
     };
-    let line = last(&java, "return compute(total");
-    bench(&service, &cache, "java", &java, "total", line);
     let ts = ts_source(20_000);
     let line = last(&ts, "return f(total)");
     bench(&service, &cache, "typescript", &ts, "total", line);

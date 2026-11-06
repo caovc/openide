@@ -135,26 +135,11 @@ pub async fn sdk_php_composer_install(
 }
 
 /// SDK / library source folders shown under "External Libraries" in the Project view,
-/// with the Maven / Gradle dependency jars of the build model.
 pub async fn sdk_project_libraries(host: &Host, window: &str) -> IdeResult<Vec<ide_sdk::libraries::LibraryGroup>> {
     host.require_trust(window)?;
     let project = host.project(window)?;
-    let (root, cache, settings) = (project.root.clone(), project.build_cache_dir(), project.settings.effective());
-    tokio::task::spawn_blocking(move || {
-        let model = crate::ops::build::load(&root, &cache, &settings);
-        let deps: Vec<ide_sdk::libraries::BuildDependency> = ide_build::dependency_coordinates(&root, &model)
-            .into_iter()
-            .map(|c| ide_sdk::libraries::BuildDependency {
-                gradle: c.gradle,
-                group: c.group_id,
-                artifact: c.artifact_id,
-                version: c.version,
-            })
-            .collect();
-        ide_sdk::libraries::project_libraries(&root, &settings, &deps)
-    })
-    .await
-    .map_err(join_err)
+    let (root, settings) = (project.root.clone(), project.settings.effective());
+    tokio::task::spawn_blocking(move || ide_sdk::libraries::project_libraries(&root, &settings)).await.map_err(join_err)
 }
 
 /// Looks up `names` (bare command names): `node_modules/.bin` above `near`, then the search path.

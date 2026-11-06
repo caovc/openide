@@ -6,7 +6,7 @@ import type { MenuItem } from "@/ui";
 import { newMenuItems } from "./contextMenu";
 import { folderKind } from "./folderKind";
 import { MemoryFs, setProjectFsForTests } from "./fs";
-import { beginNewPackage, checkEditingName, commitEditing } from "./operations";
+import { beginNewPackage, commitEditing } from "./operations";
 import { packageKindAt } from "./packages";
 import { packageSegments } from "./paths";
 import { initProjectTree, loadDir, selectModel, useProjectTree } from "./store";
@@ -38,13 +38,13 @@ describe("folder icons", () => {
 });
 
 describe("New › Package", () => {
-  it("is offered inside JVM source roots and Python modules", () => {
+  it("is offered only for Python modules", () => {
     const py = [root("py/src", "source", "py/pyproject.toml")];
-    expect(packageKindAt("src/main/java/com", MAVEN)).toBe("jvm");
-    expect(packageKindAt("src/test/java", MAVEN)).toBe("jvm");
+    expect(packageKindAt("src/main/java/com", MAVEN)).toBeNull();
+    expect(packageKindAt("src/test/java", MAVEN)).toBeNull();
     expect(packageKindAt("src/test/resources", MAVEN)).toBeNull();
     expect(packageKindAt("target", MAVEN)).toBeNull();
-    expect(packageKindAt("gen/kotlin/x", [root("gen/kotlin", "source", null)])).toBe("jvm");
+    expect(packageKindAt("gen/kotlin/x", [root("gen/kotlin", "source", null)])).toBeNull();
     expect(packageKindAt("py/src/app", py)).toBe("python");
     expect(packageKindAt("py", py)).toBe("python");
     expect(packageKindAt("web", py)).toBeNull();
@@ -53,9 +53,9 @@ describe("New › Package", () => {
   });
 
   it("validates dotted package names", () => {
-    expect(packageSegments("com.acme.util", "jvm")).toEqual({ segments: ["com", "acme", "util"], error: null });
-    expect(packageSegments("com..x", "jvm").error).toMatch(/Not a valid package name/);
-    expect(packageSegments("com.class", "jvm").error).toMatch(/Not a valid package name/);
+    expect(packageSegments("com.acme.util", "python")).toEqual({ segments: ["com", "acme", "util"], error: null });
+    expect(packageSegments("com..x", "python").error).toMatch(/Not a valid package name/);
+    expect(packageSegments("com.class", "python").error).toMatch(/Not a valid package name/);
     expect(packageSegments("my-app", "python").error).toMatch(/Not a valid package name/);
     expect(packageSegments("lambda", "python").error).toMatch(/Not a valid package name/);
     expect(packageSegments(" ", "python").error).toBe("Name cannot be empty");
@@ -81,18 +81,10 @@ describe("creating packages", () => {
     useProjectRoots.setState({ root: null, detected: [] });
   });
 
-  it("New menu shows Package instead of Directory in a Java source root", () => {
+  it("New menu keeps Directory for unsupported language roots", () => {
     const labels = (items: MenuItem[]) => items.map((i) => ("label" in i ? i.label : "-"));
-    expect(labels(newMenuItems("/p/src/main/java")).slice(0, 2)).toEqual(["File", "Package"]);
+    expect(labels(newMenuItems("/p/src/main/java")).slice(0, 2)).toEqual(["File", "Directory"]);
     expect(labels(newMenuItems("/p")).slice(0, 2)).toEqual(["File", "Directory"]);
-  });
-
-  it("a dotted JVM package creates nested folders", async () => {
-    await loadDir("/p/src/main/java");
-    await beginNewPackage("jvm", "/p/src/main/java");
-    expect(checkEditingName("com.class").error).toMatch(/Not a valid package name/);
-    expect(await commitEditing("com.acme")).toBe(true);
-    expect(fs.nodes.get("/p/src/main/java/com/acme")?.kind).toBe("dir");
   });
 
   it("a Python package gets an __init__.py in every new folder", async () => {

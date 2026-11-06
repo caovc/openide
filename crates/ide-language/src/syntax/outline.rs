@@ -24,7 +24,7 @@ enum ItemKind {
     Symbol(SymbolKind),
     /// Rust `impl` block: named `impl [Trait for] Type`, contains methods of `Type`.
     Impl,
-    /// Swift/Kotlin/Dart `extension`: contains members of the extended type.
+    /// Swift/Dart `extension`: contains members of the extended type.
     Extension,
     Heading,
 }
@@ -380,7 +380,6 @@ fn implicit_visibility(
     let in_interface = matches!(parent, Some(ItemKind::Symbol(K::Interface | K::Trait)));
     match lang {
         "rust" => (!in_interface && !parent_trait_impl && kind != K::Macro).then_some(Visibility::Private),
-        "java" => (!in_interface).then_some(Visibility::Package),
         "csharp" => match parent {
             _ if in_interface => None,
             Some(ItemKind::Symbol(K::Class | K::Struct | K::Enum)) => Some(Visibility::Private),

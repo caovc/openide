@@ -13,10 +13,7 @@ import { Channel } from "@tauri-apps/api/core";
 import { commands, type InstallEvent } from "@/bindings";
 import { executeAction } from "@/platform/actions";
 import { call, nextRequestId, onIdeEvent } from "@/platform/ipc";
-import { useBuildModel } from "@/platform/buildModel";
 import { openProject, useProject } from "@/platform/project";
-import { activate as activateBuildTools } from "@/features/build-tools";
-import { useBuild } from "@/features/build-tools/store";
 import { activate as activateDebugger } from "@/features/debugger";
 import { addBreakpoint } from "@/features/debugger/breakpoints/store";
 import { activeSession, evaluate, useDebug } from "@/features/debugger/state";
@@ -75,20 +72,6 @@ const CASES: Record<string, Case> = {
     evaluate: ["r.Method", /^"GET"$/],
     request: "http://127.0.0.1:8080/notes?q=openidea",
   },
-  java: {
-    fixture: "java-app",
-    debugger: "java-debug",
-    file: "src/main/java/com/example/orders/App.java",
-    variable: "book",
-    evaluate: ["book.size()", /^3$/],
-  },
-  kotlin: {
-    fixture: "kotlin-gradle",
-    debugger: "kotlin-debug-adapter",
-    file: "src/main/kotlin/com/example/library/App.kt",
-    variable: "library",
-    evaluate: ["library", /Library/],
-  },
 };
 
 let deactivate: (() => void) | null = null;
@@ -100,7 +83,7 @@ let base = "";
 const events: string[] = [];
 beforeAll(() => {
   onIdeEvent("*", (e) => events.push(e.type === "debug" ? `debug ${e.session} ${e.event.kind}` : e.type));
-  const disposers = [activateWorkbench(), activateBuildTools(), activateRun(), activateDebugger()];
+  const disposers = [activateWorkbench(), activateRun(), activateDebugger()];
   deactivate = () => disposers.reverse().forEach((d) => d());
 });
 afterAll(() => deactivate?.());
@@ -123,16 +106,6 @@ async function open(c: Case): Promise<string> {
   const trusted = await commands.projectTrustSet(root, true, false);
   if (trusted.status !== "ok") throw new Error(trusted.error.message);
   useProject.setState({ project: { ...useProject.getState().project!, trusted: true } });
-  // Run and Debug follow the build (a Gradle project's Application runs through Gradle).
-  await until(
-    "the build model",
-    () => {
-      const error = useBuild.getState().error;
-      if (error) throw new Error(`the build model did not load: ${error}`);
-      return useBuildModel.getState().root === root && useBuildModel.getState().model;
-    },
-    5 * 60_000,
-  );
   return root;
 }
 
@@ -242,7 +215,7 @@ async function smoke(language: string) {
     await until("the request to be served", () => useDebug.getState().sessions[s.id]?.status === "running");
     await executeAction("debug.stop");
   }
-  // Every session ends (a JVM that listens again as its debugger detaches may be attached once more).
+  // Every debug session must terminate.
   await until("the end", () => Object.values(useDebug.getState().sessions).every((d) => d.status === "terminated"));
 }
 

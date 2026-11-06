@@ -19,29 +19,6 @@ pub async fn run_dotnet_resolve(
     ide_host::ops::run::run_dotnet_resolve(&state.host, window.label(), config, debug).await
 }
 
-#[tauri::command]
-#[specta::specta]
-pub async fn run_application_build(
-    window: Window,
-    state: State<'_, AppState>,
-    config: RunConfig,
-    module: std::path::PathBuf,
-) -> IdeResult<RunConfig> {
-    ide_host::ops::run::run_application_build(&state.host, window.label(), config, module).await
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn run_application_publish(
-    window: Window,
-    state: State<'_, AppState>,
-    config: RunConfig,
-    class_paths: Vec<String>,
-    main_class: String,
-) -> IdeResult<()> {
-    ide_host::ops::run::run_application_publish(&state.host, window.label(), config, class_paths, main_class).await
-}
-
 /// Detected configs followed by user-defined ones (user ids win on conflict).
 #[tauri::command]
 #[specta::specta]
@@ -176,89 +153,4 @@ pub fn run_import_configs(
 #[specta::specta]
 pub fn run_system_env(state: State<'_, AppState>) -> std::collections::BTreeMap<String, String> {
     ide_host::ops::run::run_system_env(&state.host, "")
-}
-
-/// Writes the Gradle init script adding `jvm_args` to the JVMs the build forks; returns its path.
-#[tauri::command]
-#[specta::specta]
-pub async fn run_gradle_jvm_args_script(
-    window: Window,
-    state: State<'_, AppState>,
-    jvm_args: Vec<String>,
-) -> IdeResult<String> {
-    ide_host::ops::run::run_gradle_jvm_args_script(&state.host, window.label(), jvm_args).await
-}
-
-/// Writes one of the IDE's Gradle init scripts where the build runs; returns its path.
-#[tauri::command]
-#[specta::specta]
-pub async fn run_gradle_init_script(
-    window: Window,
-    state: State<'_, AppState>,
-    name: String,
-    text: String,
-) -> IdeResult<String> {
-    ide_host::ops::run::run_gradle_init_script(&state.host, window.label(), name, text).await
-}
-
-/// Results from the JUnit XML reports (Surefire, Failsafe, Gradle) of the module at
-/// `module` (relative to the project root) written since `since_ms` (Unix epoch, ms).
-#[tauri::command]
-#[specta::specta]
-pub async fn run_test_reports(
-    window: Window,
-    state: State<'_, AppState>,
-    module: Option<std::path::PathBuf>,
-    since_ms: f64,
-) -> IdeResult<Vec<ide_run::junit::TestCaseReport>> {
-    ide_host::ops::run::run_test_reports(&state.host, window.label(), module, since_ms).await
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn run_tomcat_home(
-    window: Window,
-    state: State<'_, AppState>,
-    home: String,
-) -> IdeResult<ide_run::tomcat::TomcatHome> {
-    ide_host::ops::run::run_tomcat_home(&state.host, window.label(), home).await
-}
-#[tauri::command]
-#[specta::specta]
-pub async fn run_tomcat_artifacts(
-    window: Window,
-    state: State<'_, AppState>,
-) -> IdeResult<Vec<ide_build::web::WebArtifact>> {
-    ide_host::ops::run::run_tomcat_artifacts(&state.host, window.label()).await
-}
-#[tauri::command]
-#[specta::specta]
-pub async fn run_tomcat_build(
-    window: Window,
-    state: State<'_, AppState>,
-    config: RunConfig,
-) -> IdeResult<Option<RunConfig>> {
-    ide_host::ops::run::run_tomcat_build(&state.host, window.label(), config).await
-}
-#[tauri::command]
-#[specta::specta]
-pub async fn run_tomcat_sync(
-    window: Window,
-    state: State<'_, AppState>,
-    config: RunConfig,
-    module: std::path::PathBuf,
-    class_paths: Vec<String>,
-    resources_only: bool,
-) -> IdeResult<bool> {
-    ide_host::ops::run::run_tomcat_sync(&state.host, window.label(), config, module, class_paths, resources_only).await
-}
-#[tauri::command]
-#[specta::specta]
-pub async fn run_tomcat_update(
-    window: Window,
-    state: State<'_, AppState>,
-    config: RunConfig,
-    mode: String,
-) -> IdeResult<()> {
-    ide_host::ops::run::run_tomcat_update(&state.host, window.label(), config, mode).await
 }

@@ -42,12 +42,7 @@ async fn application_commands_work_in_restricted_projects_and_without_a_project(
         "clipboard_file_list",
         "clipboard_has_files",
         "clipboard_set_file_list",
-        "jdk_download_vendors",
-        "jdk_download_releases",
-        "jdk_download_location",
-        "jdk_download",
         "run_system_env",
-        "run_gradle_jvm_args_script",
         "proxy_check_connection",
         "docker_settings",
         "docker_save_settings",
@@ -71,7 +66,7 @@ async fn application_commands_work_in_restricted_projects_and_without_a_project(
     }
     for command in [
         "run_start",
-        "build_sync",
+        "build_run",
         "debug_start",
         "sdk_detect",
         "tools_list",
@@ -101,30 +96,6 @@ async fn application_commands_work_in_restricted_projects_and_without_a_project(
         assert!(!ide_host::trust::restricted_command_allowed(command), "{command}");
         assert!(host.authorize_command("main", command).is_err(), "{command}");
         assert!(host.authorize_command("welcome", command).is_ok(), "{command}");
-    }
-    // These requests validate the vendor before any network access, independently of project trust.
-    for window in ["main", "welcome"] {
-        let error = ide_host::ops::tools::jdk_download_releases(
-            &host,
-            window,
-            "unknown-vendor".into(),
-            ide_core::RequestId(901),
-        )
-        .await
-        .unwrap_err();
-        assert_eq!(error.kind, ide_core::error::ErrorKind::InvalidInput);
-        let error = ide_host::ops::tools::jdk_download(
-            &host,
-            window,
-            "unknown-vendor".into(),
-            25,
-            None,
-            ide_core::RequestId(902),
-            ide_host::ops::Channel::new(|_| {}),
-        )
-        .await
-        .unwrap_err();
-        assert_eq!(error.kind, ide_core::error::ErrorKind::InvalidInput);
     }
     host.shutdown().await;
 }
@@ -227,12 +198,13 @@ async fn malicious_project_stays_editable_then_starts_in_place_after_trust() {
     std::fs::create_dir_all(root.join(".openidea")).unwrap();
     script(&root, "hook", "hook.marker");
     script(&root, "server", "lsp.marker");
-    script(&root, "gradlew", "build.marker");
-    std::fs::write(root.join("build.gradle"), "plugins { id 'java' }").unwrap();
+    std::fs::create_dir_all(root.join("sdk/bin")).unwrap();
+    script(&root, "sdk/bin/cargo", "build.marker");
+    std::fs::write(root.join("Cargo.toml"), "[package]\nname = 'witness'\nversion = '0.1.0'\n").unwrap();
     std::fs::write(root.join("main.py"), "print('safe')\n").unwrap();
     std::fs::write(root.join(".devcontainer.json"), r#"{"postStartCommand":["./hook"]}"#).unwrap();
     std::fs::write(root.join(".openidea/settings.toml"), format!(
-        "[languageServers.trust-witness]\nlanguages = ['python']\ncommand = {:?}\n[languageServers.pyright]\nenabled = false\n", root.join("server").to_str().unwrap()
+        "[languages.rust]\ntoolchain = 'sdk'\n[languageServers.trust-witness]\nlanguages = ['python']\ncommand = {:?}\n[languageServers.pyright]\nenabled = false\n", root.join("server").to_str().unwrap()
     )).unwrap();
     let host = host(&tmp.path().join("app"), true);
     let project = host.open_project("main", &root).unwrap();
@@ -242,14 +214,13 @@ async fn malicious_project_stays_editable_then_starts_in_place_after_trust() {
     assert!(project.index.wait_idle(Duration::from_secs(10)));
     assert!(project.index.status().files > 0);
     let sync = || {
-        ops::build::build_sync(
+        ops::build::build_run(
             &host,
             "main",
-            ide_build::BuildTool::Gradle,
-            ide_core::RequestId(472),
-            false,
-            vec![],
+            ide_build::compile::BuildKind::Artifacts,
             None,
+            ide_core::RequestId(472),
+            vec![],
             ops::Channel::new(|_| {}),
         )
     };
@@ -266,7 +237,7 @@ async fn malicious_project_stays_editable_then_starts_in_place_after_trust() {
         "docker_compose_op",
         "agent_prompt",
         "sdk_detect",
-        "build_sync",
+        "build_run",
     ] {
         assert!(host.authorize_command("main", command).is_err(), "{command}");
         assert!(host.authorize_command("missing-window", command).is_err(), "{command}");

@@ -144,13 +144,6 @@ async function pick(id: string) {
   await new Promise((r) => setTimeout(r, 0));
 }
 
-function submitName(name: string) {
-  const p = popup();
-  if (p?.kind !== "rename") throw new Error("no name popup");
-  useLspPopup.setState({ popup: null });
-  p.onSubmit(name);
-}
-
 beforeEach(() => {
   errors = [];
   structural = null;
@@ -166,82 +159,6 @@ afterEach(() => {
 });
 
 describe("Introduce Variable fallback", () => {
-  const javaSrc = 'class A {\n  void f() {\n    new String("123")\n    g();\n  }\n}\n';
-
-  function javaTree() {
-    tree([
-      ["program", javaSrc],
-      ["class_declaration", javaSrc.trimEnd()],
-      ["class_body", '{\n  void f() {\n    new String("123")\n    g();\n  }\n}', 0, "body"],
-      ["method_declaration", 'void f() {\n    new String("123")\n    g();\n  }'],
-      ["block", '{\n    new String("123")\n    g();\n  }', 0, "body"],
-      ["expression_statement", 'new String("123")'],
-      ["object_creation_expression", 'new String("123")'],
-      ["string_literal", '"123"'],
-    ]);
-    const e = syn("object_creation_expression");
-    expressionAt = () => ({
-      expression: e,
-      exact: true,
-      candidates: [e],
-      statement: syn("expression_statement"),
-      block: syn("block"),
-      functionBoundary: null,
-      hasError: true,
-    });
-  }
-
-  it("replaces a bare expression statement with the declaration (Java 10+: var) as one undo step", async () => {
-    files["/p/pom.xml"] = "<properties><maven.compiler.release>17</maven.compiler.release></properties>";
-    const from = javaSrc.indexOf("new String");
-    const v = editor(javaSrc, "java", "/p/src/A.java", { anchor: from, head: from + 'new String("123")'.length });
-    javaTree();
-    expect(await introduceFallback(v, "variable", "notReady")).toBe(true);
-    expect(v.state.doc.toString()).toBe(
-      'class A {\n  void f() {\n    var string = new String("123");\n    g();\n  }\n}\n',
-    );
-    const p = popup();
-    expect(p).toMatchObject({ kind: "rename", initial: "string", note: "Based on syntax (language server not ready)" });
-    submitName("text");
-    expect(v.state.doc.toString()).toContain('    var text = new String("123");\n');
-    undo(v);
-    expect(v.state.doc.toString()).toBe(javaSrc);
-  });
-
-  it("uses the constructed type below Java 10 and refuses when the type is unknown", async () => {
-    files["/p/pom.xml"] = "<properties><maven.compiler.source>1.8</maven.compiler.source></properties>";
-    const from = javaSrc.indexOf("new String");
-    const v = editor(javaSrc, "java", "/p/src/A.java", { anchor: from, head: from + 'new String("123")'.length });
-    javaTree();
-    await introduceFallback(v, "variable", "notReady");
-    expect(v.state.doc.toString()).toContain('    String string = new String("123");\n');
-
-    const src = "class A {\n  void f() {\n    g(h());\n  }\n}\n";
-    view!.destroy();
-    const at = src.indexOf("h()");
-    const w = editor(src, "java", "/p/src/A.java", { anchor: at, head: at + 3 });
-    tree([
-      ["program", src],
-      ["block", "{\n    g(h());\n  }"],
-      ["expression_statement", "g(h());"],
-      ["method_invocation", "g(h())"],
-      ["method_invocation", "h()"],
-    ]);
-    const e = syn("method_invocation", 1);
-    expressionAt = () => ({
-      expression: e,
-      exact: true,
-      candidates: [e],
-      statement: syn("expression_statement"),
-      block: syn("block"),
-      functionBoundary: null,
-      hasError: false,
-    });
-    expect(await introduceFallback(w, "variable", "notReady")).toBe(true);
-    expect(w.state.doc.toString()).toBe(src);
-    expect(showHint.mock.calls.at(-1)?.[1]).toMatch(/type of the expression is unknown/);
-  });
-
   const tsSrc = "function f(o) {\n  const a = o.getUser().name;\n  log(o.getUser());\n}\n";
 
   function tsTree() {
@@ -383,70 +300,6 @@ describe("Introduce Variable fallback", () => {
     expect(v.state.doc.toString()).toBe(src);
   });
 
-  it("matches occurrences through same-range wrappers and drops callee candidates (Kotlin)", async () => {
-    const src = "fun f(o: O) {\n    val t = o.total() + 1\n    println(o.total())\n}\n";
-    const v = editor(src, "kotlin", "/p/a.kt", { anchor: src.indexOf("total") + 1 });
-    tree([
-      ["source_file", src],
-      ["block", src.slice(src.indexOf("{"), src.lastIndexOf("}") + 1)],
-      ["property_declaration", "val t = o.total() + 1"],
-      ["binary_expression", "o.total() + 1"],
-      ["call_expression", "o.total()"],
-      ["navigation_expression", "o.total"],
-      ["call_expression", "println(o.total())"],
-      ["value_arguments", "(o.total())"],
-      ["value_argument", "o.total()", 1],
-      ["call_expression", "o.total()", 1],
-    ]);
-    const nav = syn("navigation_expression");
-    const call = syn("call_expression");
-    expressionAt = () => ({
-      expression: nav,
-      exact: false,
-      candidates: [nav, call, syn("binary_expression")],
-      statement: syn("property_declaration"),
-      block: syn("block"),
-      functionBoundary: null,
-      hasError: false,
-    });
-    await introduceFallback(v, "variable", "notReady");
-    const chooser = popup();
-    expect(chooser?.kind === "list" && chooser.items.map((i) => i.label)).toEqual(["o.total()", "o.total() + 1"]);
-    await pick("0");
-    await pick("all");
-    expect(v.state.doc.toString()).toBe(
-      "fun f(o: O) {\n    val total = o.total()\n    val t = total + 1\n    println(total)\n}\n",
-    );
-  });
-
-  it("replaces a bare statement whose missing `;` let the parser swallow the next line", async () => {
-    files["/p/pom.xml"] = "<properties><java.version>21</java.version></properties>";
-    const src = 'class A {\n  void f() {\n    new String("1")\n    System.out.println();\n  }\n}\n';
-    const at = src.indexOf("new String");
-    const v = editor(src, "java", "/p/A.java", { anchor: at, head: at + 'new String("1")'.length });
-    tree([
-      ["program", src],
-      ["block", src.slice(src.indexOf("{\n    new"), src.lastIndexOf("}\n}") + 1)],
-      ["expression_statement", 'new String("1")\n    System'],
-      ["object_creation_expression", 'new String("1")'],
-    ]);
-    const e = syn("object_creation_expression");
-    const stmt = { ...syn("expression_statement"), hasError: true };
-    expressionAt = () => ({
-      expression: e,
-      exact: true,
-      candidates: [e],
-      statement: stmt,
-      block: syn("block"),
-      functionBoundary: null,
-      hasError: true,
-    });
-    await introduceFallback(v, "variable", "empty");
-    expect(v.state.doc.toString()).toBe(
-      'class A {\n  void f() {\n    var string = new String("1");\n    System.out.println();\n  }\n}\n',
-    );
-  });
-
   it("inserts before a statement that does not start its line", async () => {
     const src = "def f(c, x):\n    if c: g(x + 1)\n";
     const at = src.indexOf("x + 1");
@@ -475,54 +328,6 @@ describe("Introduce Variable fallback", () => {
 });
 
 describe("Introduce Constant fallback", () => {
-  it("adds a typed Java constant before the member, after its comments", async () => {
-    const src = "class A {\n  // doc\n  void f() { h(42); k(42); }\n}\n";
-    const at = src.indexOf("42");
-    const v = editor(src, "java", "/p/A.java", { anchor: at, head: at + 2 });
-    tree([
-      ["program", src],
-      ["class_declaration", src.trimEnd()],
-      ["class_body", src.slice(src.indexOf("{"), src.lastIndexOf("}") + 1), 0, "body"],
-      ["method_declaration", "void f() { h(42); k(42); }"],
-      ["block", "{ h(42); k(42); }", 0, "body"],
-      ["expression_statement", "h(42);"],
-      ["method_invocation", "h(42)"],
-      ["decimal_integer_literal", "42"],
-      ["expression_statement", "k(42);"],
-      ["method_invocation", "k(42)"],
-      ["decimal_integer_literal", "42", 1],
-    ]);
-    const lit = syn("decimal_integer_literal");
-    expressionAt = () => ({
-      expression: lit,
-      exact: true,
-      candidates: [lit],
-      statement: syn("expression_statement"),
-      block: syn("block"),
-      functionBoundary: null,
-      hasError: false,
-    });
-    structural = {
-      selection: [],
-      statement: null,
-      prevStatement: null,
-      nextStatement: null,
-      block: null,
-      declaration: syn("method_declaration"),
-      prevDeclaration: null,
-      nextDeclaration: null,
-    };
-    await introduceFallback(v, "constant", "error");
-    await pick("all");
-    expect(v.state.doc.toString()).toBe(
-      "class A {\n  private static final int I = 42;\n\n  // doc\n  void f() { h(I); k(I); }\n}\n",
-    );
-    expect(popup()).toMatchObject({ kind: "rename", initial: "I", note: "Based on syntax (language server failed)" });
-    submitName("ANSWER");
-    expect(v.state.doc.toString()).toContain("private static final int ANSWER = 42;");
-    expect(v.state.doc.toString()).toContain("h(ANSWER); k(ANSWER);");
-  });
-
   it("adds a module-level Python constant and refuses non-literals", async () => {
     const src = 'import os\n\ndef f():\n    return g("max retries")\n';
     const at = src.indexOf('"max');

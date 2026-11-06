@@ -84,30 +84,25 @@ describe("buildModel", () => {
       ],
     });
 
-    it("merges single-folder chains, ending at source roots, packages joined with '.'", () => {
+    it("merges single-folder chains without language-specific boundaries", () => {
       const m = buildModel(ROOT, chain, DEFAULT_TREE_OPTIONS);
-      expect(labels(m, "/r")).toEqual(["src/main/kotlin", "README.md"]);
+      expect(labels(m, "/r")).toEqual(["src/main/kotlin/com/acme/orders", "README.md"]);
       const node = m.byKey.get("/r/src")!;
-      expect(node.path).toBe("/r/src/main/kotlin");
-      expect(node.chain).toHaveLength(3);
-      expect(labels(m, "/r/src")).toEqual(["com.acme.orders"]);
-      const pkg = m.byKey.get("/r/src/main/kotlin/com")!;
-      expect(pkg.path).toBe("/r/src/main/kotlin/com/acme/orders");
-      expect(labels(m, pkg.key)).toEqual(["model", "Order.kt"]);
-      // Every merged folder resolves to its chain node.
-      expect(m.keyOfPath.get("/r/src/main")).toBe("/r/src");
-      expect(m.keyOfPath.get("/r/src/main/kotlin/com/acme")).toBe("/r/src/main/kotlin/com");
+      expect(node.path).toBe("/r/src/main/kotlin/com/acme/orders");
+      expect(node.chain).toHaveLength(6);
+      expect(labels(m, node.key)).toEqual(["model", "Order.kt"]);
+      expect(m.keyOfPath.get("/r/src/main/kotlin/com/acme")).toBe("/r/src");
       expect(nodeKeyFor(m, "/r/src/main/kotlin/com/acme/orders/Order.kt")).toBe(
         "/r/src/main/kotlin/com/acme/orders/Order.kt",
       );
     });
 
-    it("uses '.' for chains below a JVM source folder", () => {
+    it("uses slashes for all compacted folder chains", () => {
       const l = new Map(chain);
       l.set("/r/src/main/kotlin", [entry("/r/src/main/kotlin/com", "dir"), entry("/r/src/main/kotlin/App.kt")]);
       const m = buildModel(ROOT, l, DEFAULT_TREE_OPTIONS);
       expect(labels(m, "/r")).toEqual(["src/main/kotlin", "README.md"]);
-      expect(labels(m, "/r/src")).toEqual(["com.acme.orders", "App.kt"]);
+      expect(labels(m, "/r/src")).toEqual(["com/acme/orders", "App.kt"]);
     });
 
     it("stops at unloaded folders and can be switched off", () => {

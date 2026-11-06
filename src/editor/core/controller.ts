@@ -93,7 +93,6 @@ import { NavigationHistory } from "./model/navHistory";
 import { EditHistory } from "./model/editHistory";
 import { loadSession, restoreTabsState, serializeSession, storeSession, type FileViewState } from "./model/session";
 import { docBackend, type DocBackend } from "./backend";
-import { isClassFile } from "@/platform/classFiles";
 import { isVirtualUri, virtualDocument } from "@/platform/virtualDocs";
 import type { VirtualDocument } from "@/platform/ipc";
 import type { Scheduler } from "./sync/DocSync";
@@ -105,7 +104,6 @@ export const fileInput = (path: string): EditorInput => ({ kind: "file", key: fi
 export interface VirtualInputData {
   title: string;
   description: string | null;
-  decompiled: boolean;
 }
 
 export const virtualKey = (uri: string) => `virtual:${uri}`;
@@ -113,13 +111,11 @@ export const virtualKey = (uri: string) => `virtual:${uri}`;
  * A read-only virtual document (library class from a language server). Its
  * `path` is the URI, which also identifies its document model.
  */
-export const virtualInput = (
-  vd: Pick<VirtualDocument, "uri" | "title" | "description" | "decompiled">,
-): EditorInput => ({
+export const virtualInput = (vd: Pick<VirtualDocument, "uri" | "title" | "description">): EditorInput => ({
   kind: "virtual",
   key: virtualKey(vd.uri),
   path: vd.uri,
-  data: { title: vd.title, description: vd.description, decompiled: vd.decompiled } satisfies VirtualInputData,
+  data: { title: vd.title, description: vd.description } satisfies VirtualInputData,
 });
 
 /** Inputs shown in the text editor: files and virtual documents. */
@@ -999,18 +995,6 @@ export class EditorController implements SlotHost {
 
   private async openFileRequest(path: string, o: OpenOptions, generation: OpenRequest): Promise<void> {
     if (isVirtualUri(path)) return this.openVirtualRequest(path, o, generation);
-    if (isClassFile(path)) {
-      await this.projectTransition;
-      this.checkOpening(generation);
-      try {
-        const target = await call(commands.lspResolveClassFile(path));
-        this.checkOpening(generation);
-        return this.openFileRequest(target, o, generation);
-      } catch (e) {
-        notifications().notify({ level: "warning", title: "Cannot open library class", body: String(e), group: "lsp" });
-        return;
-      }
-    }
     await this.projectTransition;
     this.checkOpening(generation);
     // Images, binary and huge files open in a contributed viewer unless already open as text.
@@ -1052,7 +1036,6 @@ export class EditorController implements SlotHost {
   }
 
   async openInput(input: EditorInput, o: OpenOptions = {}) {
-    if (input.path && isClassFile(input.path)) return this.openFile(input.path, o);
     return this.admitInput(input, o, this.openingGeneration(o));
   }
 

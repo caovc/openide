@@ -24,7 +24,6 @@ import { breakpointGutter } from "./editor/breakpointGutter";
 import { executionPoint } from "./editor/execution";
 import { runToCursorInlay } from "./editor/runToCursor";
 import { installSmartStepPicking, smartStepTargets } from "./editor/smartStep";
-import { hotSwapMenuItems, onHotCodeReplace } from "./hotswap";
 import {
   activeSession,
   handleDebugEvent,
@@ -68,11 +67,6 @@ export function activate(): () => void {
       menus: ["editor"],
       items: () => (activeSession()?.status === "paused" ? [{ kind: "action", action: "debug.evaluate" }] : []),
     }),
-    registerMenuGroup({
-      id: "debugger.hotswap",
-      menus: ["editor"],
-      items: (_menu, { paths }) => hotSwapMenuItems(paths),
-    }),
     // Stop (⌘F2) offers the running debug sessions beside run processes.
     registerMenuGroup({
       id: "debugger.stop",
@@ -97,8 +91,7 @@ export function activate(): () => void {
     }),
     installSmartStepPicking(),
     onIdeEvent("debug", (e) => {
-      if (e.event.kind === "hotCodeReplace") onHotCodeReplace(e.session, e.event);
-      else handleDebugEvent(e.session, e.event);
+      handleDebugEvent(e.session, e.event);
     }),
     useProject.subscribe((s, prev) => {
       const root = s.project?.root ?? null;

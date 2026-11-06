@@ -1,5 +1,5 @@
-//! Release metadata: GitHub releases, HashiCorp releases, Eclipse JDT LS
-//! milestones. Parsing is pure so it is testable without network.
+//! Release metadata: GitHub releases, HashiCorp releases and Open VSX.
+//! Parsing is pure so it is testable without network.
 
 use crate::platform::{AssetRule, Platform, select_asset};
 use ide_core::error::ErrorKind;
@@ -247,41 +247,6 @@ pub fn hashicorp_pick(json: &str, rules: &[AssetRule], platform: Platform) -> Id
     })
 }
 
-pub const JDTLS_MILESTONES: &str = "https://download.eclipse.org/jdtls/milestones/";
-
-/// Highest `x.y.z/` directory in the milestones index page.
-pub fn jdtls_latest_milestone(index_html: &str) -> Option<String> {
-    let mut best: Option<(Vec<u64>, String)> = None;
-    for piece in index_html.split(['"', '\'', '>', '<', '/']) {
-        let parts: Option<Vec<u64>> = piece.split('.').map(|p| p.parse().ok()).collect();
-        let Some(parts) = parts else { continue };
-        if parts.len() != 3 {
-            continue;
-        }
-        if best.as_ref().is_none_or(|(b, _)| parts > *b) {
-            best = Some((parts, piece.to_string()));
-        }
-    }
-    best.map(|(_, v)| v)
-}
-
-/// The milestone's `latest.txt` names its tarball.
-pub fn jdtls_download(version: &str, latest_txt: &str) -> IdeResult<Download> {
-    let name = latest_txt.trim();
-    if name.is_empty() || name.contains('/') || !name.ends_with(".tar.gz") {
-        return Err(proto(format!("unexpected jdtls latest.txt: {name:?}")));
-    }
-    let url = format!("{JDTLS_MILESTONES}{version}/{name}");
-    Ok(Download {
-        version: version.to_string(),
-        name: name.to_string(),
-        checksum_url: Some(format!("{url}.sha256")),
-        url,
-        size: None,
-        sha256: None,
-    })
-}
-
 #[derive(Deserialize)]
 struct VsxExtension {
     version: String,
@@ -331,39 +296,6 @@ pub fn openvsx_pick(json: &str, rules: &[AssetRule], platform: Platform) -> IdeR
         size: None,
         sha256: None,
         checksum_url: ext.files.sha256,
-    })
-}
-
-const MAVEN_CENTRAL: &str = "https://repo1.maven.org/maven2";
-
-fn maven_dir(group: &str, artifact: &str) -> String {
-    format!("{MAVEN_CENTRAL}/{}/{artifact}", group.replace('.', "/"))
-}
-
-pub fn maven_metadata_url(group: &str, artifact: &str) -> String {
-    format!("{}/maven-metadata.xml", maven_dir(group, artifact))
-}
-
-/// The `<release>` jar of a `maven-metadata.xml`. Central publishes only SHA-1
-/// sums for most artifacts, so the download is not checksum-verified.
-pub fn maven_pick(group: &str, artifact: &str, metadata: &str) -> IdeResult<Download> {
-    let tag = |t: &str| {
-        let start = metadata.find(&format!("<{t}>"))? + t.len() + 2;
-        let end = start + metadata[start..].find(&format!("</{t}>"))?;
-        Some(metadata[start..end].trim())
-    };
-    let version = tag("release")
-        .or_else(|| tag("latest"))
-        .filter(|v| !v.is_empty() && !v.contains(['/', '\\']))
-        .ok_or_else(|| proto(format!("no release in the Maven metadata of {group}:{artifact}")))?;
-    let name = format!("{artifact}-{version}.jar");
-    Ok(Download {
-        version: version.to_string(),
-        url: format!("{}/{version}/{name}", maven_dir(group, artifact)),
-        name,
-        size: None,
-        sha256: None,
-        checksum_url: None,
     })
 }
 
@@ -434,20 +366,27 @@ mod tests {
 
     #[test]
     fn github_links_in_release_notes() {
-        let json = r#"{"tag_name":"kotlin-lsp/v0.253.10629","assets":[],"body":
-            "Downloads:\n* [macOS arm](https://download-cdn.jetbrains.com/kotlin-lsp/0.253.10629/kotlin-lsp-0.253.10629-mac-aarch64.zip)\n* [Linux](https://download-cdn.jetbrains.com/kotlin-lsp/0.253.10629/kotlin-lsp-0.253.10629-linux-x64.zip)."}"#;
-        let rules = find("kotlin-lsp").unwrap().asset_rules();
+        let json = r#"{"tag_name":"sample-lsp/v0.253.10629","assets":[],"body":
+            "Downloads:\n* [macOS arm](https://downloads.example.com/sample-lsp/0.253.10629/sample-lsp-0.253.10629-mac-aarch64.zip)\n* [Linux](https://downloads.example.com/sample-lsp/0.253.10629/sample-lsp-0.253.10629-linux-x64.zip)."}"#;
+        let rules = &[
+            crate::platform::rule(
+                crate::platform::Os::Mac,
+                crate::platform::Arch::Arm64,
+                "sample-lsp-*-mac-aarch64.zip",
+            ),
+            crate::platform::rule(crate::platform::Os::Linux, crate::platform::Arch::X64, "sample-lsp-*-linux-x64.zip"),
+        ];
         let d = github_pick(json, rules, MAC_ARM).unwrap();
-        assert_eq!(d.name, "kotlin-lsp-0.253.10629-mac-aarch64.zip");
-        assert!(d.url.starts_with("https://download-cdn.jetbrains.com/"));
+        assert_eq!(d.name, "sample-lsp-0.253.10629-mac-aarch64.zip");
+        assert!(d.url.starts_with("https://downloads.example.com/"));
         let d = github_pick(json, rules, LINUX).unwrap();
-        assert_eq!(d.name, "kotlin-lsp-0.253.10629-linux-x64.zip");
+        assert_eq!(d.name, "sample-lsp-0.253.10629-linux-x64.zip");
     }
 
     #[test]
     fn github_tag_from_redirect() {
-        let url = "https://github.com/Kotlin/kotlin-lsp/releases/tag/kotlin-lsp/v263.7084.0";
-        assert_eq!(github_tag_from_url(url).as_deref(), Some("kotlin-lsp/v263.7084.0"));
+        let url = "https://github.com/Example/sample-lsp/releases/tag/sample-lsp/v263.7084.0";
+        assert_eq!(github_tag_from_url(url).as_deref(), Some("sample-lsp/v263.7084.0"));
         let url = "https://github.com/o/r/releases/tag/v1.0%2Bbuild";
         assert_eq!(github_tag_from_url(url).as_deref(), Some("v1.0+build"));
         // A repository without releases stays on the list.
@@ -498,14 +437,21 @@ mod tests {
             Some("https://github.com/artempyanykh/marksman/releases/download/2024-12-18/marksman-macos.sha256")
         );
 
-        let notes = r#"<li><a href="https://download-cdn.jetbrains.com/kotlin-lsp/0.253.10629/kotlin-lsp-0.253.10629-mac-aarch64.zip?a=1&amp;b=2" rel="nofollow">macOS arm</a></li>"#;
-        let rules = find("kotlin-lsp").unwrap().asset_rules();
+        let notes = r#"<li><a href="https://downloads.example.com/sample-lsp/0.253.10629/sample-lsp-0.253.10629-mac-aarch64.zip?a=1&amp;b=2" rel="nofollow">macOS arm</a></li>"#;
+        let rules = &[
+            crate::platform::rule(
+                crate::platform::Os::Mac,
+                crate::platform::Arch::Arm64,
+                "sample-lsp-*-mac-aarch64.zip",
+            ),
+            crate::platform::rule(crate::platform::Os::Linux, crate::platform::Arch::X64, "sample-lsp-*-linux-x64.zip"),
+        ];
         let d =
-            github_pick_web("Kotlin/kotlin-lsp", "kotlin-lsp/v0.253.10629", "", Some(notes), rules, MAC_ARM).unwrap();
-        assert_eq!(d.name, "kotlin-lsp-0.253.10629-mac-aarch64.zip");
+            github_pick_web("Example/sample-lsp", "sample-lsp/v0.253.10629", "", Some(notes), rules, MAC_ARM).unwrap();
+        assert_eq!(d.name, "sample-lsp-0.253.10629-mac-aarch64.zip");
         assert_eq!(
             d.url,
-            "https://download-cdn.jetbrains.com/kotlin-lsp/0.253.10629/kotlin-lsp-0.253.10629-mac-aarch64.zip?a=1&b=2"
+            "https://downloads.example.com/sample-lsp/0.253.10629/sample-lsp-0.253.10629-mac-aarch64.zip?a=1&b=2"
         );
     }
 
@@ -520,28 +466,16 @@ mod tests {
     }
 
     #[test]
-    fn jdtls_index() {
-        let html = r#"<a href="1.9.0/">1.9.0/</a><a href="1.40.0/">1.40.0/</a><a href="1.38.0/">1.38.0</a><a href="../">..</a>"#;
-        assert_eq!(jdtls_latest_milestone(html).as_deref(), Some("1.40.0"));
-        let d = jdtls_download("1.40.0", "jdt-language-server-1.40.0-202409261450.tar.gz\n").unwrap();
-        assert_eq!(
-            d.url,
-            "https://download.eclipse.org/jdtls/milestones/1.40.0/jdt-language-server-1.40.0-202409261450.tar.gz"
-        );
-        assert!(jdtls_download("1.40.0", "../evil").is_err());
-    }
-
-    #[test]
     fn openvsx() {
         let json = r#"{"version":"0.60.0","files":{
-            "download":"https://open-vsx.org/api/vscjava/vscode-java-debug/0.60.0/file/vscjava.vscode-java-debug-0.60.0.vsix",
-            "sha256":"https://open-vsx.org/api/vscjava/vscode-java-debug/0.60.0/file/vscjava.vscode-java-debug-0.60.0.sha256"}}"#;
-        let rules = find("java-debug").unwrap().asset_rules();
+            "download":"https://open-vsx.org/api/xdebug/php-debug/0.60.0/file/xdebug.php-debug-0.60.0.vsix",
+            "sha256":"https://open-vsx.org/api/xdebug/php-debug/0.60.0/file/xdebug.php-debug-0.60.0.sha256"}}"#;
+        let rules = find("php-debug").unwrap().asset_rules();
         let d = openvsx_pick(json, rules, MAC_ARM).unwrap();
         assert_eq!(d.version, "0.60.0");
-        assert_eq!(d.name, "vscjava.vscode-java-debug-0.60.0.vsix");
+        assert_eq!(d.name, "xdebug.php-debug-0.60.0.vsix");
         assert!(d.checksum_url.unwrap().ends_with(".sha256"));
-        let other = json.replace("vscjava.vscode-java-debug-0.60.0.vsix", "something-else.zip");
+        let other = json.replace("xdebug.php-debug-0.60.0.vsix", "something-else.zip");
         assert!(openvsx_pick(&other, rules, LINUX).is_err());
     }
 
@@ -593,22 +527,6 @@ mod tests {
             assert!(download.checksum_url.unwrap().ends_with(&format!("@{target}.sha256")));
         }
         assert!(openvsx_platform_url(&universal.replace("downloads", "unused"), assets, MAC_ARM).is_err());
-    }
-
-    #[test]
-    fn maven_central() {
-        let xml =
-            "<metadata><versioning><latest>1.18.49-SNAPSHOT</latest><release>1.18.48</release></versioning></metadata>";
-        assert_eq!(
-            maven_metadata_url("org.projectlombok", "lombok"),
-            "https://repo1.maven.org/maven2/org/projectlombok/lombok/maven-metadata.xml"
-        );
-        let d = maven_pick("org.projectlombok", "lombok", xml).unwrap();
-        assert_eq!(d.version, "1.18.48");
-        assert_eq!(d.name, "lombok-1.18.48.jar");
-        assert_eq!(d.url, "https://repo1.maven.org/maven2/org/projectlombok/lombok/1.18.48/lombok-1.18.48.jar");
-        assert!(maven_pick("g", "a", "<metadata/>").is_err());
-        assert!(maven_pick("g", "a", "<release>../x</release>").is_err());
     }
 
     #[test]

@@ -92,19 +92,6 @@ describe("copy reference", () => {
     expect(writeText).toHaveBeenCalledExactlyOnceWith("pkg.mod.f");
   });
 
-  it("qualifies Java members with the package", () => {
-    const text = "package com.acme.util;\n\nclass Strings {}";
-    expect(
-      qualifiedReference({ ...base, language: "java", path: "/p/src/Strings.java", text, chain: ["Strings", "trim"] }),
-    ).toBe("com.acme.util.Strings#trim");
-    expect(
-      qualifiedReference({ ...base, language: "java", path: "/p/src/Strings.java", text, chain: ["Strings"] }),
-    ).toBe("com.acme.util.Strings");
-    expect(
-      qualifiedReference({ ...base, language: "java", path: "/p/src/A.java", text: "", chain: ["A", "B", "m"] }),
-    ).toBe("A.B#m");
-  });
-
   it("builds Rust paths from the module tree", () => {
     expect(rustModulePath("/p/crates/x/src/lib.rs")).toBe("crate");
     expect(rustModulePath("/p/src/a/b.rs")).toBe("crate::a::b");

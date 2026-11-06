@@ -27,7 +27,7 @@ function language(id: string) {
   };
 }
 
-const make = (doc: string, id = "java") => EditorState.create({ doc, extensions: commentTokens(language(id)) });
+const make = (doc: string, id = "typescript") => EditorState.create({ doc, extensions: commentTokens(language(id)) });
 
 // The native folding suite consumes this same marker contract and the TOML tokens.
 describe.each(fixture.languages)("custom regions in %s", (id) => {
@@ -94,10 +94,10 @@ describe("regionMarker", () => {
 });
 
 describe("memory backend custom folding", () => {
-  it.each(["xml", "svg", "html", "vue", "css", "java", "py", "ts"])("folds %s markers", async (extension) => {
+  it.each(["xml", "svg", "html", "vue", "css", "js", "py", "ts"])("folds %s markers", async (extension) => {
     const path = `/project/file.${extension}`;
     const css = extension === "css";
-    const line = extension === "py" ? "#" : ["java", "ts"].includes(extension) ? "//" : null;
+    const line = extension === "py" ? "#" : ["js", "ts"].includes(extension) ? "//" : null;
     const open = line ?? (css ? "/*" : "<!--");
     const close = line ? "" : css ? "*/" : "-->";
     const backend = createMemoryBackend({ [path]: `${open}region Name${close}\ncontent\n${open}endregion${close}\n` });

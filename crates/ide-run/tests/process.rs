@@ -385,66 +385,6 @@ fn stop_command_runs_first_with_the_run_environment() {
     assert!(text(&chunks, system).contains("touch \"$OPENIDEA_MARKER\""));
 }
 
-/// A `java` command line past the platform limit starts through a pathing jar
-/// (JDK 8) or an `@argfile` (JDK 9+), which is deleted once the JVM exits.
-#[test]
-fn long_java_classpath_is_shortened() {
-    let Some(home) = std::env::var_os("JAVA_HOME").map(PathBuf::from) else { return };
-    let (java, javac) = (home.join("bin/java"), home.join("bin/javac"));
-    if !javac.is_file() {
-        return;
-    }
-    let h = harness();
-    let classes = h.root.path().join("out classes");
-    std::fs::create_dir_all(classes.join("p")).unwrap();
-    let src = h.root.path().join("Main.java");
-    std::fs::write(&src, "package p; public class Main { public static void main(String[] a) { System.out.println(\"hello \" + a[0]); } }").unwrap();
-    let ok = std::process::Command::new(&javac).arg("-d").arg(&classes).arg(&src).status().unwrap().success();
-    assert!(ok, "javac failed");
-    let mut cp: Vec<String> = (0..3_000).map(|i| format!("/no/such/repository/lib-{i}/1.0/lib-{i}-1.0.jar")).collect();
-    cp.push(classes.to_string_lossy().into_owned());
-    let cp = cp.join(":");
-    assert!(cp.len() > ide_run::java_cmdline::UNIX_LIMIT);
-    let config = cfg("t:java", &java.to_string_lossy(), &["-cp", &cp, "p.Main", "world"]);
-    let (id, chunks) = start(&h, &config);
-    assert_eq!(wait_exit(&h, id, Duration::from_secs(30)), Some(0), "{}", text(&chunks, stderr));
-    assert_eq!(text(&chunks, stdout).trim(), "hello world");
-    let echo = text(&chunks, system);
-    let first = echo.lines().next().unwrap();
-    assert!(first.len() < 1_000, "{first}");
-    let file = first
-        .split(' ')
-        .map(|a| a.trim_matches('\'').trim_start_matches('@'))
-        .find(|a| a.contains("openidea-classpath"))
-        .unwrap_or_else(|| panic!("no pathing jar / argfile in {first}"));
-    assert!(!Path::new(file).exists(), "{file} not deleted");
-}
-
-/// A build tool (here a fake `mvn` that forks like `spring-boot:run`) gets the console
-/// encoding in `JAVA_TOOL_OPTIONS`, and the notice its JVMs print about it is hidden.
-#[test]
-fn build_tools_get_the_console_encoding_for_every_jvm() {
-    use std::os::unix::fs::PermissionsExt;
-    let h = harness();
-    let mvn = h.root.path().join("mvn");
-    let script = "#!/bin/sh\nnotice() { echo \"Picked up JAVA_TOOL_OPTIONS: $JAVA_TOOL_OPTIONS\" >&2; }\n\
-                  notice; echo \"maven $JAVA_TOOL_OPTIONS\"; notice 2>&1; printf 'Consume Time\\243\\272 1 ms\\n' >&2\n";
-    std::fs::write(&mvn, script).unwrap();
-    std::fs::set_permissions(&mvn, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let chunks: Chunks = Arc::default();
-    let sink = chunks.clone();
-    let options = StartOptions { encoding: Some("GBK".into()), ..Default::default() };
-    let config = cfg("t:mvn", mvn.to_str().unwrap(), &["spring-boot:run"]);
-    let info =
-        h.pm.start(h.root.path(), &config, &options, h.sink.clone(), Box::new(move |c| sink.lock().push(c))).unwrap();
-    wait_exit(&h, info.id, Duration::from_secs(10));
-    assert_eq!(
-        text(&chunks, stdout),
-        "maven -Dstdout.encoding=GBK -Dstderr.encoding=GBK -Dsun.stdout.encoding=GBK -Dsun.stderr.encoding=GBK\n"
-    );
-    assert_eq!(text(&chunks, stderr), "Consume Time： 1 ms\n");
-}
-
 #[test]
 fn python_scripts_import_sibling_packages_and_preserve_env_file_paths() {
     for (kind, source_dir) in [("python", ""), ("pytest", "src"), ("django-test", "")] {
@@ -661,4 +601,22 @@ fn go_file_tests_use_build_selected_sources_and_only_the_selected_test_file() {
     assert_eq!(wait_exit(&h, id, Duration::from_secs(60)), Some(0), "{}", text(&out, stderr));
     assert!(text(&out, stdout).contains("TestChosen"));
     assert!(!text(&out, stdout).contains("TestOther"));
+}
+
+#[test]
+fn removed_jvm_kind_or_adapter_is_rejected_before_spawning() {
+    let h = harness();
+    for (kind, adapter) in [
+        ("application", None),
+        ("gradle", None),
+        ("shell", Some("java-debug")),
+        ("shell", Some("kotlin-debug-adapter")),
+    ] {
+        let mut config = cfg("legacy", "sh", &["-c", "touch launched"]);
+        config.kind = kind.into();
+        config.debug_adapter = adapter.map(str::to_owned);
+        let result = h.pm.start(h.root.path(), &config, &StartOptions::default(), h.sink.clone(), Box::new(|_| {}));
+        assert!(result.is_err());
+        assert!(!h.root.path().join("launched").exists());
+    }
 }

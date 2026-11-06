@@ -269,7 +269,7 @@ pub async fn lsp_implementations(
 }
 
 /// Go to Implementation of the symbol at `pos`. Implementations found before a slower
-/// search for the rest (Java: the project's, before the dependencies') arrive on
+/// search for the rest arrive on
 /// `on_partial`; the result has them all. Cancel with `cancel_request(request)`.
 pub async fn lsp_goto_implementation(
     host: &Host,
@@ -290,19 +290,12 @@ pub async fn lsp_goto_implementation(
     result
 }
 
-/// Contents of a read-only language-server document, including JDT library
-/// classes and disk class files. Cached per project.
+/// Contents of a read-only language-server document. Cached per project.
 pub async fn lsp_virtual_document(host: &Host, window: &str, uri: String) -> IdeResult<VirtualDocument> {
     if uri.starts_with("git-revision:") {
         return crate::ops::vcs::revision_virtual_document(host, window, &uri).await;
     }
     host.project(window)?.lsp.virtual_document(&uri).await
-}
-
-/// Opens compiled classes through JDT, with project source taking priority on disk.
-pub async fn lsp_resolve_class_file(host: &Host, window: &str, path: std::path::PathBuf) -> IdeResult<String> {
-    let archive = ide_vfs::split_archive_path(&path);
-    host.project(window)?.lsp.java_class_file(&path, archive).await
 }
 
 /// References of the symbol at `pos`. `project_wide` also searches project files
@@ -502,57 +495,6 @@ pub async fn lsp_prepare_rename(host: &Host, window: &str, doc: DocId, pos: Pos)
     host.project(window)?.lsp.prepare_rename(doc, pos).await
 }
 
-/// Computes the rename edit without applying it, so the UI can preview conflicts.
-/// The class at `pos` and the members a class-hierarchy refactoring can move.
-pub async fn lsp_hierarchy_members(
-    host: &Host,
-    window: &str,
-    request: RequestId,
-    doc: DocId,
-    pos: Pos,
-    kind: HierarchyRefactoring,
-) -> IdeResult<HierarchyMembers> {
-    let project = host.project(window)?;
-    let cancel = host.begin_request(request);
-    let result = project.lsp.hierarchy_members(doc, pos, kind, cancel).await;
-    host.end_request(request);
-    result
-}
-
-/// Checks a class-hierarchy refactoring and computes its edit without applying it.
-#[allow(clippy::too_many_arguments)]
-pub async fn lsp_hierarchy_refactor(
-    host: &Host,
-    window: &str,
-    request: RequestId,
-    doc: DocId,
-    pos: Pos,
-    kind: HierarchyRefactoring,
-    target: Option<String>,
-    choices: Vec<HierarchyChoice>,
-) -> IdeResult<HierarchyRefactored> {
-    let project = host.project(window)?;
-    let documents = project.documents.clone();
-    let version = blocking(move || documents.version(doc)).await?;
-    let cancel = host.begin_request(request);
-    let result = project.lsp.hierarchy_refactor(doc, pos, kind, target, choices, cancel).await;
-    host.end_request(request);
-    let mut refactored = result?;
-    blocking(move || {
-        if project.documents.version(doc)? != version {
-            return Err(ide_core::IdeError::new(
-                ide_core::error::ErrorKind::OutOfSync,
-                "document changed while computing the refactoring; request it again",
-            ));
-        }
-        if let Some(edit) = &mut refactored.edit {
-            project.documents.prepare_workspace_edit(edit)?;
-        }
-        Ok(refactored)
-    })
-    .await
-}
-
 pub async fn lsp_rename(
     host: &Host,
     window: &str,
@@ -644,11 +586,7 @@ pub fn lsp_resend_diagnostics(host: &Host, window: &str) -> IdeResult<()> {
 
 pub async fn lsp_restart(host: &Host, window: &str, server: ServerId) -> IdeResult<()> {
     let project = host.project(window)?;
-    let java = project.lsp.servers().iter().any(|s| s.id == server && s.name == "jdtls");
     project.lsp.restart(server).await?;
-    if java && let Some(bridge) = &project.kotlin_bridge {
-        bridge.schedule();
-    }
     Ok(())
 }
 
@@ -783,10 +721,7 @@ pub(crate) fn register(d: &mut Dispatcher) {
         let on_partial = c.sender("onPartial")?;
         lsp_goto_implementation(&c.host, &c.window, c.arg("request")?, c.arg("doc")?, c.arg("pos")?, on_partial).await
     });
-    d.add(
-        "lsp_resolve_class_file",
-        |c| async move { lsp_resolve_class_file(&c.host, &c.window, c.arg("path")?).await },
-    );
+
     d.add("lsp_virtual_document", |c| async move { lsp_virtual_document(&c.host, &c.window, c.arg("uri")?).await });
     d.add("lsp_references", |c| async move {
         lsp_references(
@@ -825,22 +760,7 @@ pub(crate) fn register(d: &mut Dispatcher) {
     d.add("lsp_rename", |c| async move {
         lsp_rename(&c.host, &c.window, c.arg("request")?, c.arg("doc")?, c.arg("pos")?, c.arg("newName")?).await
     });
-    d.add("lsp_hierarchy_members", |c| async move {
-        lsp_hierarchy_members(&c.host, &c.window, c.arg("request")?, c.arg("doc")?, c.arg("pos")?, c.arg("kind")?).await
-    });
-    d.add("lsp_hierarchy_refactor", |c| async move {
-        lsp_hierarchy_refactor(
-            &c.host,
-            &c.window,
-            c.arg("request")?,
-            c.arg("doc")?,
-            c.arg("pos")?,
-            c.arg("kind")?,
-            c.arg("target")?,
-            c.arg("choices")?,
-        )
-        .await
-    });
+
     d.add("lsp_format", |c| async move {
         lsp_format(&c.host, &c.window, c.arg("doc")?, c.arg("range")?, c.arg("options")?).await
     });

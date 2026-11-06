@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { EditorState } from "@codemirror/state";
-import { java } from "@codemirror/lang-java";
+import { javascript } from "@codemirror/lang-javascript";
 import { lineHasCode } from "../breakpoints/codeLines";
 
 const lines = (state: EditorState) => Array.from({ length: state.doc.lines }, (_, i) => lineHasCode(state, i));
@@ -15,12 +15,12 @@ describe("lines that take a breakpoint", () => {
       "  /** doc",
       "   * more",
       "   */",
-      "  int f() { return 1; } // trailing",
-      "  /* a */ int x = 1;",
+      "  f() { return 1; } // trailing",
+      "  /* a */ x = 1;",
       "  /* a */ /* b */",
       "}",
     ].join("\n");
-    const state = EditorState.create({ doc, extensions: [java()] });
+    const state = EditorState.create({ doc, extensions: [javascript()] });
     expect(lines(state)).toEqual([true, false, false, false, false, false, false, true, true, false, true]);
   });
 

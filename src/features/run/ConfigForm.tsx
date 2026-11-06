@@ -4,7 +4,6 @@ import { showDebugAdapter } from "@/platform/productProfile";
  * common ones, the options added through "Modify options" (⌥M) and the
  * Before launch list.
  */
-import { parseJavaArgs } from "@/platform/javaLaunch";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import clsx from "clsx";
 import { isTauri, type BeforeLaunchTask, type RunConfig } from "@/platform/ipc";
@@ -46,7 +45,6 @@ import {
 import { EnvDialog } from "./EnvDialog";
 import { withTarget } from "./remote";
 import { COMPOUND, formParams, terminalApplies, withParams } from "./types";
-import { TomcatSettings } from "./TomcatSettings";
 import styles from "./Run.module.css";
 
 /**
@@ -57,8 +55,6 @@ import styles from "./Run.module.css";
  */
 const ADAPTERS: ReadonlyArray<{ id: string; label: string }> = [
   { id: "netcoredbg", label: "netcoredbg (.NET)" },
-  { id: "java-debug", label: "java-debug (Java)" },
-  { id: "kotlin-debug-adapter", label: "kotlin-debug-adapter (Kotlin)" },
   { id: "debugpy", label: "debugpy (Python)" },
   { id: "js-debug", label: "js-debug (Node.js / TypeScript)" },
   { id: "delve", label: "Delve (Go)" },
@@ -426,8 +422,6 @@ export function ConfigForm({ config, all, type, errors, template, onChange, modi
         />
       </div>
 
-      {config.kind === "tomcat" && <TomcatSettings config={config} onChange={onChange} />}
-
       {compound ? (
         template ? null : (
           <CompoundMembers
@@ -471,7 +465,7 @@ export function ConfigForm({ config, all, type, errors, template, onChange, modi
               value={config.command}
               invalid={!!errors.command}
               aria-label="Command"
-              placeholder="e.g. ./gradlew or cargo"
+              placeholder="e.g. cargo or python"
               onChange={(e) => update({ command: e.target.value, params: {} })}
             />
           </Field>
@@ -484,9 +478,7 @@ export function ConfigForm({ config, all, type, errors, template, onChange, modi
               onChange={(e) => {
                 setArgsText(e.target.value);
                 const args = parseArgs(e.target.value);
-                const module =
-                  parseJavaArgs(args).mainClass === parseJavaArgs(config.args).mainClass ? config.module : undefined;
-                update({ args, params: {}, module });
+                update({ args, params: {} });
               }}
             />
           </Field>

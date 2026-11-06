@@ -203,11 +203,11 @@ impl Syntax {
 
     /// The grammar web features parse `lang` with: its own for HTML and CSS, the
     /// CSS grammar for SCSS / Less (selectors and custom properties parse alike),
-    /// HTML for Vue / Svelte single-file components and JSP pages.
+    /// HTML for Vue / Svelte single-file components.
     fn web_grammar(&self, lang: &LanguageId) -> Option<&Grammar> {
         let name = match lang.as_str() {
             "scss" | "less" => "css",
-            "vue" | "svelte" | "jsp" => "html",
+            "vue" | "svelte" => "html",
             _ => self.grammar(lang).map(|g| g.spec.name)?,
         };
         web::is_web_grammar(name).then(|| self.grammar(&LanguageId::new(name))).flatten()

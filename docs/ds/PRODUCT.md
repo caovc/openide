@@ -20,7 +20,7 @@
 ## Out of scope（当前阶段）
 
 - 重写核心 IDE 壳、另建 UI 设计体系、无差别删除无关上游功能。
-- JVM / Java / Kotlin / Scala / Groovy IDE 功能：阶段 A 已默认软隐藏（语言包、运行/调试选择器、Java / Maven / Gradle 设置）；保留实现和配置供诊断，不承诺支持。阶段 B 硬移除列为后续 U11，不在本次实施。
+- JVM / Java / Kotlin / Scala / Groovy / Clojure / JSP IDE 功能：用户已要求 U11 硬移除，当前批次删除内置语言/安装/构建/运行/调试/UI链。旧配置仅保留数据，不再执行；不删除用户项目源文件或外部 JDK。
 - 复制 Positron（Elastic-2.0）UI 源码或未经许可证审核引入数据查看组件。
 - 第一单位同时做 UI、完整 R 环境管理、所有调试功能或 HTML widgets。
 - 要求用户先运行 Positron 才能使用 R；假定 Ark 协议与版本永远兼容。
@@ -36,3 +36,7 @@
 5. 保存可复跑命令、版本、退出码、响应摘要与进程清理证据；缺依赖须标为 blocked，不算通过。
 
 以上仅验收 U1，不宣称 UI 或完整产品已完成。后续单位各自验证，见 [ROADMAP.md](ROADMAP.md)；环境限制见 [ENV.md](../../ENV.md)。
+
+## Python / R 调试验收
+
+调试是核心能力，不仅是后端协议存在。Python脚本使用debugpy；Python Notebook使用Jupyter Debug Protocol；R脚本/Console与Notebook使用固定版本Ark公开DAP接口。每条路径分别验收断点命中、继续/暂停/步进、调用栈/局部变量/表达式、错误定位、重启清理与多会话隔离。Notebook还需kernel能力协商与cell源映射。具体任务DS-04A..D及官方来源见[功能队列](FEATURE-BACKLOG.md)。

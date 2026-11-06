@@ -123,9 +123,6 @@ const EXT_LANG: Record<string, string> = {
   js: "javascript",
   jsx: "javascriptreact",
   rs: "rust",
-  kt: "kotlin",
-  kts: "kotlin",
-  java: "java",
   py: "python",
   gd: "gdscript",
   go: "go",
@@ -183,24 +180,6 @@ const MEM_LANGUAGES: LanguageInfo[] = [
     name: "Rust",
     extensions: ["rs"],
     uiMode: "Rust",
-    lineComment: "//",
-    blockComment: ["/*", "*/"],
-    indent: null,
-  },
-  {
-    id: "kotlin",
-    name: "Kotlin",
-    extensions: ["kt", "kts"],
-    uiMode: "Kotlin",
-    lineComment: "//",
-    blockComment: ["/*", "*/"],
-    indent: null,
-  },
-  {
-    id: "java",
-    name: "Java",
-    extensions: ["java"],
-    uiMode: "Java",
     lineComment: "//",
     blockComment: ["/*", "*/"],
     indent: null,
@@ -288,32 +267,6 @@ const MEM_LANGUAGES: LanguageInfo[] = [
   },
 ];
 
-const SAMPLE_KOTLIN = `package com.acme.orders
-
-import org.springframework.web.bind.annotation.*
-import com.acme.orders.service.OrderService
-
-@RestController
-@RequestMapping("/api/orders")
-class OrderController(private val service: OrderService) {
-
-    // Paged order lookup, optionally filtered by status
-    @GetMapping
-    fun list(
-        @RequestParam status: OrderStatus?,
-        @RequestParam page: Int = 0,
-        @RequestParam size: Int = 20
-    ): Page<OrderDto> =
-        service.find(status, PageRequest(page, size)).map { it.toDto() }
-
-    @PostMapping
-    fun create(@RequestBody req: CreateOrderRequest): OrderDto {
-        val order: Order = service.create(req)
-        return order.toDto()
-    }
-}
-`;
-
 function applyChanges(text: string, changes: TextChange[]): string {
   let out = "";
   let pos = 0;
@@ -325,7 +278,6 @@ function applyChanges(text: string, changes: TextChange[]): string {
 }
 
 function sampleFor(path: string): string {
-  if (/\.kts?$/.test(path)) return SAMPLE_KOTLIN;
   return `// ${path}\n`;
 }
 
@@ -454,7 +406,7 @@ export function createMemoryBackend(files: Record<string, string> = {}): MemoryB
         refs: 1,
         lineEnding: "lf",
         readOnly: true,
-        language: ext === "class" ? "java" : (EXT_LANG[ext] ?? "plaintext"),
+        language: EXT_LANG[ext] ?? "plaintext",
         uri,
       };
       docs.set(d.id, d);

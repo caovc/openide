@@ -31,7 +31,6 @@ export const useRemote = create<RemoteState>(() => ({ session: null }));
 
 let routed = new Set<string>();
 let nextChannel = 1;
-const BUILD_MODEL_COMMANDS = new Set(["build_model", "build_sync", "gradle_link_projects", "gradle_unlink_projects"]);
 
 /**
  * The arguments with each `Channel` replaced by `{ $channel: id }`, and the
@@ -59,12 +58,7 @@ async function remoteInvoke(cmd: string, args?: InvokeArgs, options?: InvokeOpti
   const onChannel = new Channel<ChannelFrame>();
   onChannel.onmessage = (frame) => channels.get(frame.id)?.onmessage(JSON.parse(frame.data));
   const result = await invokeLocal<string>("remote_invoke", { cmd, args: json, onChannel }, options);
-  const value = JSON.parse(result);
-  // Released servers predating independent Gradle builds return a single build.
-  if (BUILD_MODEL_COMMANDS.has(cmd) && value?.gradle && !Array.isArray(value.gradle)) {
-    value.gradle = [value.gradle];
-  }
-  return value;
+  return JSON.parse(result);
 }
 
 /**

@@ -44,7 +44,7 @@ pub fn configs(host: &Host, window: &str) -> IdeResult<Vec<RunConfig>> {
     Ok(all)
 }
 
-/// A project's detected configurations (minus removed ones and unlinked Maven projects), then
+/// A project's detected configurations (minus suppressed ones), then
 /// its saved ones; toolchains from Languages & Frameworks applied. Build-tool choices stay as saved:
 /// derived defaults must not be written back as explicit environment.
 fn detected_and_saved(
@@ -53,60 +53,15 @@ fn detected_and_saved(
     saved: &[RunConfig],
     suppressed: &[String],
 ) -> Vec<RunConfig> {
-    let excluded_poms = crate::project::unlinked_maven_poms(root, settings);
-    let gradle = settings
-        .languages
-        .java
-        .gradle
-        .linked_projects
-        .as_ref()
-        .map(|_| ide_build::gradle::load_linked(root, &settings.languages.java.gradle));
-    let mut all: Vec<RunConfig> =
-        ide_run::detect_with_profiles(root, &excluded_poms, settings.cmake.profiles.as_deref())
-            .into_iter()
-            .filter(|d| !suppressed.contains(&d.id) && !saved.iter().any(|u| u.id == d.id))
-            .filter(|d| linked_config(root, gradle.as_deref(), &excluded_poms, d))
-            .collect();
+    let mut all: Vec<RunConfig> = ide_run::detect_with_profiles(root, settings.cmake.profiles.as_deref())
+        .into_iter()
+        .filter(|d| !suppressed.contains(&d.id) && !saved.iter().any(|u| u.id == d.id))
+        .collect();
     all.extend(saved.iter().cloned());
-    for config in all.iter_mut().filter(|c| !matches!(c.kind.as_str(), "gradle" | "maven")) {
+    for config in all.iter_mut().filter(|c| !ide_run::is_removed_jvm_config(c)) {
         ide_sdk::apply::apply_to_run_configs(std::slice::from_mut(config), root, settings);
     }
     all
-}
-
-fn linked_config(
-    root: &std::path::Path,
-    gradle: Option<&[ide_build::GradleModel]>,
-    excluded_poms: &[std::path::PathBuf],
-    config: &RunConfig,
-) -> bool {
-    let module = config
-        .extras
-        .module
-        .as_deref()
-        .map(std::path::Path::new)
-        .or(config.cwd.as_deref())
-        .unwrap_or(std::path::Path::new(""));
-    let owner = ide_core::project_roots::resolve(root, module);
-    if matches!(config.kind.as_str(), "maven" | "application" | "spring-boot")
-        && excluded_poms.iter().any(|pom| ide_core::project_roots::resolve(root, pom).parent() == Some(owner.as_path()))
-    {
-        return false;
-    }
-    if gradle.is_some()
-        && (config.kind == "gradle"
-            || (matches!(config.kind.as_str(), "application" | "spring-boot")
-                && ["build.gradle", "build.gradle.kts"].iter().any(|name| owner.join(name).is_file())))
-    {
-        return gradle.unwrap_or_default().iter().any(|build| {
-            if config.kind == "gradle" {
-                root.join(&build.dir) == owner
-            } else {
-                build.projects.iter().any(|p| root.join(&p.dir) == owner)
-            }
-        });
-    }
-    true
 }
 
 /// Saves the user configurations. They come from [`configs`], toolchains applied, so what
@@ -121,9 +76,12 @@ pub fn save_configs(
     let settings = project.settings.effective();
     let configs: Vec<RunConfig> = configs
         .iter()
-        .map(|c| match c.kind.as_str() {
-            "gradle" | "maven" => c.clone(),
-            _ => ide_sdk::apply::without_derived(c, &project.root, &settings),
+        .map(|c| {
+            if ide_run::is_removed_jvm_config(c) {
+                c.clone()
+            } else {
+                ide_sdk::apply::without_derived(c, &project.root, &settings)
+            }
         })
         .collect();
     ide_run::save_user_configs_with_removals(&project.root, &configs, removed_detected_ids)
@@ -137,7 +95,7 @@ fn settings_for(
 ) -> IdeResult<(std::path::PathBuf, ide_core::settings::Settings)> {
     let workspace = ide_workspace::workspace::Workspace::load(&project.root)?;
     if workspace.is_some() {
-        if config.extras.module.is_none() && !matches!(config.kind.as_str(), "application" | "spring-boot") {
+        if config.extras.module.is_none() {
             config.extras.module = config.cwd.as_deref().map(ide_core::ipc_path::to_ipc);
         }
         ide_run::scope::rebase(config, &project.root, None);
@@ -160,14 +118,14 @@ fn settings_for(
 }
 
 /// Temporary configurations as they are kept between sessions: without what settings derived
-/// (toolchain commands, Maven options, `JAVA_HOME`…), so they follow later settings changes.
+/// (toolchain commands and environment), so they follow later settings changes.
 pub fn without_derived(host: &Host, window: &str, configs: Vec<RunConfig>) -> IdeResult<Vec<RunConfig>> {
     host.require_trust(window)?;
     let project = host.project(window)?;
     configs
         .into_iter()
         .map(|mut c| {
-            if c.kind == "gradle" {
+            if ide_run::is_removed_jvm_config(&c) {
                 return Ok(c);
             }
             let (root, settings) = settings_for(host, &project, &mut c)?;
@@ -183,7 +141,7 @@ pub fn apply_settings(host: &Host, window: &str, configs: Vec<RunConfig>) -> Ide
     configs
         .into_iter()
         .map(|mut c| {
-            if c.kind != "gradle" {
+            if !ide_run::is_removed_jvm_config(&c) {
                 let (root, settings) = settings_for(host, &project, &mut c)?;
                 ide_sdk::apply::apply_to_run_configs(std::slice::from_mut(&mut c), &root, &settings);
             }
@@ -193,15 +151,13 @@ pub fn apply_settings(host: &Host, window: &str, configs: Vec<RunConfig>) -> Ide
 }
 
 pub async fn start(host: &Host, window: &str, config: RunConfig, on_output: Emit<OutputChunk>) -> IdeResult<RunInfo> {
+    ide_run::ensure_supported_config(&config)?;
     host.require_trust(window)?;
     let project = host.project(window)?;
     if config.command.is_empty() {
         return Err(IdeError::invalid("run configuration has no command"));
     }
     // Settings › Run Targets: over SSH, or in a container.
-    if config.kind == "tomcat" && config.extras.target.as_deref().is_some_and(|t| !t.is_empty()) {
-        return Err(IdeError::invalid("Tomcat Local requires the local machine"));
-    }
     if let Some(id) = config.extras.target.as_deref().filter(|t| !t.is_empty()) {
         let settings = project.settings.effective();
         let target = ide_remote::service::run_target(&settings, id)?;
@@ -235,34 +191,13 @@ pub async fn start(host: &Host, window: &str, config: RunConfig, on_output: Emit
     let (root, settings) = settings_for(host, &project, &mut config)?;
     let root = &root;
     // Configurations made in the UI name bare tools (`godot`) that may live outside PATH.
-    // Maven re-applies too: a config listed before a settings change (daemon toggle,
-    // Maven home) keeps the launcher that was current then; re-resolving at launch is
-    // what makes the setting take effect without reopening the project.
-    if config.kind == "maven" {
-        ide_sdk::apply::prepare_maven_run(&mut config, root, &settings);
-    } else if matches!(config.kind.as_str(), "gradle" | "tomcat") {
-        ide_sdk::apply::apply_to_run_configs(std::slice::from_mut(&mut config), root, &settings);
-    } else {
-        ide_sdk::apply::resolve_run_command(&mut config, root, &settings);
-    }
+    ide_sdk::apply::resolve_run_command(&mut config, root, &settings);
     if config.kind == "go" {
         ide_sdk::apply::apply_to_run_configs(std::slice::from_mut(&mut config), root, &settings);
         ide_sdk::go::apply_to_run(&mut config, &settings.languages.go.build_tags);
     }
     if config.command == ide_sdk::godot::COMMAND {
         return Err(IdeError::unavailable(ide_sdk::godot::NOT_FOUND));
-    }
-    if config.kind == "tomcat" {
-        if host.processes.list().iter().any(|r| r.running && r.config_id == config.id) {
-            return Err(IdeError::invalid("This Tomcat configuration is already running"));
-        }
-        let (root, cache) = (root.clone(), project.cache_dir.clone());
-        config = tokio::task::spawn_blocking(move || {
-            ide_run::tomcat::prepare(&root, &cache, &mut config)?;
-            Ok::<_, IdeError>(config)
-        })
-        .await
-        .map_err(|e| IdeError::internal(e.to_string()))??;
     }
     if config.kind == "go" && config.extras.params.get("scope").is_some_and(|s| s == "file") {
         let root = project.root.clone();
@@ -354,29 +289,44 @@ mod container;
 pub use commands::*;
 
 #[cfg(test)]
-mod ownership_tests {
+mod tests {
     use super::*;
+
+    fn config(kind: &str, command: &str) -> RunConfig {
+        RunConfig {
+            id: kind.into(),
+            name: kind.into(),
+            kind: kind.into(),
+            command: command.into(),
+            args: vec!["entry".into()],
+            cwd: None,
+            env: Default::default(),
+            detected: false,
+            is_test: false,
+            debug_adapter: None,
+            allow_parallel: false,
+            extras: Default::default(),
+        }
+    }
+
     #[test]
-    fn unlinked_builds_do_not_reappear_as_detected_application_configs() {
+    fn legacy_jvm_configs_stay_unchanged_while_python_uses_selected_interpreter() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path();
-        for name in ["maven", "gradle"] {
-            let dir = root.join(name);
-            std::fs::create_dir_all(dir.join("src/main/java")).unwrap();
-            std::fs::write(
-                dir.join("src/main/java/App.java"),
-                "@SpringBootApplication class App { public static void main(String[] a) {} }",
-            )
-            .unwrap();
-        }
-        std::fs::write(root.join("maven/pom.xml"), "<project><build><plugins><plugin><artifactId>spring-boot-maven-plugin</artifactId></plugin></plugins></build></project>").unwrap();
-        std::fs::write(root.join("gradle/build.gradle.kts"), "plugins { id(\"org.springframework.boot\") }").unwrap();
-        let defaults = detected_and_saved(root, &Default::default(), &[], &[]);
-        assert!(defaults.iter().any(|c| c.kind == "spring-boot"));
+        let mut legacy = config("gradle", "custom-gradle");
+        legacy.env.insert("JAVA_HOME".into(), "original-jdk".into());
+        legacy.extras.params.insert("custom".into(), "keep".into());
+        let before = serde_json::to_value(&legacy).unwrap();
+        let python = config("python", "python");
         let mut settings = ide_core::settings::Settings::default();
-        settings.languages.java.maven.unlinked_projects = vec!["maven/pom.xml".into()];
-        settings.languages.java.gradle.linked_projects = Some(vec![]);
-        let configs = detected_and_saved(root, &settings, &[], &[]);
-        assert!(configs.is_empty(), "{configs:?}");
+        settings.languages.python.interpreter = "selected-python".into();
+        let configs = detected_and_saved(root, &settings, &[legacy, python], &[]);
+        let legacy = configs.iter().find(|c| c.id == "gradle").unwrap();
+        assert_eq!(serde_json::to_value(legacy).unwrap(), before);
+        assert!(ide_run::ensure_supported_config(legacy).is_err());
+        let python = configs.iter().find(|c| c.id == "python").unwrap();
+        assert_eq!(python.command, root.join("selected-python").to_string_lossy());
+        assert_eq!(python.args, ["entry"]);
+        assert!(ide_run::ensure_supported_config(python).is_ok());
     }
 }

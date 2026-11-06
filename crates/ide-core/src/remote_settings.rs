@@ -170,6 +170,7 @@ pub struct RunTarget {
     /// Interpreters on the target; empty = the one on the remote `PATH`.
     pub python: String,
     pub node: String,
+    /// Legacy target value preserved on save; no JVM launcher consumes it.
     pub java: String,
     /// Id of a Docker connection of the Services tool window (Docker, Compose);
     /// empty = the CLI's own daemon.

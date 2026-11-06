@@ -15,7 +15,7 @@ import {
   updateBreakpoint,
   useBreakpoints,
 } from "../breakpoints/store";
-import { classFileBreakpointReason } from "@/platform/classFiles";
+import { isVirtualUri } from "@/platform/virtualDocs";
 import { tx } from "@/platform/i18n";
 import { showStatusInfo } from "@/workbench/contributions";
 import { lineHasCode } from "../breakpoints/codeLines";
@@ -137,7 +137,7 @@ function inBreakpointArea(e: MouseEvent): boolean {
 }
 
 export function breakpointGutter(ctx: EditorDocContext): Extension {
-  const reason = classFileBreakpointReason(ctx.path);
+  const reason = isVirtualUri(ctx.path) ? "Cannot place breakpoints in this virtual document" : null;
   if (reason) {
     const message = tx(reason);
     return ViewPlugin.fromClass(

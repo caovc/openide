@@ -196,15 +196,6 @@ async fn fake_adapter<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(stream
                 send!(json!({"type": "event", "event": "terminated"}));
             }
             "stepIn" | "stepOut" | "pause" => ok!(msg, Value::Null),
-            "redefineClasses" => {
-                send!(
-                    json!({"type": "event", "event": "hotcodereplace", "body": {"changeType": "STARTING", "message": "Start hot code replacement procedure..."}})
-                );
-                ok!(msg, json!({"changedClasses": ["com.x.App"]}));
-                send!(
-                    json!({"type": "event", "event": "hotcodereplace", "body": {"changeType": 3, "message": "Build completed"}})
-                );
-            }
             "terminate" => {
                 ok!(msg, Value::Null);
                 send!(json!({"type": "event", "event": "terminated"}));
@@ -772,7 +763,7 @@ async fn codelldb_console_evaluates_expressions() {
     assert_eq!(launch["_adapterSettings"], json!({"consoleMode": "evaluate", "showDisassembly": "never"}));
 }
 
-/// An adapter that is already listening (java-debug inside jdtls): the client
+/// An adapter that is already listening (a remote debugpy session): the client
 /// connects over TCP to the `debugServer` port instead of spawning anything.
 #[tokio::test]
 async fn connects_to_running_debug_server_over_tcp() {
@@ -788,18 +779,18 @@ async fn connects_to_running_debug_server_over_tcp() {
     let manager = DebugManager::new(Arc::new(LanguageRegistry::from_configs(Vec::new())));
     let config = LaunchConfig {
         name: "App".into(),
-        adapter: "java-debug".into(),
+        adapter: "debugpy".into(),
         request: "launch".into(),
         program: None,
         args: vec![],
         cwd: Some(std::env::temp_dir().into()),
         env: BTreeMap::new(),
-        extra_json: Some(json!({"debugServer": port, "mainClass": "demo.App"}).to_string()),
+        extra_json: Some(json!({"debugServer": port, "module": "demo_app"}).to_string()),
     };
     let id = manager.start(config, owner).await.unwrap();
     let launch = log.lock().iter().find(|m| m["command"] == "launch").cloned().unwrap();
-    assert_eq!(launch["arguments"]["mainClass"], "demo.App");
-    assert_eq!(launch["arguments"]["type"], "java");
+    assert_eq!(launch["arguments"]["module"], "demo_app");
+    assert_eq!(launch["arguments"]["type"], "debugpy");
     assert!(launch["arguments"].get("debugServer").is_none(), "consumed by the client");
     assert_eq!(manager.threads(id).await.unwrap()[0].name, "MainThread");
     manager.stop(id).await.unwrap();
@@ -979,30 +970,6 @@ async fn startup_sends_every_file_at_once_and_skips_files_with_nothing_enabled()
     );
 }
 
-#[tokio::test]
-async fn hot_swap_only_for_java_debug() {
-    let h = harness(Script::default());
-    let id = h.start(config()).await.unwrap();
-    assert!(!h.manager.capabilities(id).unwrap().hot_code_replace);
-    let err = h.manager.redefine_classes(id).await.unwrap_err();
-    assert_eq!(err.kind, ide_core::error::ErrorKind::Unavailable);
-
-    let java = LaunchConfig { adapter: "java-debug".into(), extra_json: None, ..config() };
-    let id = h.start(java).await.unwrap();
-    assert!(h.manager.capabilities(id).unwrap().hot_code_replace);
-    let result = h.manager.redefine_classes(id).await.unwrap();
-    assert_eq!(result, HotSwapResult { changed_classes: vec!["com.x.App".into()], error_message: None });
-    match h
-        .wait_event(|e| matches!(e, DebugEvent::HotCodeReplace { change_type, .. } if change_type == "BUILD_COMPLETE"))
-        .await
-    {
-        DebugEvent::HotCodeReplace { message, .. } => assert_eq!(message, "Build completed"),
-        other => panic!("{other:?}"),
-    }
-    let failed = hot_swap_result(&json!({"changedClasses": [], "errorMessage": "boom"}));
-    assert_eq!(failed.error_message.as_deref(), Some("boom"));
-}
-
 fn godot_registry(port: u16, command: &str, args: &[&str]) -> Arc<LanguageRegistry> {
     let lang = ide_language::LanguageConfig {
         id: ide_core::LanguageId::new("gdscript"),
@@ -1141,68 +1108,6 @@ fn root_and_address_placeholders() {
     assert_eq!(adapter::parse_address("6006"), None);
 }
 
-#[tokio::test]
-async fn kotlin_configures_without_configuration_done_response() {
-    let h = harness(Script { ignore_configuration_done: true, ..Default::default() });
-    let project = tempfile::tempdir().unwrap();
-    let path = project.path().join("Main.kt");
-    std::fs::write(&path, "package org.example\nfun main() {}\n").unwrap();
-    h.manager.set_breakpoints(path.clone(), vec![bp(1)]).await.unwrap();
-    let mut config = config();
-    config.adapter = kotlin::ADAPTER.into();
-    config.request = "attach".into();
-    config.cwd = Some(project.path().to_owned().into());
-    config.extra_json = Some(json!({"projectRoot": project.path(), "hostName": "127.0.0.1", "port": 5005}).to_string());
-    let id = tokio::time::timeout(Duration::from_secs(2), h.start(config)).await.unwrap().unwrap();
-    let root = PathBuf::from(h.request("attach")["arguments"]["projectRoot"].as_str().unwrap());
-    assert!(!root.starts_with(project.path()));
-    let request = h.request("setBreakpoints");
-    assert_eq!(request["arguments"]["source"]["name"], "Main.kt");
-    let mapped = PathBuf::from(request["arguments"]["source"]["path"].as_str().unwrap());
-    assert!(mapped.starts_with(&root));
-    assert!(mapped.is_file());
-    assert_eq!(h.manager.session(id).unwrap().client_path(mapped.to_str().unwrap()), Some(path));
-    h.manager.stop(id).await.unwrap();
-}
-
-/// Requires a compiled no-delay reporter fixture (Main.kt, package org.example,
-/// loop at line 5, println(i) at line 6), and the unmodified official adapter.
-/// KOTLIN_PROBE_CONFIG is a LaunchConfig JSON file; KOTLIN_PROBE_ADAPTER is its executable.
-#[tokio::test]
-#[ignore = "requires official Kotlin adapter and compiled reporter fixture"]
-async fn kotlin_official_release_ten_no_delay_runs() {
-    let config: LaunchConfig = serde_json::from_slice(
-        &std::fs::read(std::env::var("KOTLIN_PROBE_CONFIG").expect("KOTLIN_PROBE_CONFIG")).unwrap(),
-    )
-    .unwrap();
-    let adapter = std::env::var("KOTLIN_PROBE_ADAPTER").expect("KOTLIN_PROBE_ADAPTER");
-    let source = PathBuf::from(config.cwd.clone().unwrap()).join("src/main/kotlin/Main.kt");
-    for run in 1..=10 {
-        let (owner, events) = recording_owner("kotlin-probe");
-        let manager = DebugManager::new(Arc::new(LanguageRegistry::from_configs(Vec::new())));
-        let h = Harness { manager, owner, events, log: Arc::default() };
-        h.manager.set_breakpoints(source.clone(), vec![bp(5)]).await.unwrap();
-        let id = h.manager.start_with(config.clone(), h.owner.clone(), |_| Some(adapter.clone())).await.unwrap();
-        let stopped = h.wait_event(|e| matches!(e, DebugEvent::Stopped { reason, .. } if reason == "breakpoint")).await;
-        let DebugEvent::Stopped { thread_id, .. } = stopped else { unreachable!() };
-        let frames = h.manager.stack_trace(id, thread_id).await.unwrap();
-        assert_eq!(frames[0].line, 5);
-        assert_eq!(frames[0].path.as_deref(), Some(source.as_path()));
-        let scopes = h.manager.scopes(id, frames[0].id).await.unwrap();
-        let mut variables = Vec::new();
-        for scope in scopes {
-            variables.extend(h.manager.variables(id, scope.variables_reference).await.unwrap());
-        }
-        assert!(variables.iter().any(|v| v.name == "i" && v.value == "0"));
-        h.manager.step(id, thread_id, StepKind::Over).await.unwrap();
-        h.wait_event(|e| matches!(e, DebugEvent::Stopped { reason, .. } if reason == "step")).await;
-        let frames = h.manager.stack_trace(id, thread_id).await.unwrap();
-        assert_eq!(frames[0].line, 4);
-        h.manager.stop(id).await.unwrap();
-        println!("Run {run}/10: breakpoint Main.kt:6, i=0, step Main.kt:5; stopped");
-    }
-}
-
 #[cfg(windows)]
 #[tokio::test]
 async fn netcoredbg_windows_source_paths_round_trip() {
@@ -1218,63 +1123,6 @@ async fn netcoredbg_windows_source_paths_round_trip() {
     let frames = h.manager.stack_trace(id, 1).await.unwrap();
     assert_eq!(frames[0].path.as_deref(), Some(path.as_path()));
     h.manager.stop(id).await.unwrap();
-}
-
-#[tokio::test]
-async fn java_windows_source_paths_for_launch_and_attach() {
-    for request in ["launch", "attach"] {
-        for (client, native, returned) in [
-            ("C:/work/Main.java", r"C:\work\Main.java", r"C:\work\Main.java"),
-            ("C:/work/Main.java", r"C:\work\Main.java", "C:/work/Main.java"),
-            (r"c:\work\Main.java", r"c:\work\Main.java", "c:/work/Main.java"),
-            (r"D:/my project\Main.java", r"D:\my project\Main.java", r"D:\my project\Main.java"),
-            ("//server/share/Main.java", r"\\server\share\Main.java", "//server/share/Main.java"),
-            (r"\\server\share/Main.java", r"\\server\share\Main.java", "//server/share/Main.java"),
-            ("/work/Main.java", "/work/Main.java", "/work/Main.java"),
-        ] {
-            let h = harness(Script { source_path: Some(returned.into()), ..Script::default() });
-            let path = PathBuf::from(client);
-            h.manager.set_breakpoints(path.clone(), vec![bp(4)]).await.unwrap();
-            let mut cfg = config();
-            cfg.adapter = "java-debug".into();
-            cfg.request = request.into();
-            let id = h.start(cfg).await.unwrap();
-            assert_eq!(h.request("initialize")["arguments"]["pathFormat"], "path");
-            assert_eq!(h.request("setBreakpoints")["arguments"]["source"]["path"], native);
-            let commands = h.commands();
-            assert!(
-                commands.iter().position(|c| c == "setBreakpoints").unwrap()
-                    < commands.iter().position(|c| c == "configurationDone").unwrap()
-            );
-            let frames = h.manager.stack_trace(id, 1).await.unwrap();
-            assert_eq!(frames[0].path.as_deref(), Some(path.as_path()));
-            h.wait_event(|e| {
-                matches!(e, DebugEvent::BreakpointsChanged { path: p } if p.as_ref() == path.as_path())
-                    && h.manager.breakpoint_states(&path)[0].message.as_deref() == Some("moved")
-            })
-            .await;
-            assert_eq!(h.manager.breakpoint_states(&path)[0].message.as_deref(), Some("moved"));
-            h.manager.stop(id).await.unwrap();
-        }
-    }
-}
-
-#[tokio::test]
-async fn java_stack_frames_without_breakpoints_normalize_windows_paths() {
-    for (returned, expected) in [
-        (r"C:\work\Other.java", "C:/work/Other.java"),
-        (r"\\server\share\Other.java", "//server/share/Other.java"),
-        ("C:/work/Other.java", "C:/work/Other.java"),
-        ("/work/Other.java", "/work/Other.java"),
-    ] {
-        let h = harness(Script { source_path: Some(returned.into()), ..Script::default() });
-        let mut cfg = config();
-        cfg.adapter = "java-debug".into();
-        let id = h.start(cfg).await.unwrap();
-        let frames = h.manager.stack_trace(id, 1).await.unwrap();
-        assert_eq!(frames[0].path.as_deref(), Some(PathBuf::from(expected).as_path()));
-        h.manager.stop(id).await.unwrap();
-    }
 }
 
 /// A built-in language definition (GDScript) shipped by a plugin

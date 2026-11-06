@@ -17,8 +17,8 @@ vi.mock("@/platform/ipc", async (original) => {
 });
 
 const attach: LaunchConfig = {
-  name: "AppKt",
-  adapter: "kotlin-debug-adapter",
+  name: "Worker",
+  adapter: "debugpy",
   request: "attach",
   program: null,
   args: [],
@@ -34,23 +34,23 @@ beforeEach(() => {
   provideNotificationService({ notify });
   provideToolWindowService({ show: vi.fn() } as unknown as ToolWindowService);
   vi.clearAllMocks();
-  // The adapter's session announces itself, then the attach fails: the JVM is gone.
+  // The adapter's session announces itself, then the attach fails: the process is gone.
   ipc.debugStart.mockImplementation(async () => {
-    handleDebugEvent(43, { kind: "started", name: "AppKt", adapter: "kotlin-debug-adapter", parent: null });
+    handleDebugEvent(43, { kind: "started", name: "Worker", adapter: "debugpy", parent: null });
     return { status: "error", error: { kind: "internal", message: "attach failed: Internal error.", data: null } };
   });
 });
 
-/** A finished session that debugged a JVM of run 7. */
+/** A finished session that debugged a process of run 7. */
 function finished(endedAgoMs: number) {
-  adoptSession(1, { name: "AppKt", process: 7 });
+  adoptSession(1, { name: "Worker", process: 7 });
   handleDebugEvent(1, { kind: "terminated" });
   useDebug.setState((s) => ({
     sessions: { ...s.sessions, 1: { ...s.sessions[1]!, endedAt: Date.now() - endedAgoMs } },
   }));
 }
 
-it("ignores a failed attach to the port a JVM announced as its debugger detached", async () => {
+it("ignores a failed attach to the port a process announced as its debugger detached", async () => {
   finished(100);
   expect(await startSession(attach, { process: 7, rerunnable: false })).toBeNull();
   expect(notify).not.toHaveBeenCalled();
@@ -59,16 +59,16 @@ it("ignores a failed attach to the port a JVM announced as its debugger detached
   expect(active).toBe(1);
 });
 
-it("reports a failed attach to a JVM of another run, or long after the last session ended", async () => {
+it("reports a failed attach to a process of another run, or long after the last session ended", async () => {
   finished(100);
   await startSession(attach, { process: 8, rerunnable: false });
-  expect(notify).toHaveBeenCalledWith(expect.objectContaining({ title: "Cannot start debugger for AppKt" }));
+  expect(notify).toHaveBeenCalledWith(expect.objectContaining({ title: "Cannot start debugger for Worker" }));
 
   notify.mockClear();
   useDebug.setState({ sessions: {}, active: null, console: {} });
   finished(60_000);
   await startSession(attach, { process: 7, rerunnable: false });
-  expect(notify).toHaveBeenCalledWith(expect.objectContaining({ title: "Cannot start debugger for AppKt" }));
+  expect(notify).toHaveBeenCalledWith(expect.objectContaining({ title: "Cannot start debugger for Worker" }));
   expect(useDebug.getState().sessions[1]).toBeUndefined();
 });
 

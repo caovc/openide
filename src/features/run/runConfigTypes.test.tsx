@@ -1,4 +1,4 @@
-import { useProject } from "@/platform/project";
+import { memberRows } from "./ConfigForm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { registerActions } from "@/platform/actions";
@@ -16,7 +16,6 @@ import {
 import { typeRows } from "./AddConfigPopup";
 import { runBeforeLaunch } from "./beforeLaunch";
 import { buildRows } from "./ConfigChooser";
-import { ConfigForm, memberRows } from "./ConfigForm";
 import { compoundChildren, compoundCycle, formatEnv, parseEnv, validateConfig } from "./configs";
 import { contextConfig } from "./context";
 import { EditConfigsOverlay, moveConfig, treeRows } from "./EditConfigsDialog";
@@ -24,7 +23,6 @@ import { pasteRows } from "./EnvDialog";
 import { CURRENT_FILE, resetRuns, selectConfig, sessionsOf, startCompound, startRun, useRun } from "./store";
 import {
   BUILTIN_TYPES,
-  blankTemplate,
   formParams,
   missingParams,
   newConfigOfType,
@@ -70,62 +68,11 @@ beforeEach(() => {
 afterEach(() => disposeTypes());
 
 describe("configuration types", () => {
-  it("runs an Application with the chosen JRE and the classpath of the chosen module", () => {
-    const type = typeFor("application")!;
-    const base = withParams(newConfigOfType(type, []), { ...newConfigOfType(type, []).params, mainClass: "a.Main" });
-    expect(base.command).toBe("java");
-    expect(base.module).toBeUndefined();
-
-    const chosen = withParams(base, { ...base.params, jre: "/jdks/temurin-8", module: "server" });
-    expect(chosen.command).toBe("/jdks/temurin-8/bin/java");
-    expect(chosen.module).toBe("server");
-    // The project root is a module too.
-    expect(withParams(chosen, { ...chosen.params, module: "." }).module).toBe("");
-    // Back to the defaults: the module's JDK, and the module found again for another main class.
-    const auto = withParams(chosen, { ...chosen.params, jre: "", module: "", mainClass: "b.Main" });
-    expect(auto.command).toBe("java");
-    expect(auto.module).toBeUndefined();
-
-    // A configuration saved with its module shows it in the form.
-    const saved = cfg("saved", {
-      kind: "application",
-      command: "java",
-      args: ["-cp", "${classpath}", "a.Main"],
-      module: "",
-    });
-    expect(formParams(saved)).toMatchObject({ mainClass: "a.Main", module: "." });
-  });
-
-  it.each(["spring-boot", "tomcat"])("edits shared update policies in the %s form", async (kind) => {
-    const type = typeFor(kind)!;
-    const original = newConfigOfType(type, []);
-    const config =
-      kind === "spring-boot" ? withParams(original, { ...original.params, mainClass: "a.Main" }) : original;
-    const changed = vi.fn();
-    render(<ConfigForm config={config} all={[config]} type={type} errors={{}} onChange={changed} modifyRequest={0} />);
-    expect(screen.getByRole("button", { name: "On 'Update' action" }).textContent).toContain("Show chooser");
-    expect(screen.getByRole("button", { name: "On frame deactivation" }).textContent).toContain("Do nothing");
-    fireEvent.click(screen.getByRole("button", { name: "On frame deactivation" }));
-    fireEvent.click(await screen.findByRole("option", { name: "Update resources" }));
-    expect(changed).toHaveBeenCalledWith(
-      expect.objectContaining({ params: expect.objectContaining({ onDeactivation: "resources" }) }),
-    );
-  });
-
   it("are contributed through the registry", () => {
     expect(runConfigTypes().map((t) => t.id)).toEqual(expect.arrayContaining(BUILTIN_TYPES.map((t) => t.id)));
   });
 
   it.each([
-    ["maven", "mvn.cmd", ["clean", "test"]],
-    ["maven", "MVN.CMD", ["verify"]],
-    ["maven", "mvn.bat", ["test"]],
-    ["maven", "/opt/maven/bin/mvn", ["package"]],
-    ["maven", String.raw`C:\tools\maven\bin\mvn.cmd`, ["test", "-Dname=two words"]],
-    ["maven", "mvnw.cmd", ["test"]],
-    ["gradle", "gradle.bat", ["build"]],
-    ["gradle", "gradle.cmd", ["test"]],
-    ["gradle", "gradlew.bat", ["test"]],
     ["pytest", "pytest.exe", ["tests/test_app.py", "-q"]],
     ["pytest", String.raw`C:\project\.venv\Scripts\PYTEST.EXE`, ["-q"]],
     ["pytest", "PYTHON.EXE", ["-m", "pytest", "tests"]],
@@ -137,8 +84,6 @@ describe("configuration types", () => {
     ["rake", "bundle", ["exec", "rake", "-f", "lib/tasks.rake", "--trace", "db:migrate"]],
     ["npm", String.raw`C:\Program Files\nodejs\NPM.CMD`, ["run", "test", "--", "two words"]],
     ["npm", "pnpm.COM", ["test"]],
-    ["application", String.raw`C:\jdk\bin\JAVA.EXE`, ["-cp", "lib/*", "a.Main"]],
-    ["spring-boot", "java.cmd", ["-cp", "lib/*", "a.App"]],
     ["godot", "GODOT.EXE", ["--path", ".", "res://a.tscn"]],
   ])("opens %s launcher %s in its form and preserves the command line", (kind, command, args) => {
     const original = cfg("windows", { kind, command, args, cwd: "C:/project" });
@@ -152,8 +97,6 @@ describe("configuration types", () => {
   });
 
   it("switches launchers when the wrapper or package manager selection changes", () => {
-    const maven = cfg("m", { kind: "maven", command: "mvnw.cmd", args: ["test"] });
-    expect(withParams(maven, { ...formParams(maven)!, wrapper: "false" }).command).toBe("mvn");
     const npm = cfg("n", { kind: "npm", command: "NPM.CMD", args: ["test"] });
     expect(formParams(npm)!.packageManager).toBe("npm");
     expect(withParams(npm, { ...formParams(npm)!, packageManager: "pnpm" }).command).toBe("pnpm");
@@ -462,15 +405,6 @@ describe("configuration types", () => {
       arguments: "--port 3000",
       packageDir: "web",
     });
-    const gradle = cfg("gradle:test", { kind: "gradle", command: "./gradlew", args: ["test"], detected: true });
-    expect(formParams(gradle)).toMatchObject({ tasks: "test", wrapper: "true" });
-    // An unrelated executable stays a plain command.
-    expect(formParams(cfg("m", { kind: "maven", command: "/opt/tools/custom-build", args: ["package"] }))).toBeNull();
-    expect(withParams(npm, { packageManager: "npm", command: "test", packageDir: "" })).toMatchObject({
-      command: "npm",
-      args: ["test"],
-      cwd: null,
-    });
   });
 
   it("new configurations get the type's defaults, then the template", () => {
@@ -507,7 +441,7 @@ describe("configuration types", () => {
     expect(rows.filter((r) => r.kind === "type").map((r) => (r.kind === "type" ? r.type.label : ""))).toContain(
       "Compound",
     );
-    expect(typeRows(types, "grad").map((r) => r.key)).toEqual(["gradle"]);
+    expect(typeRows(types, "grad")).toEqual([]);
     expect(typeRows(types, "dock").map((r) => r.key)).toEqual(["group:Docker", "docker-image"]);
   });
 });
@@ -667,14 +601,14 @@ describe("Run/Debug Configurations tree", () => {
   });
 });
 
-describe("debug-only types (Remote JVM Debug)", () => {
+describe("debug-only types (Python Remote Debug)", () => {
   const remote: RunConfigTypeContribution = {
     id: "test-remote",
     label: "Test Remote",
     icon: "debug",
     defaults: { port: "5005" },
     debugOnly: true,
-    debugAdapter: "java-debug",
+    debugAdapter: "debugpy",
     fields: [
       {
         key: "port",
@@ -716,7 +650,7 @@ describe("debug-only types (Remote JVM Debug)", () => {
 
   it("are valid without a command, get the type's adapter and are not run", async () => {
     const c = newConfigOfType(remote, []);
-    expect(c.debugAdapter).toBe("java-debug");
+    expect(c.debugAdapter).toBe("debugpy");
     expect(validateConfig(c, [c])).toEqual({});
     expect(await startRun(c)).toBeNull();
     expect(notify).toHaveBeenCalledWith(expect.objectContaining({ title: "'Unnamed' can only be debugged" }));
@@ -730,24 +664,4 @@ describe("Current File", () => {
     selectConfig(CURRENT_FILE);
     expect(useRun.getState().selectedId).toBe(CURRENT_FILE);
   });
-});
-
-describe("new Gradle wrapper default", () => {
-  it.each(["wrapper", "local"] as const)(
-    "follows %s distribution without changing existing choices",
-    (distribution) => {
-      const previous = useProject.getState().settings;
-      useProject.setState({ settings: { languages: { java: { gradle: { distribution } } } } as never });
-      try {
-        const type = BUILTIN_TYPES.find((t) => t.id === "gradle")!;
-        const config = newConfigOfType(type, [], blankTemplate(type));
-        expect(config.params?.wrapper).toBe(distribution === "local" ? "false" : "true");
-        expect(type.fields.some((f) => f.key === "wrapper")).toBe(true);
-        const template = { ...config, params: { wrapper: "true" } };
-        expect(newConfigOfType(type, [], template).params?.wrapper).toBe("true");
-      } finally {
-        useProject.setState({ settings: previous });
-      }
-    },
-  );
 });

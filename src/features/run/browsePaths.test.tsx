@@ -11,8 +11,6 @@ vi.mock("@/platform/ipc", async (importOriginal) => ({
 import type { RunConfig } from "@/platform/ipc";
 import { useProject } from "@/platform/project";
 import { ConfigForm } from "./ConfigForm";
-import { tomcatType } from "./tomcat";
-import { newConfigOfType } from "./types";
 
 const config: RunConfig = {
   id: "app",
@@ -55,25 +53,5 @@ describe("path fields", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Browse…" })[0]!);
     await waitFor(() => expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ cwd: "server" })));
     expect(open).toHaveBeenLastCalledWith(expect.objectContaining({ directory: true, multiple: false }));
-  });
-
-  it("pick a file or a directory for a configuration type's path fields", async () => {
-    useProject.setState({ project: { root: "/work/app" } as never });
-    const tomcat = { ...newConfigOfType(tomcatType, []), params: { deployment: "war" } };
-    const onChange = vi.fn();
-    render(<ConfigForm config={tomcat} all={[]} type={tomcatType} errors={{}} onChange={onChange} modifyRequest={0} />);
-    const home = screen.getByRole("textbox", { name: "Tomcat installation directory" });
-    open.mockResolvedValue("/opt/tomcat");
-    fireEvent.click(home.parentElement!.querySelector("button")!);
-    await waitFor(() =>
-      expect(onChange).toHaveBeenCalledWith(
-        expect.objectContaining({ params: expect.objectContaining({ tomcatHome: "/opt/tomcat" }) }),
-      ),
-    );
-    expect(open).toHaveBeenLastCalledWith(expect.objectContaining({ directory: true }));
-    const war = screen.getByRole("textbox", { name: "Deployment path" });
-    open.mockResolvedValue("/work/app/build/app.war");
-    fireEvent.click(war.parentElement!.querySelector("button")!);
-    await waitFor(() => expect(open).toHaveBeenLastCalledWith(expect.objectContaining({ directory: false })));
   });
 });

@@ -34,18 +34,7 @@ describe("languages settings", () => {
     expect(v.rust.checkCommand).toBe("clippy");
     expect(v.rust.checkOnSave).toBe(false);
     expect(v.typescript.version).toBe("bundled");
-    expect(v.java.jdtlsVmArgs).toBe("-Xmx2g");
-    expect(v.java.jdk).toBe("");
-    expect(v.java.jdtlsJdk).toBe("/opt/jdk-25");
-    expect(v.java.maven).toEqual({
-      home: "/opt/maven",
-      userSettings: "",
-      localRepository: "",
-      unlinkedProjects: [],
-      linkedProjects: [],
-      daemon: false,
-      mvndHome: "/opt/mvnd",
-    });
+    expect(v).not.toHaveProperty("java");
     expect(validateSettings({}).languages).toEqual(DEFAULT_LANGUAGES);
   });
 
@@ -177,7 +166,6 @@ describe("language pages", () => {
     const langs = tree.find((n) => n.title === "Languages & Frameworks")!;
     expect(langs.children.map((n) => n.title)).toEqual([
       "Go",
-      "Java",
       "Markdown",
       "Node.js",
       "Python Interpreter",

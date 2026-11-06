@@ -14,7 +14,7 @@ export interface SplitName {
 }
 
 const JS_EXT = /\.(?:[cm]?[jt]sx?)$/;
-const JVM_EXT = /\.(java|kt|kts|scala|groovy|cs|fs|vb|swift|dart|php)$/;
+const CLASS_TEST_EXT = /\.(cs|fs|vb|swift|dart|php)$/;
 const C_EXT = /\.(c|cc|cpp|cxx|h|hpp|m|mm)$/;
 
 export function splitName(name: string): SplitName {
@@ -29,7 +29,7 @@ export function isTestName(name: string): boolean {
   if (ext === ".go") return stem.endsWith("_test");
   if (ext === ".py") return stem.startsWith("test_") || stem.endsWith("_test") || stem === "conftest";
   if (ext === ".rb") return stem.endsWith("_spec") || stem.endsWith("_test");
-  if (JVM_EXT.test(name))
+  if (CLASS_TEST_EXT.test(name))
     return /^Test[A-Z0-9_]/.test(stem) || (/Tests?$/.test(stem) && stem !== "Test" && stem !== "Tests");
   if (C_EXT.test(name)) return stem.startsWith("test_") || stem.endsWith("_test") || stem.endsWith("_unittest");
   return false;
@@ -43,7 +43,7 @@ export function testNamesFor(name: string): string[] {
   if (ext === ".py") return [`test_${stem}.py`, `${stem}_test.py`];
   if (ext === ".rb") return [`${stem}_spec.rb`, `${stem}_test.rb`];
   if (ext === ".rs") return [`${stem}.rs`, `${stem}_test.rs`, `${stem}_tests.rs`];
-  if (JVM_EXT.test(name))
+  if (CLASS_TEST_EXT.test(name))
     return [`${stem}Test${ext}`, `${stem}Tests${ext}`, `Test${stem}${ext}`, `${stem}IT${ext}`, `${stem}Spec${ext}`];
   if (C_EXT.test(name)) return [`${stem}_test${ext}`, `test_${stem}${ext}`, `${stem}_unittest${ext}`];
   return [`${stem}_test${ext}`, `test_${stem}${ext}`];

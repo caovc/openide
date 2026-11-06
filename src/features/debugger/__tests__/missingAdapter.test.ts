@@ -20,7 +20,7 @@ describe("missing debug adapters", () => {
     });
     expect(
       missingAdapter("kotlin-debug-adapter", unavailable("debug adapter `kotlin-debug-adapter` not found (x)"))?.tool,
-    ).toBe("kotlin-debug-adapter");
+    ).toBeUndefined();
     expect(missingAdapter("netcoredbg", unavailable("debug adapter `netcoredbg` not found (x)"))?.tool).toBe(
       "netcoredbg",
     );

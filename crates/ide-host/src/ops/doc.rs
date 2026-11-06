@@ -29,13 +29,13 @@ pub fn edit(host: &Host, window: &str, doc: DocId, base_version: u32, changes: C
 pub async fn save(host: &Host, window: &str, doc: DocId) -> IdeResult<()> {
     let project = host.project(window)?;
     host.blocking(move || project.documents.save(doc)).await?;
-    host.debugger.refresh_source_mirrors(host.owner_window(window)).await
+    Ok(())
 }
 
 pub async fn save_all(host: &Host, window: &str) -> IdeResult<()> {
     let project = host.project(window)?;
     host.blocking(move || project.documents.save_all()).await?;
-    host.debugger.refresh_source_mirrors(host.owner_window(window)).await
+    Ok(())
 }
 
 /// Recovers external changes missed by the project's file watchers.

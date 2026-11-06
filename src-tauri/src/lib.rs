@@ -78,7 +78,6 @@ pub fn run() {
     if let Some(data) = dirs::data_local_dir() {
         ide_tools::extend_process_path(&data.join(&context.config().identifier));
         ide_dap::adapter::set_tools_root(ide_tools::tools_dir(&data.join(&context.config().identifier)));
-        ide_sdk::java::add_jdk_root(&ide_tools::jdk::jdks_dir(&data.join(&context.config().identifier)));
     }
     if let Some(refresh) = refresh_shell_path {
         refresh();

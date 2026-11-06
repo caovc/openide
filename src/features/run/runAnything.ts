@@ -5,7 +5,7 @@ import type { RunConfig } from "@/platform/ipc";
 import type { RunAnythingItem, RunAnythingProvider } from "@/workbench/contributions";
 import { useRun } from "./store";
 
-const KIND_ICON: Record<string, string> = { npm: "file-npm", maven: "file-maven", gradle: "file-gradle" };
+const KIND_ICON: Record<string, string> = { npm: "file-npm" };
 
 function item(c: RunConfig): RunAnythingItem {
   return {

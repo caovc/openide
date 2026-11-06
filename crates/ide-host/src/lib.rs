@@ -6,8 +6,6 @@
 pub mod data_dirs;
 pub mod environment;
 mod formatter;
-mod java_runtime;
-mod kotlin_bridge;
 pub mod notebook;
 pub mod ops;
 mod phpstan;
@@ -230,9 +228,7 @@ impl Host {
         if !project.light {
             self.environment.project_closed();
         }
-        if let Some(bridge) = &project.kotlin_bridge {
-            bridge.stop();
-        }
+
         if let Some(phpstan) = &project.phpstan {
             phpstan.stop();
         }
@@ -246,7 +242,6 @@ impl Host {
         self.terminals.kill_key(self.owner_window(window));
         Some(self.spawn_project_shutdown(
             vec![project.notebooks.clone()],
-            project.kotlin_bridge.iter().cloned().collect(),
             Some(project.lsp.clone()),
             Some((self.debugger.clone(), window.to_owned())),
             Some(project),
@@ -259,14 +254,10 @@ impl Host {
     fn spawn_project_shutdown(
         &self,
         notebooks: Vec<Arc<notebook::NotebookService>>,
-        bridges: Vec<Arc<kotlin_bridge::KotlinBridge>>,
         lsp: Option<Arc<ide_lsp::LspManager>>,
         debug: Option<(Arc<ide_dap::DebugManager>, String)>,
         retired: Option<Arc<Project>>,
     ) -> std::thread::JoinHandle<()> {
-        for bridge in &bridges {
-            bridge.stop();
-        }
         for service in &notebooks {
             service.stop_admission();
         }
@@ -277,9 +268,6 @@ impl Host {
             // isn't done on the closing caller's thread (the UI thread for a window close).
             let retired = retired.map(|project| std::thread::spawn(move || drop(project)));
             runtime.block_on(async move {
-                for bridge in bridges {
-                    bridge.shutdown().await;
-                }
                 for service in notebooks {
                     service.shutdown().await;
                 }
@@ -329,7 +317,6 @@ impl Host {
         let mut pending: Vec<_> = self.closing.lock().drain(..).collect();
         pending.push(self.spawn_project_shutdown(
             projects.iter().map(|project| project.notebooks.clone()).collect(),
-            projects.iter().filter_map(|project| project.kotlin_bridge.clone()).collect(),
             None,
             None,
             None,
@@ -372,9 +359,6 @@ impl Host {
         self.terminals.kill_all();
         let projects: Vec<_> = self.projects.write().drain().map(|(_, p)| p).collect();
         for project in &projects {
-            if let Some(bridge) = &project.kotlin_bridge {
-                bridge.stop();
-            }
             if let Some(phpstan) = &project.phpstan {
                 phpstan.stop();
             }
@@ -385,9 +369,6 @@ impl Host {
         // Kernel cleanup owns its interrupt/termination/reaping deadlines. An
         // outer LSP timeout must never abort it before owned children are reaped.
         for project in &projects {
-            if let Some(bridge) = &project.kotlin_bridge {
-                bridge.shutdown().await;
-            }
             project.notebooks.shutdown().await;
         }
         let stop_language_servers = async {

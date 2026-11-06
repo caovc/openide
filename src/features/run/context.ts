@@ -8,7 +8,7 @@ import { djangoLabel, djangoTestsOf, hasDjangoTests } from "./djangoTypes";
 import { phpunitArgs } from "./testing/phpunit";
 import { goTestParts } from "./goArguments";
 import { goBuildType } from "./goTypes";
-import { isWindows } from "./jvmTypes";
+import { isWindows } from "./platform";
 
 export type FileRole = "test" | "main" | "script" | null;
 
@@ -23,21 +23,17 @@ export function fileRole(relPath: string, content?: string, windows = isWindows(
     /_test\.go$/.test(name) ||
     /Test\.php$/.test(name) ||
     /_(spec|test)\.rb$|^test_.*\.rb$/.test(name) ||
-    /(Test|Tests|Spec|IT)\.(kt|java|scala|groovy)$/.test(name) ||
     (/(^|\/)tests\/[^/]+\.rs$/.test(relPath) && name !== "mod.rs")
   )
     return "test";
   if (/(^|\/)src\/main\.rs$|(^|\/)src\/bin\/[^/]+\.rs$/.test(relPath)) return "main";
   if (/\.go$/.test(name) && content !== undefined && /^\s*package\s+main\b/m.test(content)) return "main";
-  if (/\.(kt|java)$/.test(name) && content !== undefined && /\bfun\s+main\s*\(|static\s+void\s+main\s*\(/.test(content))
-    return "main";
   if (/\.(py|rb|sh|bash|zsh|[cm]?js|ts)$/.test(name)) return "script";
   if (windows && /\.(bat|cmd)$/i.test(name)) return "script";
   return null;
 }
 
 const dirOf = (p: string) => (p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "");
-const stem = (p: string) => (p.split("/").pop() ?? p).replace(/\.[^.]+$/, "");
 
 /** Kinds whose test configs can run a file of this extension. */
 function testKinds(relPath: string): string[] {
@@ -48,7 +44,6 @@ function testKinds(relPath: string): string[] {
   if (/(^|\/)test_[^/]*\.rb$|_test\.rb$/.test(relPath)) return ["rake", "rspec", "ruby"];
   if (/\.go$/.test(relPath)) return ["go"];
   if (/\.rs$/.test(relPath)) return ["cargo"];
-  if (/\.(kt|java|scala|groovy)$/.test(relPath)) return ["gradle", "maven"];
   return [];
 }
 
@@ -228,10 +223,6 @@ export function testConfigFor(relPath: string, configs: RunConfig[], base?: RunC
       const m = /(?:^|\/)tests\/([^/]+)\.rs$/.exec(relPath);
       return m ? derived(base, relPath, { args: [...base.args, "--test", m[1]!] }) : base;
     }
-    case "gradle":
-      return derived(base, relPath, { args: [...base.args, "--tests", `*${stem(relPath)}`] });
-    case "maven":
-      return derived(base, relPath, { args: [...base.args, `-Dtest=${stem(relPath)}`] });
   }
   return base;
 }
@@ -280,13 +271,6 @@ function mainConfigFor(relPath: string, configs: RunConfig[]): RunConfig | null 
       isTest: false,
       ...(base.params?.goKind === "test" ? { params: undefined, cwd: base.params.module ?? base.cwd } : {}),
     });
-  }
-  if (/\.(kt|java)$/.test(relPath)) {
-    // The build containing the file (builds nested in a folder of repositories carry a `:<dir>` suffix).
-    const runs = configs.filter((c) =>
-      ["gradle:bootRun", "gradle:run", "maven:spring-boot:run"].some((id) => c.id === id || c.id.startsWith(`${id}:`)),
-    );
-    return closest(runs, relPath) ?? null;
   }
   return null;
 }

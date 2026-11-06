@@ -1,7 +1,6 @@
 /** Project view: the "project" tool window, its file operations and actions. */
 import { onEditorEvent, openEditorPaths } from "@/editor/api";
 import { commands, isTauri, onIdeEvent } from "@/platform/ipc";
-import { useBuildModel } from "@/platform/buildModel";
 import { validateProjectStructure, type RootFolder } from "@/platform/languageSettings";
 import { useProject } from "@/platform/project";
 import { initProjectRoots, useProjectRoots } from "@/platform/projectRoots";
@@ -17,7 +16,6 @@ import {
   useProjectViewRoots,
 } from "@/workbench/contributions";
 import { registerProjectActions } from "./actions";
-import { gradleModuleGroups } from "./moduleGroups";
 import { FileRefactorDialogHost } from "./FileRefactorDialogs";
 import { NewPopupHost } from "./NewPopup";
 import { RefactoringPreviewHost } from "./RefactoringPreview";
@@ -114,16 +112,7 @@ export function activate(): () => void {
     const { project, settings } = useProject.getState();
     const own = project && !project.workspace;
     const paths = own ? validateProjectStructure(settings?.projectStructure).contentRoots : [];
-    // The Build tool window's model (one load per build change), not a load of our own.
-    const build = useBuildModel.getState();
-    const gradleBuilds = build.root === project?.root ? (build.model?.gradle ?? []) : [];
-    const groups =
-      own && project
-        ? gradleBuilds.flatMap((g) =>
-            gradleModuleGroups(g.projects, g.projects.find((p) => p.path === ":")?.name ?? "", project.root, g.dir),
-          )
-        : [];
-    const key = JSON.stringify([paths, groups]);
+    const key = JSON.stringify(paths);
     if (key === shownRoots) return;
     shownRoots = key;
     contentRoots.forEach((d) => d());
@@ -137,14 +126,8 @@ export function activate(): () => void {
         order: -100 + i,
       }),
     );
-    groups.forEach((g, i) =>
-      contentRoots.push(registerProjectViewRoot({ ...g, id: g.id!, order: -200 + i, beforeProject: true })),
-    );
   };
   syncContentRoots();
-  const unsubGradleRoots = useBuildModel.subscribe((s, prev) => {
-    if (s.model !== prev.model || s.root !== prev.root) syncContentRoots();
-  });
   const unsubContentRoots = useProject.subscribe((s, prev) => {
     if (s.settings !== prev.settings || s.project !== prev.project) syncContentRoots();
   });
@@ -186,7 +169,6 @@ export function activate(): () => void {
     unsubExtraRoots,
     unsubExcludes,
     unsubContentRoots,
-    unsubGradleRoots,
     () => contentRoots.forEach((d) => d()),
     disposeRoots,
     unsubRoots,

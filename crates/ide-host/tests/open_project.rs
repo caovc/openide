@@ -10,7 +10,7 @@ fn racing_opens_of_one_window_share_one_project() {
     let tmp = tempfile::tempdir().unwrap();
     let root = dunce::canonicalize(tmp.path()).unwrap().join("project");
     std::fs::create_dir_all(root.join("src")).unwrap();
-    std::fs::write(root.join("src/Main.java"), "class Main {}\n").unwrap();
+    std::fs::write(root.join("src/main.py"), "class Main:\n    pass\n").unwrap();
     let runtime = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
     let _guard = runtime.enter();
     let host = Arc::new(Host::new(HostConfig {

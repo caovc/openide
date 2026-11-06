@@ -311,8 +311,7 @@ function completeCurrentStatement(view: EditorView, slot: EditorSlot) {
   if (completionStatus(view.state) === "active") acceptCompletion(view);
   const language = slot.model.getMeta().language;
   const sel = view.state.selection;
-  if ((hasLezerTree(view.state) && language !== "java") || sel.ranges.length > 1)
-    return completeStatement(language)(view);
+  if (hasLezerTree(view.state) || sel.ranges.length > 1) return completeStatement(language)(view);
   void queueEdit(slot, async () => {
     const v = slot.view;
     if (!v || v.state.readOnly) return;

@@ -8,11 +8,9 @@
  */
 import { formatArgs } from "./configs";
 import type { RunConfig } from "@/platform/ipc";
-import { applicationConfig, jvmTestConfig } from "./application";
 import { goTestParts, withoutGoSelection } from "./goArguments";
 import { contextConfig, relToCwd, testConfigFor } from "./context";
 import { djangoLabel, djangoTestsOf } from "./djangoTypes";
-import { scanJvmTargets, simpleClassName } from "./jvmTargets";
 import { escapeRegExp } from "./testing/rerun";
 import { phpunitArgs, phpunitFilter } from "./testing/phpunit";
 
@@ -28,10 +26,6 @@ export interface RunTarget {
   path: string[];
   /** Name pattern contains printf placeholders / template parts (`test.each`). */
   parameterized?: boolean;
-  /** JVM: binary name of the class (main class, test class). */
-  className?: string;
-  /** JVM: a `@SpringBootApplication` main class. */
-  spring?: boolean;
   /** Python: a unittest `TestCase` subclass or one of its methods (what Django's runner can run). */
   unittest?: boolean;
   /** Ruby: a `module` suite, which runs the tests of every class declared inside it. */
@@ -41,7 +35,7 @@ export interface RunTarget {
 /** Above this size we skip detection (generated / minified files). */
 export const MAX_SCAN = 400_000;
 
-type Lang = "rust" | "js" | "python" | "php" | "go" | "jvm" | "ruby" | null;
+type Lang = "rust" | "js" | "python" | "php" | "go" | "ruby" | null;
 
 export function targetLanguage(relPath: string): Lang {
   if (/\.rs$/.test(relPath)) return "rust";
@@ -49,7 +43,6 @@ export function targetLanguage(relPath: string): Lang {
   if (/\.py$/.test(relPath)) return "python";
   if (/\.php$/.test(relPath)) return "php";
   if (/\.go$/.test(relPath)) return "go";
-  if (/\.(java|kt|kts|scala|groovy)$/.test(relPath)) return "jvm";
   if (/\.rb$/.test(relPath)) return "ruby";
   return null;
 }
@@ -332,66 +325,6 @@ function goSubtests(lines: string[], start: number, test: string): RunTarget[] {
   return out.sort((a, b) => a.line - b.line);
 }
 
-/** Java / Kotlin: classes and methods with binary class names (see `jvmTargets.ts`). */
-function javaKotlinTargets(text: string, relPath: string): RunTarget[] {
-  return scanJvmTargets(text, relPath, /\.kts?$/.test(relPath)).map((t): RunTarget => {
-    const simple = simpleClassName(t.className);
-    switch (t.kind) {
-      case "main":
-        return {
-          line: t.line,
-          kind: "main",
-          name: simple,
-          path: [t.className],
-          className: t.className,
-          spring: t.spring,
-        };
-      case "suite":
-        return { line: t.line, kind: "suite", name: simple, path: [t.className], className: t.className };
-      default:
-        return {
-          line: t.line,
-          kind: "test",
-          name: `${simple}.${t.method}`,
-          path: [t.className, t.method!],
-          className: t.className,
-        };
-    }
-  });
-}
-
-/** Scala / Groovy: line-based (JUnit-style annotations only). */
-function jvmTargets(lines: string[], relPath: string): RunTarget[] {
-  const out: RunTarget[] = [];
-  const stem = (relPath.split("/").pop() ?? relPath).replace(/\.[^.]+$/, "");
-  let pendingTest = false;
-  let classLine = -1;
-  for (let i = 0; i < lines.length; i++) {
-    const trimmed = lines[i]!.trim();
-    if (/^@(?:Test|ParameterizedTest|RepeatedTest|TestFactory)\b/.test(trimmed)) {
-      pendingTest = true;
-      if (/\bfun\b|\bvoid\b/.test(trimmed)) {
-        /* annotation and declaration on one line: fall through */
-      } else continue;
-    }
-    if (classLine < 0 && new RegExp(String.raw`\b(?:class|object)\s+${escapeRegExp(stem)}\b`).test(trimmed))
-      classLine = i;
-    const method = /\bfun\s+(?:`([^`]+)`|(\w+))\s*\(/.exec(trimmed) ?? /\bvoid\s+(\w+)\s*\(/.exec(trimmed) ?? null;
-    if (method) {
-      const name = method[1] ?? method[2]!;
-      if (pendingTest) out.push({ line: i, kind: "test", name: `${stem}.${name}`, path: [stem, name] });
-      else if (name === "main" && (/\bstatic\b/.test(trimmed) || /^fun\s+main\s*\(/.test(trimmed)))
-        out.push({ line: i, kind: "main", name: "main", path: [] });
-      pendingTest = false;
-    } else if (trimmed && !trimmed.startsWith("@") && !trimmed.startsWith("//")) {
-      pendingTest = false;
-    }
-  }
-  if (classLine >= 0 && out.some((t) => t.kind === "test"))
-    out.unshift({ line: classLine, kind: "suite", name: stem, path: [stem] });
-  return out;
-}
-
 /**
  * Run targets of a file (relative path picks the language). `django`: a Django project, where
  * `tests.py` (Django's default test module) holds tests too.
@@ -415,8 +348,6 @@ export function detectRunTargets(text: string, relPath: string, django = false):
       return /Test\.php$|(^|\/)tests?\//.test(relPath) ? phpTargets(lines) : [];
     case "go":
       return goTargets(lines).filter((t) => t.kind === "main" || t.kind === "generate" || /_test\.go$/.test(relPath));
-    case "jvm":
-      return /\.(java|kts?)$/.test(relPath) ? javaKotlinTargets(text, relPath) : jvmTargets(lines, relPath);
     case "ruby":
       // RSpec files (`spec/`) are not Minitest.
       return /(^|\/)test_[^/]*\.rb$|_test\.rb$|(^|\/)tests?\//.test(relPath) ? rubyTargets(lines) : [];
@@ -448,18 +379,10 @@ export function targetConfig(
   base?: RunConfig,
 ): RunConfig | null {
   if (target.kind === "main") {
-    if (target.className)
-      return applicationConfig({ className: target.className, spring: target.spring }, relPath, configs);
     return contextConfig(relPath, configs, content);
   }
   const file = testConfigFor(relPath, configs, base);
   if (!file) return null;
-  if (target.className && (file.kind === "maven" || file.kind === "gradle"))
-    return jvmTestConfig(
-      file,
-      target.className,
-      target.kind === "test" ? target.path[target.path.length - 1] : undefined,
-    );
   const shortName = target.kind === "suite" ? target.path[target.path.length - 1]! : target.name;
   const named = (args: string[]): RunConfig => ({
     ...file,
@@ -524,14 +447,6 @@ export function targetConfig(
       const path = target.path.join("::");
       return named(target.kind === "suite" ? [...file.args, "--", `${path}::`] : [...file.args, "--", path, "--exact"]);
     }
-    case "gradle":
-      return named(
-        withLast(file.args, (f) => (target.kind === "suite" ? f : `${f}.${target.path[target.path.length - 1]}`)),
-      );
-    case "maven":
-      return named(
-        withLast(file.args, (f) => (target.kind === "suite" ? f : `${f}#${target.path[target.path.length - 1]}`)),
-      );
   }
   return null;
 }

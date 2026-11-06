@@ -47,14 +47,14 @@ fn global_configs() -> Vec<PathBuf> {
     dir.map(|d| vec![d.join("config.toml")]).unwrap_or_default()
 }
 
-/// The tool's key under `[tools]`: its name, or with a backend (`core:java`, `asdf:maven`).
+/// The tool's key under `[tools]`: its name, or with a backend (`core:ruby`, `asdf:ruby`).
 fn is_key_for(key: &str, tool: Tool) -> bool {
     let name = key.rsplit_once(':').map_or(key, |(_, n)| n);
     let name = name.rsplit_once('/').map_or(name, |(_, n)| n);
     tool.names().contains(&name)
 }
 
-/// `node = "20"`, `python = ["3.12", "3.11"]` (the first) or `java = { version = "21" }`.
+/// `node = "20"`, `python = ["3.12", "3.11"]` (the first) or `ruby = { version = "3" }`.
 fn mise_toml_entry(text: &str, tool: Tool) -> Option<String> {
     let doc: toml::Table = toml::from_str(text).ok()?;
     let tools = doc.get("tools")?.as_table()?;
@@ -81,13 +81,13 @@ fn tool_versions_entry(text: &str, tool: Tool) -> Option<String> {
     })
 }
 
-/// Numbers in a version, for ordering (`temurin-21.0.2+13` → 21, 0, 2, 13).
+/// Numbers in a version, for ordering (`3.3.0.2+13` → 21, 0, 2, 13).
 fn version_key(v: &str) -> Vec<u64> {
     v.split(|c: char| !c.is_ascii_digit()).filter_map(|n| n.parse().ok()).collect()
 }
 
 /// Whether the install `dir_name` is what mise resolves `version` to: the same name, or a
-/// longer one it is a prefix of (`21` → `21.0.2`, `temurin-21` → `temurin-21.0.2+13.0.LTS`).
+/// longer one it is a prefix of (`21` → `21.0.2`, `3.3` → `3.3.0.2+13.0.LTS`).
 fn matches(dir_name: &str, version: &str) -> bool {
     dir_name == version || dir_name.strip_prefix(version).is_some_and(|rest| rest.starts_with(['.', '-', '+', '_']))
 }
@@ -140,11 +140,6 @@ pub(crate) fn goroot_in_install(dir: &Path) -> Option<PathBuf> {
     [dir.to_path_buf(), dir.join("go")].into_iter().find(|d| d.join("bin").join(crate::exe("go")).is_file())
 }
 
-/// A JDK install's home: the install itself, or `Contents/Home` of a macOS bundle.
-pub(crate) fn jdk_in_install(dir: &Path) -> Option<crate::java::Jdk> {
-    [dir.join("Contents/Home"), dir.to_path_buf()].iter().find_map(|h| crate::java::jdk_at(h))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -162,24 +157,24 @@ mod tests {
             [tools]
             node = "20"
             python = ["3.12", "3.11"]
-            "core:java" = { version = "temurin-21", os = ["macos"] }
-            "asdf:mise-plugins/mise-maven" = "3.9.6"
+            "core:ruby" = { version = "3.3", os = ["macos"] }
+            "asdf:mise-plugins/mise-ruby" = "3.3.6"
         "#;
         assert_eq!(mise_toml_entry(toml, Tool::Node).as_deref(), Some("20"));
         assert_eq!(mise_toml_entry(toml, Tool::Python).as_deref(), Some("3.12"));
-        assert_eq!(mise_toml_entry(toml, Tool::Java).as_deref(), Some("temurin-21"));
-        assert_eq!(mise_toml_entry(toml, Tool::Maven).as_deref(), None, "the plugin is mise-maven, not maven");
-        assert_eq!(mise_toml_entry("[tools]\nmaven = '3.9.6'\n", Tool::Maven).as_deref(), Some("3.9.6"));
+        assert_eq!(mise_toml_entry(toml, Tool::Ruby).as_deref(), Some("3.3"));
+        assert_eq!(mise_toml_entry("[tools]\n\"asdf:mise-plugins/mise-ruby\" = \"3.3\"", Tool::Ruby), None);
+        assert_eq!(mise_toml_entry("[tools]\nruby = '3.3.6'\n", Tool::Ruby).as_deref(), Some("3.3.6"));
         assert_eq!(mise_toml_entry(toml, Tool::Go), None);
         assert_eq!(mise_toml_entry("not toml [", Tool::Node), None);
     }
 
     #[test]
     fn reads_tool_versions() {
-        let text = "# pinned\nnodejs 20.11.0 18.19.0\ngolang 1.22.1 # comment\njava\n";
+        let text = "# pinned\nnodejs 20.11.0 18.19.0\ngolang 1.22.1 # comment\nruby\n";
         assert_eq!(tool_versions_entry(text, Tool::Node).as_deref(), Some("20.11.0"));
         assert_eq!(tool_versions_entry(text, Tool::Go).as_deref(), Some("1.22.1"));
-        assert_eq!(tool_versions_entry(text, Tool::Java), None);
+        assert_eq!(tool_versions_entry(text, Tool::Ruby), None);
         assert_eq!(tool_versions_entry(text, Tool::Python), None);
     }
 
@@ -191,16 +186,15 @@ mod tests {
         std::fs::create_dir_all(&app).unwrap();
         let global = tmp.path().join("global/config.toml");
         write(&global, "[tools]\nnode = 'lts'\npython = '3.13'\ngo = '1.23'\n");
-        write(&repo.join("mise.toml"), "[tools]\nnode = '20'\njava = '21'\n");
+        write(&repo.join("mise.toml"), "[tools]\nnode = '20'\nruby = '3.3'\n");
         write(&repo.join(".tool-versions"), "nodejs 18.0.0\npython 3.11.9\n");
         write(&app.join(".mise.toml"), "[tools]\nnode = '22'\n");
         let g = [global];
         assert_eq!(pinned_version_in(&app, &g, Tool::Node).as_deref(), Some("22"));
         assert_eq!(pinned_version_in(&repo, &g, Tool::Node).as_deref(), Some("20"), "mise.toml over .tool-versions");
         assert_eq!(pinned_version_in(&app, &g, Tool::Python).as_deref(), Some("3.11.9"));
-        assert_eq!(pinned_version_in(&app, &g, Tool::Java).as_deref(), Some("21"));
+        assert_eq!(pinned_version_in(&app, &g, Tool::Ruby).as_deref(), Some("3.3"));
         assert_eq!(pinned_version_in(&app, &g, Tool::Go).as_deref(), Some("1.23"));
-        assert_eq!(pinned_version_in(&app, &g, Tool::Gradle), None);
         write(&repo.join("mise.local.toml"), "[tools]\nnode = '21'\n");
         assert_eq!(pinned_version_in(&repo, &g, Tool::Node).as_deref(), Some("21"));
     }
@@ -208,7 +202,7 @@ mod tests {
     #[test]
     fn prefixes_resolve_to_the_newest_matching_install() {
         assert!(matches("21.0.2", "21"));
-        assert!(matches("temurin-21.0.2+13.0.LTS", "temurin-21"));
+        assert!(matches("3.3.0.2+13.0.LTS", "3.3"));
         assert!(!matches("210.0", "21"));
         assert!(!matches("3.1.0", "3.12"));
         let tmp = tempfile::tempdir().unwrap();

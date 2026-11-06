@@ -4,78 +4,6 @@
 use super::*;
 
 #[test]
-fn java() {
-    let src = r#"class A {
-  int x;
-  int f(int a) {
-    int x = 1;
-    { int y = x + a; }
-    Runnable r = () -> foo(x);
-    Function<Integer, Integer> g = (b) -> b + this.x + a;
-    String s = "x" + obj.x + obj.x() + x;
-    for (int i = 0; i < x; i++) { int a2 = i; }
-    try { run(); } catch (Exception e) { log(e, x); }
-    return x;
-  }
-  void h() { x(); y = x; }
-}
-"#;
-    // `x` #2 is the local; #1 the field; #5 `this.x`, #6 `"x"`, #7/#8 members.
-    assert_local("java", src, "x", 2, 2, &[3, 4, 9, 10, 11, 12]);
-    assert_local("java", src, "x", 12, 2, &[3, 4, 9, 10, 11, 12]);
-    assert_eq!(assert_not_local("java", src, "x", 5), NotLocalReason::Member);
-    assert_eq!(assert_not_local("java", src, "x", 7), NotLocalReason::Member);
-    assert_eq!(assert_not_local("java", src, "x", 8), NotLocalReason::Member);
-    assert_eq!(assert_not_local("java", src, "x", 13), NotLocalReason::Member, "method name");
-    assert_eq!(assert_not_local("java", src, "x", 1), NotLocalReason::Member, "field");
-    assert_eq!(assert_not_local("java", src, "x", 14), NotLocalReason::Unresolved, "field read outside `f`");
-    assert_local("java", src, "a", 2, 1, &[2, 3]);
-    assert_local("java", src, "b", 2, 1, &[2]);
-    assert_local("java", src, "i", 2, 1, &[2, 3, 4]);
-    assert_local("java", src, "e", 1, 1, &[2]);
-    assert!(matches!(locals_at("java", src, "f", 1), Locals::NotLocal { .. }));
-    assert!(matches!(locals_at("java", "class A { }", "class", 1), Locals::NoIdentifier));
-
-    // An anonymous class's field shadows the local inside the class only.
-    let anon = "class A {\n  void f() {\n    int n = 1;\n    Object o = new Object() {\n      int n = 2;\n      int g() { return n; }\n    };\n    use(n);\n  }\n}\n";
-    assert_local("java", anon, "n", 1, 1, &[4]);
-    assert_eq!(assert_not_local("java", anon, "n", 3), NotLocalReason::Member);
-
-    // A missing `;` must not break resolution of the surrounding locals.
-    let broken = "class A {\n  void f() {\n    int x = 1\n    int y = x + 2;\n    use(x, y);\n  }\n}\n";
-    assert_local("java", broken, "x", 3, 1, &[2, 3]);
-    assert_local("java", broken, "y", 2, 1, &[2]);
-}
-
-#[test]
-fn kotlin() {
-    let src = r#"class A(val x: Int) {
-  fun f(a: Int): Int {
-    val x = 1
-    if (a > 0) { val y = x + a }
-    val g = { b: Int -> b + x }
-    val h = listOf(1).map { it + x }
-    val s = obj.x + f(a = x)
-    fun inner(c: Int) = c + x
-    return x
-  }
-}
-"#;
-    assert_local("kotlin", src, "x", 2, 2, &[3, 4, 5, 7, 8, 9]);
-    assert_eq!(assert_not_local("kotlin", src, "x", 6), NotLocalReason::Member);
-    assert_eq!(assert_not_local("kotlin", src, "x", 1), NotLocalReason::Member, "property");
-    assert_eq!(assert_not_local("kotlin", src, "a", 4), NotLocalReason::Member, "named argument label");
-    assert_local("kotlin", src, "a", 1, 1, &[2, 3]);
-    assert_local("kotlin", src, "b", 1, 1, &[2]);
-    assert_local("kotlin", src, "c", 2, 1, &[2]);
-    assert_local("kotlin", src, "inner", 1, 1, &[]);
-    assert!(matches!(locals_at("kotlin", src, "x", 2), Locals::Local { symbol } if symbol.certain));
-    // tree-sitter-kotlin-ng keeps `"$x"` as plain string text: the rename would miss it.
-    let tpl = "fun f() {\n    val x = 1\n    println(\"$x\")\n}\n";
-    assert!(matches!(locals_at("kotlin", tpl, "x", 1), Locals::Local { symbol } if !symbol.certain));
-}
-
-#[test]
 fn python() {
     let src = r#"class A:
     x = 1
@@ -316,26 +244,6 @@ fn swift() {
     assert_eq!(assert_not_local("swift", src, "x", 7), NotLocalReason::Member);
     assert_local("swift", src, "v", 1, 1, &[2]);
     assert_local("swift", src, "a", 1, 1, &[2]);
-}
-
-#[test]
-fn scala() {
-    let src = r#"object O {
-  def f(a: Int): Int = {
-    val x = 1
-    if (a > 0) { val x = 2; use(x) }
-    val g = (b: Int) => b + x
-    val s = obj.x
-    for (v <- xs) use(v)
-    x
-  }
-}
-"#;
-    assert_local("scala", src, "x", 1, 1, &[4, 6]);
-    assert_local("scala", src, "x", 3, 2, &[3]);
-    assert_eq!(assert_not_local("scala", src, "x", 5), NotLocalReason::Member);
-    assert_local("scala", src, "b", 1, 1, &[2]);
-    assert_local("scala", src, "a", 1, 1, &[2]);
 }
 
 #[test]

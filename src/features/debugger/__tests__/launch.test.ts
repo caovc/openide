@@ -229,7 +229,7 @@ describe("run config → launch config", () => {
     const gradle = rc({ kind: "gradle", command: "./gradlew", args: ["build"], debugAdapter: "java-debug" });
     for (const c of [tomcat, gradle]) {
       expect(launchConfigFor(c, "/p")).toBeNull();
-      expect(debugUnsupportedReason(c)).toContain("Remote JVM Debug");
+      expect(debugUnsupportedReason(c)).toContain("removed JVM toolchain");
     }
   });
 

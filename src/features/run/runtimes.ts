@@ -5,7 +5,7 @@
  * Rust come from SDK discovery and everything else resolves at launch.
  */
 import { call, commands, isTauri } from "@/platform/ipc";
-import { isWindows } from "./jvmTypes";
+import { isWindows } from "./platform";
 import type { LocatedTool, ToolEnv } from "./producers";
 
 const TTL = 60_000;

@@ -1,8 +1,8 @@
+import { showDebugAdapter } from "@/platform/productProfile";
 /**
  * Debug sessions as the UI sees them, fed by `IdeEvent::Debug` and by pulls
  * (threads, frames, locals) after each stop.
  */
-import { tx } from "@/platform/i18n";
 import { workflowSettings } from "@/platform/workflowSettings";
 import { executeAction } from "@/platform/actions";
 import { create } from "zustand";
@@ -268,9 +268,8 @@ function dropFinished() {
 }
 
 /**
- * A JDWP agent in server mode listens again, on a new port, when its debugger detaches; a
- * debugger that detaches as the JVM exits leaves an announcement of a JVM about to be gone.
- * An attach to `process` this soon after a session on it ended may be to such a JVM.
+ * A process can announce another debug port as its previous session detaches.
+ * An immediate reattach may race with that process exiting.
  */
 const RELISTEN_MS = 3000;
 function justDetached(process: RunId | null | undefined): boolean {
@@ -334,10 +333,6 @@ export function publishContext() {
   // Dart and Flutter sessions: Hot Reload / Hot Restart.
   setContext("debugSessionDart", !!s && rootOf(s).adapter === "dart");
   setContext("debugCanRerun", !!s && !!(rootOf(s).runConfig || rootOf(s).launch));
-  setContext(
-    "debugCanHotSwap",
-    Object.values(useDebug.getState().sessions).some((x) => isLive(x) && !!x.caps?.hotCodeReplace),
-  );
 }
 
 // --- console -----------------------------------------------------------------
@@ -452,55 +447,11 @@ export function clearConsole(session: DebugSessionId) {
 
 // --- lifecycle ---------------------------------------------------------------
 
-let preparationSeq = 0;
-const preparations = new Map<DebugSessionId, AbortController>();
-
-/** A visible session owns preparation, including its console and Stop, before DAP has an id. */
-export async function startPreparedSession(
-  config: RunConfig,
-  prepare: (signal: AbortSignal, report: (text: string, kind?: "system" | "stderr") => void) => Promise<LaunchConfig>,
-): Promise<DebugSessionId | null> {
-  const id = --preparationSeq as DebugSessionId;
-  const controller = new AbortController();
-  preparations.set(id, controller);
-  useDebug.setState((s) => ({
-    sessions: {
-      ...s.sessions,
-      [id]: blank(id, { name: config.name, adapter: config.debugAdapter ?? "", runConfig: config }),
-    },
-    console: { ...s.console, [id]: [] },
-    active: id,
-  }));
-  publishContext();
-  try {
-    if (workflowSettings().run.showOnStart) toolWindowService().show("debug");
-  } catch {
-    /* no workbench (tests) */
-  }
-  const report = (text: string, kind = "system") => {
-    if (!controller.signal.aborted && useDebug.getState().sessions[id]) appendConsole(id, kind, text);
-  };
-  try {
-    report(tx`Starting debugger for ${config.name}…` + "\n");
-    const launch = await prepare(controller.signal, report);
-    controller.signal.throwIfAborted();
-    return await startSession(launch, { runConfig: config, preparation: { id, signal: controller.signal } });
-  } catch (e) {
-    if (controller.signal.aborted || isCancelled(e)) return null;
-    report((e instanceof Error ? e.message : String(e)) + "\n", "stderr");
-    throw e;
-  } finally {
-    preparations.delete(id);
-    if (useDebug.getState().sessions[id]) markTerminated(id);
-  }
-}
-
 export async function startSession(
   launch: LaunchConfig,
   options: {
     runConfig?: RunConfig;
-    preparation?: { id: DebugSessionId; signal: AbortSignal };
-    /** A process started for this session (e.g. Maven with a JDWP agent): Stop ends it too. */
+    /** A process started for this session: Stop ends it too. */
     process?: RunId | null;
     /** Rerun repeats the launch (false for attaching to a process that is gone afterwards). */
     rerunnable?: boolean;
@@ -510,7 +461,8 @@ export async function startSession(
     notifications().notify({ group: "run", level: "warning", title: "Debugging needs the desktop app" });
     return null;
   }
-  // Attaching to a JVM that may be gone: the finished session stays until the attach succeeds.
+  // Keep a recently detached session until reattaching to its process succeeds.
+  if (!showDebugAdapter(launch.adapter)) throw new Error("This run configuration uses a removed JVM toolchain.");
   const afterDetach = justDetached(options.process);
   const previousActive = useDebug.getState().active;
   if (!afterDetach) dropFinished();
@@ -523,39 +475,22 @@ export async function startSession(
   pendingStarts++;
   try {
     await flushBreakpoints();
-    options.preparation?.signal.throwIfAborted();
     const adapterStarted = performance.now();
     const id = await call(commands.debugStart(launch));
     console.info("Debug adapter started", { name: launch.name, ms: performance.now() - adapterStarted });
     owned.add(id);
     if (afterDetach) dropFinished();
-    if (options.preparation?.signal.aborted) {
-      await call(commands.debugStop(id)).catch(() => undefined);
-      settleStart(id);
-      if (useDebug.getState().sessions[id]) markTerminated(id);
-      return null;
-    }
     flushConsoleOutput();
-    const preparation = options.preparation && useDebug.getState().sessions[options.preparation.id];
     useDebug.setState((s) => {
       const cur = s.sessions[id] ?? blank(id, { status: "running" });
-      const sessions = { ...s.sessions };
-      const console = { ...s.console };
-      if (preparation) {
-        console[id] = [...(console[preparation.id] ?? []), ...(console[id] ?? [])];
-        delete console[preparation.id];
-        delete sessions[preparation.id];
-        ansiStreams.delete(preparation.id);
-      }
       return {
-        console,
         sessions: {
-          ...sessions,
+          ...s.sessions,
           [id]: {
             ...cur,
             name: launch.name,
             runConfig: options.runConfig,
-            startedAt: preparation?.startedAt ?? startedAt,
+            startedAt,
             adapter: launch.adapter,
             launch: options.rerunnable === false ? null : launch,
             process: options.process ?? null,
@@ -575,17 +510,15 @@ export async function startSession(
   } catch (e) {
     settleStart(null, afterDetach);
     if (afterDetach) {
-      // The JVM that announced the port ended as its previous debugger detached.
-      console.info("Debugger not attached: the JVM is gone", { name: launch.name, error: e });
+      // The process that announced the port ended as its previous debugger detached.
+      console.info("Debugger not attached: the process is gone", { name: launch.name, error: e });
       const { sessions, active } = useDebug.getState();
       if (active == null && previousActive != null && sessions[previousActive])
         useDebug.setState({ active: previousActive });
       publishContext();
       return null;
     }
-    if (options.preparation?.signal.aborted || isCancelled(e)) return null;
-    if (options.preparation)
-      appendConsole(options.preparation.id, "stderr", (e instanceof Error ? e.message : String(e)) + "\n");
+    if (isCancelled(e)) return null;
     const missing = missingAdapter(launch.adapter, e);
     if (missing) {
       notifications().notify({
@@ -619,13 +552,6 @@ export async function stopSession(id: DebugSessionId, options: { stopProcess?: b
   const s = useDebug.getState().sessions[id];
   if (!s) return;
   const root = rootOf(s);
-  const preparation = preparations.get(root.id);
-  if (preparation) {
-    preparation.abort();
-    appendConsole(root.id, "system", tx("Launch cancelled.") + "\n");
-    markTerminated(root.id);
-    return;
-  }
   try {
     await call(commands.debugStop(root.id));
   } catch (e) {
@@ -633,7 +559,7 @@ export async function stopSession(id: DebugSessionId, options: { stopProcess?: b
     console.warn("debugStop failed", e);
     markTerminated(root.id);
   }
-  // Detaching leaves an attached JVM running: stop the process it belongs to, like IDEA.
+  // Detaching can leave the debuggee running: stop the process it belongs to.
   if (options.stopProcess !== false && root.process != null)
     await call(commands.runStop(root.process)).catch(() => undefined);
 }

@@ -79,6 +79,9 @@ fn supports_resolves_language_ids_and_grammar_names() {
     for id in ["rust", "typescriptreact", "javascriptreact", "shellscript", "jsonc", "terraform", "makefile", "tsx"] {
         assert!(s.supports(&lang(id)), "{id}");
     }
+    for id in ["java", "kotlin", "scala", "groovy", "clojure", "jsp"] {
+        assert!(!s.supports(&lang(id)), "removed grammar: {id}");
+    }
     assert!(!s.supports(&lang("plaintext")));
     assert!(s.outline(&lang("plaintext"), "hello").is_empty());
     assert!(s.folding(&lang("nope"), "a\nb").is_empty());
@@ -379,116 +382,6 @@ const Version = "1"
     let t = tags("go", src);
     assert!(has_tag(&t, "Start", SymbolKind::Method, Some("Server")));
     assert!(has_tag(&t, "main", SymbolKind::Function, None));
-}
-
-#[test]
-fn outline_java() {
-    check_outline(
-        "java",
-        r#"
-package com.x;
-import java.util.List;
-public class A extends B {
-    private static final int K = 1;
-    public A(String n) { }
-    public void go(int x) {}
-    enum Inner { X, Y }
-    interface I { void m(); }
-    record R(int a) {}
-}
-"#,
-        "
-        Class A
-          Field K
-          Constructor A
-          Method go
-          Enum Inner
-            EnumMember X
-            EnumMember Y
-          Interface I
-            Method m
-          Class R
-        ",
-    );
-}
-
-#[test]
-fn outline_kotlin() {
-    check_outline(
-        "kotlin",
-        r#"package com.example
-
-import a.b.C
-
-class Foo(val x: Int) : Bar {
-  val y = 1
-  fun go(a: Int): Int {
-    return a
-  }
-  companion object {
-    const val K = 1
-  }
-}
-
-object Single {
-  fun f() {}
-}
-
-interface I {
-  fun m()
-}
-
-enum class Color {
-  RED, GREEN
-}
-
-fun top() = 1
-"#,
-        "
-        Class Foo
-          Property y
-          Method go
-          Class companion
-            Property K
-        Class Single
-          Method f
-        Interface I
-          Method m
-        Enum Color
-          EnumMember RED
-          EnumMember GREEN
-        Function top
-        ",
-    );
-}
-
-#[test]
-fn outline_scala() {
-    check_outline(
-        "scala",
-        r#"package foo
-class Foo(x: Int) extends Bar {
-  val y = 1
-  def go(a: Int): Int = a
-}
-object Single { def f(): Unit = () }
-trait Tr { def m(): Int }
-enum Color { case Red, Green }
-"#,
-        "
-        Package foo
-        Class Foo
-          Field y
-          Method go
-        Class Single
-          Method f
-        Trait Tr
-          Method m
-        Enum Color
-          EnumMember Red
-          EnumMember Green
-        ",
-    );
 }
 
 #[test]
@@ -985,7 +878,7 @@ fn folding_xml_custom_regions() {
 fn folding_custom_regions_use_configured_comment_tokens() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../../fixtures/folding/regions.json")).unwrap();
-    // Exercise every retained definition, including the soft-hidden JVM fixtures.
+    // Exercise every bundled language definition.
     let definitions = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../languages");
     let registry = LanguageRegistry::load(Some(&definitions)).unwrap();
     let syntax = std::sync::Arc::new(Syntax::with_languages(&registry.all()));
@@ -1115,10 +1008,8 @@ fn folding_swift_control_flow_and_haskell_binds() {
 
 #[test]
 fn folds_are_unique_per_start_line_and_sorted() {
-    for (id, src) in [
-        ("typescript", "foo(function () {\n  bar([\n    1,\n  ]);\n});\n"),
-        ("java", "class A {\n  void f() {\n    if (x) {\n    } else {\n    }\n  }\n}\n"),
-    ] {
+    {
+        let (id, src) = ("typescript", "foo(function () {\n  bar([\n    1,\n  ]);\n});\n");
         let f = folds(id, src);
         assert!(f.windows(2).all(|w| w[0].0 < w[1].0), "{id}: {f:?}");
         assert!(f.iter().all(|(s, e, _)| s < e));
@@ -1329,15 +1220,7 @@ fn outline_visibility_rust() {
 }
 
 #[test]
-fn outline_visibility_java_ts_python() {
-    let java = "public class A {\n  private int x;\n  protected void p() {}\n  void pkg() {}\n  public A() {}\n}\ninterface I { void m(); }\n";
-    let v = visibilities("java", java);
-    assert_eq!(vis_of(&v, "x"), Some(Visibility::Private));
-    assert_eq!(vis_of(&v, "p"), Some(Visibility::Protected));
-    assert_eq!(vis_of(&v, "pkg"), Some(Visibility::Package));
-    assert_eq!(vis_of(&v, "A"), Some(Visibility::Public));
-    assert_eq!(vis_of(&v, "m"), None);
-
+fn outline_visibility_ts_python() {
     let ts = "class C {\n  private a = 1;\n  protected b(): void {}\n  c(): void {}\n  #d = 2;\n}\n";
     let v = visibilities("typescript", ts);
     assert_eq!(vis_of(&v, "a"), Some(Visibility::Private));
@@ -1405,13 +1288,4 @@ fn spelling_regions_cover_declared_names_only() {
         .map(|r| &rs[r.start..r.end])
         .collect();
     assert_eq!(names, ["run", "n"]);
-    let java = "class Bird { String fly(String text) { return text.substring(1); } }\n";
-    let names: Vec<&str> = syntax()
-        .spelling_regions(&lang("java"), java)
-        .unwrap()
-        .iter()
-        .filter(|r| r.kind == SpellingKind::Name)
-        .map(|r| &java[r.start..r.end])
-        .collect();
-    assert_eq!(names, ["Bird", "fly", "text"]);
 }

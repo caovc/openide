@@ -1,10 +1,9 @@
 //! Opening each `fixtures/` project the way the app does, through the `ops` its commands call:
 //! the source and test roots detected from its build file, the index (files and symbols),
 //! Search Everywhere / Go to Class / Go to Symbol answered from it and kept current as files
-//! come and go, and the Maven / Gradle model.
+//! come and go, and their interpreter environments.
 //!
-//! The `#[ignore]`d tests run Maven, Gradle, python3 and a JDK 21 (CI's `Language smoke`
-//! java, kotlin and python jobs):
+//! The `#[ignore]`d tests run python3 (CI's `Language smoke` python job):
 //! `cargo test -p ide-host --test project_smoke -- --ignored`.
 
 use ide_host::{Host, HostConfig, ops};
@@ -190,84 +189,6 @@ async fn go_app() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn java_app() {
-    smoke(Fixture {
-        dir: "java-app",
-        roots: &[("src/main/java", RootKind::Source), ("src/test/java", RootKind::Test)],
-        file: ("OrderBook", "src/main/java/com/example/orders/OrderBook.java"),
-        class: ("OrderBook", "src/main/java/com/example/orders/OrderBook.java"),
-        symbol: ("revenueCents", "src/main/java/com/example/orders/OrderBook.java"),
-        added: (
-            "src/main/java/com/example/orders/FreshWidget.java",
-            "package com.example.orders;\n\npublic class FreshWidget {}\n",
-        ),
-    })
-    .await;
-    let p = open("java-app").await;
-    let model = ops::build::build_model(&p.host, WINDOW).await.unwrap();
-    let maven = model.maven.expect("a Maven model");
-    assert_eq!(maven.projects.iter().map(|m| m.artifact_id.as_str()).collect::<Vec<_>>(), ["openidea-fixture-orders"]);
-    assert!(maven.projects[0].dependencies.iter().any(|d| d.artifact_id == "junit-jupiter"), "{maven:?}");
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn kotlin_gradle() {
-    smoke(Fixture {
-        dir: "kotlin-gradle",
-        roots: &[("src/main/kotlin", RootKind::Source), ("src/test/kotlin", RootKind::Test)],
-        file: ("Library", "src/main/kotlin/com/example/library/Library.kt"),
-        class: ("Library", "src/main/kotlin/com/example/library/Library.kt"),
-        symbol: ("giveBack", "src/main/kotlin/com/example/library/Library.kt"),
-        added: ("src/main/kotlin/com/example/library/Fresh.kt", "package com.example.library\n\nclass FreshWidget\n"),
-    })
-    .await;
-    let p = open("kotlin-gradle").await;
-    let model = ops::build::build_model(&p.host, WINDOW).await.unwrap();
-    assert_eq!(model.gradle.len(), 1, "one independent Gradle build");
-    let gradle = &model.gradle[0];
-    assert_eq!(gradle.projects.iter().map(|g| g.name.as_str()).collect::<Vec<_>>(), ["openidea-fixture-library"]);
-}
-
-/// Maven / Gradle sync (Reload in the build tool window): the build's own model.
-async fn sync(fixture: &str, tool: ide_build::BuildTool) -> ide_build::BuildModel {
-    let p = open(fixture).await;
-    let progress = ops::Channel::new(|_: ide_build::SyncProgress| {});
-    let model = ops::build::build_sync(&p.host, WINDOW, tool, ide_core::RequestId(1), false, vec![], None, progress)
-        .await
-        .unwrap();
-    // The cached sync is what the next open shows.
-    let reloaded = ops::build::build_model(&p.host, WINDOW).await.unwrap();
-    assert_eq!(reloaded, model);
-    model
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[ignore = "project smoke: needs Maven and a JDK"]
-async fn maven_sync() {
-    let maven = sync("java-app", ide_build::BuildTool::Maven).await.maven.unwrap();
-    assert_eq!(maven.sync_error, None);
-    assert!(maven.synced_at.is_some());
-    let junit = maven.projects[0].dependencies.iter().find(|d| d.artifact_id == "junit-jupiter").unwrap();
-    // The resolved tree, not only the declaration.
-    assert!(!junit.children.is_empty(), "{junit:?}");
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[ignore = "project smoke: needs Gradle and a JDK"]
-async fn gradle_sync() {
-    let model = sync("kotlin-gradle", ide_build::BuildTool::Gradle).await;
-    assert_eq!(model.gradle.len(), 1, "one independent Gradle build");
-    let gradle = &model.gradle[0];
-    assert_eq!(gradle.sync_error, None);
-    assert!(gradle.synced_at.is_some());
-    let tasks: Vec<&str> = gradle.projects[0].tasks.iter().map(|t| t.name.as_str()).collect();
-    // The build's own tasks: the application and Kotlin plugins' too.
-    for task in ["run", "compileKotlin", "test"] {
-        assert!(tasks.contains(&task), "no {task} in {tasks:?}");
-    }
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "project smoke: needs python3"]
 async fn python_venv() {
     let p = open("python-app").await;
@@ -278,12 +199,4 @@ async fn python_venv() {
     assert_eq!(found.first().map(|s| s.source.as_str()), Some("venv"), "{found:?}");
     let effective = ops::sdk::sdk_python_effective(&p.host, WINDOW, None).unwrap().expect("an interpreter");
     assert!(effective.starts_with(p.root.join(".venv")), "{effective:?}");
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[ignore = "project smoke: needs JDK 21"]
-async fn jdk() {
-    let p = open("java-app").await;
-    let found = ops::sdk::sdk_detect(&p.host, WINDOW, ide_sdk::SdkKind::Jdk).await.unwrap();
-    assert!(found.iter().any(|s| s.version.as_deref().is_some_and(|v| v.starts_with("21"))), "{found:?}");
 }

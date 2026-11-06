@@ -153,227 +153,6 @@ fn cargo_workspace() {
 }
 
 #[test]
-fn gradle_projects() {
-    let dir = project(&[
-        ("build.gradle.kts", "plugins {\n    application\n    id(\"org.springframework.boot\") version \"3.2.0\"\n}\n"),
-        ("gradlew", "#!/bin/sh"),
-    ]);
-    let c = detect(dir.path());
-    assert_eq!(ids(&c), ["gradle:build", "gradle:test", "gradle:run", "gradle:bootRun"]);
-    if cfg!(unix) {
-        assert_eq!(cmdline(find(&c, "gradle:bootRun")), "./gradlew bootRun");
-    }
-    assert!(find(&c, "gradle:test").is_test);
-
-    let dir = project(&[("build.gradle", "plugins { id 'java' }\n")]);
-    let c = detect(dir.path());
-    assert_eq!(ids(&c), ["gradle:build", "gradle:test"]);
-    assert_eq!(c[0].command, "gradle");
-
-    let dir = project(&[("build.gradle", "apply plugin: 'application'\n")]);
-    assert!(detect(dir.path()).iter().any(|c| c.id == "gradle:run"));
-
-    // Multi-module: Spring Boot applied in a subproject.
-    let dir = project(&[
-        ("settings.gradle", "include 'app'"),
-        ("build.gradle", ""),
-        ("app/build.gradle", "plugins { id 'org.springframework.boot' version '3.2.0' }"),
-    ]);
-    assert!(detect(dir.path()).iter().any(|c| c.id == "gradle:bootRun"));
-}
-
-#[test]
-fn maven_projects() {
-    let pom = "<project><build><plugins><plugin><groupId>org.springframework.boot</groupId>\
-               <artifactId>spring-boot-maven-plugin</artifactId></plugin></plugins></build></project>";
-    let dir = project(&[("pom.xml", pom), ("mvnw", "#!/bin/sh")]);
-    let c = detect(dir.path());
-    assert_eq!(ids(&c), ["maven:package", "maven:test", "maven:spring-boot:run"]);
-    if cfg!(unix) {
-        assert_eq!(cmdline(find(&c, "maven:test")), "./mvnw test");
-    }
-    assert!(find(&c, "maven:test").is_test);
-
-    let dir = project(&[("pom.xml", "<project/>")]);
-    let c = detect(dir.path());
-    assert_eq!(ids(&c), ["maven:package", "maven:test"]);
-    assert_eq!(c[0].command, "mvn");
-}
-
-const BOOT_POM: &str = "<project><artifactId>app</artifactId><build><plugins><plugin>\
-                        <artifactId>spring-boot-maven-plugin</artifactId></plugin></plugins></build></project>";
-const PARENT_POM: &str = "<project><packaging>pom</packaging><modules><module>app</module></modules>\
-                          <build><pluginManagement><plugins><plugin>\
-                          <artifactId>spring-boot-maven-plugin</artifactId></plugin></plugins></pluginManagement>\
-                          </build></project>";
-const BOOT_MAIN: &str = "package org.dromara;\n\nimport org.springframework.boot.SpringApplication;\n\
-                         import org.springframework.boot.autoconfigure.SpringBootApplication;\n\n\
-                         /** Entry. */\n@SpringBootApplication\npublic class DromaraApplication {\n\
-                         \x20   public static void main(String[] args) {\n\
-                         \x20       SpringApplication.run(DromaraApplication.class, args);\n    }\n}\n";
-
-/// A folder holding a Maven back end and an npm front end, each its own repository
-/// (RuoYi-Vue-Plus + plus-ui): the Maven build is detected where it is.
-#[test]
-fn builds_nested_in_a_folder_of_repositories() {
-    let dir = project(&[
-        ("RuoYi-Vue-Plus/pom.xml", PARENT_POM),
-        ("RuoYi-Vue-Plus/ruoyi-admin/pom.xml", BOOT_POM),
-        ("RuoYi-Vue-Plus/ruoyi-admin/src/main/java/org/dromara/DromaraApplication.java", BOOT_MAIN),
-        ("RuoYi-Vue-Plus/ruoyi-admin/src/main/java/org/dromara/web/Controller.java", "package org.dromara.web;"),
-        ("RuoYi-Vue-Plus/ruoyi-common/pom.xml", "<project><packaging>pom</packaging></project>"),
-        ("RuoYi-Vue-Plus/ruoyi-common/ruoyi-common-core/pom.xml", "<project/>"),
-        ("RuoYi-Vue-Plus/ruoyi-common/ruoyi-common-core/src/main/java/A.java", "class A {}"),
-        ("plus-ui/package.json", r#"{"scripts":{"dev":"vite"}}"#),
-    ]);
-    let c = detect(dir.path());
-    let app = find(&c, "application:RuoYi-Vue-Plus/ruoyi-admin:org.dromara.DromaraApplication");
-    assert_eq!(app.name, "DromaraApplication");
-    assert_eq!(app.kind, "spring-boot");
-    assert_eq!(cmdline(app), "java -cp ${classpath} org.dromara.DromaraApplication");
-    assert_eq!(app.cwd, None);
-    assert_eq!(app.extras.module.as_deref(), Some("RuoYi-Vue-Plus/ruoyi-admin"));
-    assert_eq!(app.debug_adapter.as_deref(), Some("java-debug"));
-    let package = find(&c, "maven:package:RuoYi-Vue-Plus");
-    assert_eq!(package.name, "RuoYi-Vue-Plus: mvn package");
-    assert_eq!(cmdline(package), "mvn package");
-    assert_eq!(package.cwd.as_deref(), Some(Path::new("RuoYi-Vue-Plus")));
-    assert!(find(&c, "maven:test:RuoYi-Vue-Plus").is_test);
-    assert!(ids(&c).contains(&"maven:spring-boot:run:RuoYi-Vue-Plus"));
-    assert!(ids(&c).contains(&"npm:plus-ui:dev"));
-    // Modules of the nested build are not builds of their own; only one application.
-    assert!(!ids(&c).iter().any(|id| id.contains("ruoyi-common")));
-    assert_eq!(c.iter().filter(|c| c.kind == "spring-boot").count(), 1);
-}
-
-/// RuoYi-AI opened from the folder above it (`ites-agent/ruoyi-ai`), or two folders above:
-/// its application class builds the `SpringApplication` itself.
-#[test]
-fn spring_boot_application_of_a_repository_nested_one_or_two_levels_down() {
-    const MAIN: &str = "package org.ruoyi;\n\nimport org.springframework.boot.SpringApplication;\n\
-                        import org.springframework.boot.autoconfigure.SpringBootApplication;\n\n\
-                        /**\n * 启动程序\n *\n * @author Lion Li\n */\n@SpringBootApplication\n\
-                        public class RuoYiAIApplication {\n\n    public static void main(String[] args) {\n\
-                        \x20       SpringApplication application = new SpringApplication(RuoYiAIApplication.class);\n\
-                        \x20       application.run(args);\n\
-                        \x20       System.out.println(\"(♥◠‿◠)ﾉﾞ     RuoYi-AI启动成功   ლ(´ڡ`ლ)\");\n    }\n}\n";
-    for prefix in ["", "ites-agent/"] {
-        let file = |p: &str| format!("{prefix}ruoyi-ai/{p}");
-        let files = [
-            (file("pom.xml"), PARENT_POM),
-            (file("ruoyi-admin/pom.xml"), BOOT_POM),
-            (file("ruoyi-admin/src/main/java/org/ruoyi/RuoYiAIApplication.java"), MAIN),
-            (file("ruoyi-admin/src/main/java/org/ruoyi/RuoYiAIServletInitializer.java"), "package org.ruoyi;"),
-            (file("ruoyi-common/pom.xml"), "<project><packaging>pom</packaging></project>"),
-            (file("ruoyi-modules/ruoyi-chat/pom.xml"), "<project/>"),
-            (file("docs/README.md"), "docs"),
-        ];
-        let files: Vec<(&str, &str)> = files.iter().map(|(p, t)| (p.as_str(), *t)).collect();
-        let dir = project(&files);
-        let c = detect(dir.path());
-        let module = format!("{prefix}ruoyi-ai/ruoyi-admin");
-        let app = find(&c, &format!("application:{module}:org.ruoyi.RuoYiAIApplication"));
-        assert_eq!((app.name.as_str(), app.kind.as_str()), ("RuoYiAIApplication", "spring-boot"), "{prefix}");
-        assert_eq!((app.cwd.as_deref(), app.extras.module.as_deref()), (None, Some(module.as_str())), "{prefix}");
-        assert!(ids(&c).contains(&format!("maven:spring-boot:run:{prefix}ruoyi-ai").as_str()), "{prefix}");
-    }
-}
-
-#[test]
-fn nested_builds_of_every_kind_and_depth() {
-    let dir = project(&[
-        ("services/api/settings.gradle.kts", "include(\"app\")"),
-        ("services/api/gradlew", "#!/bin/sh"),
-        ("services/api/app/build.gradle.kts", "plugins { id(\"org.springframework.boot\") version \"3.3.0\" }\n"),
-        (
-            "services/api/app/src/main/kotlin/com/acme/Api.kt",
-            "package com.acme\n\n@SpringBootApplication\nclass Api\n\nfun main(args: Array<String>) {\n    runApplication<Api>(*args)\n}\n",
-        ),
-        ("billing/pom.xml", BOOT_POM),
-        ("billing/mvnw", "#!/bin/sh"),
-        (
-            "billing/src/main/java/Billing.java",
-            "@SpringBootApplication\nclass Billing { public static void main(String[] a) {} }",
-        ),
-        // Deeper than a build is looked for.
-        ("a/b/c/d/pom.xml", "<project/>"),
-        // Build output and sources are not searched.
-        ("web/node_modules/x/pom.xml", "<project/>"),
-        ("tool/src/pom.xml", "<project/>"),
-    ]);
-    let c = detect(dir.path());
-    let boot = find(&c, "gradle:bootRun:services/api");
-    assert_eq!(boot.name, "services/api: gradle bootRun");
-    assert_eq!(boot.cwd.as_deref(), Some(Path::new("services/api")));
-    if cfg!(unix) {
-        assert_eq!(cmdline(boot), "./gradlew bootRun");
-        assert_eq!(cmdline(find(&c, "maven:package:billing")), "./mvnw package");
-    }
-    assert!(find(&c, "gradle:test:services/api").is_test);
-    let api = find(&c, "application:services/api/app:com.acme.ApiKt");
-    assert_eq!((api.cwd.as_deref(), api.extras.module.as_deref()), (None, Some("services/api/app")));
-    let billing = find(&c, "application:billing:Billing");
-    assert_eq!((billing.cwd.as_deref(), billing.extras.module.as_deref()), (None, Some("billing")));
-    let builds: Vec<&str> =
-        ids(&c).into_iter().filter(|id| id.starts_with("maven:package") || id.starts_with("gradle:build")).collect();
-    assert_eq!(builds, ["gradle:build:services/api", "maven:package:billing", "maven:package:tool/src"]);
-    let model = ide_build::load(dir.path(), &dir.path().join("cache"), None);
-    for config in c.iter().filter(|c| c.kind == "gradle") {
-        let cwd = config.cwd.as_deref().unwrap();
-        assert!(model.gradle.iter().any(|g| Path::new(&g.dir) == cwd), "{} has no build model", config.id);
-    }
-    let plan = ide_build::compile::plan(
-        dir.path(),
-        &model,
-        ide_build::compile::BuildKind::Build,
-        Some(&dir.path().join("services/api/app/src/main/kotlin/com/acme/Api.kt")),
-        None,
-    )
-    .unwrap();
-    assert_eq!(plan.steps[0].cwd, dir.path().join("services/api"));
-    assert_eq!(plan.steps[0].args, ["--console=plain", ":app:classes", ":app:testClasses"]);
-}
-
-#[test]
-fn a_root_build_disables_the_nested_scan() {
-    let dir = project(&[
-        ("pom.xml", BOOT_POM),
-        (
-            "src/main/java/demo/App.java",
-            "package demo;\n@SpringBootApplication public class App {\n  public static void main(String[] args) {}\n}\n",
-        ),
-        ("tools/gen/pom.xml", "<project/>"),
-    ]);
-    let c = detect(dir.path());
-    assert!(ids(&c).contains(&"maven:package"));
-    assert!(!ids(&c).iter().any(|id| id.contains("tools")));
-    let app = find(&c, "application:demo.App");
-    assert_eq!(app.cwd, None);
-}
-
-#[test]
-fn spring_boot_applications_need_the_plugin_and_a_main() {
-    let main =
-        "package demo;\n@SpringBootApplication\npublic class App {\n  public static void main(String[] args) {}\n}\n";
-    // A library using Spring Boot without the plugin, a configuration class without `main`,
-    // the annotation in a comment, a parent POM.
-    let dir = project(&[
-        ("lib/pom.xml", "<project><dependencies>spring-boot-starter</dependencies></project>"),
-        ("lib/src/main/java/demo/App.java", main),
-        ("svc/pom.xml", BOOT_POM),
-        ("svc/src/main/java/demo/Config.java", "package demo;\n@SpringBootApplication\npublic class Config {}\n"),
-        (
-            "svc/src/main/java/demo/Old.java",
-            "package demo;\n// @SpringBootApplication\nclass Old { public static void main(String[] a) {} }\n",
-        ),
-        ("gr/build.gradle", "dependencies { implementation 'org.springframework.boot:spring-boot-starter' }\n"),
-        ("gr/src/main/java/demo/App.java", main),
-    ]);
-    let c = detect(dir.path());
-    assert!(!c.iter().any(|c| c.kind == "spring-boot"), "{:?}", ids(&c));
-}
-
-#[test]
 fn go_projects() {
     let dir = project(&[
         ("go.mod", "module example.com/x\n"),
@@ -748,7 +527,7 @@ fn cmake_profiles_control_commands_names_and_environment() {
             build_args: ["-j", "8", "--", "VERBOSE=1"].map(String::from).into(),
             env: [("MY_ENV".into(), "yes".into())].into(),
         };
-        let configs = ide_run::detect_with_profiles(dir.path(), &[], Some(std::slice::from_ref(&profile)));
+        let configs = ide_run::detect_with_profiles(dir.path(), Some(std::slice::from_ref(&profile)));
         let configure = find(&configs, "cmake:profile:0:configure");
         let mut expected = vec!["-S", ".", "-B", "output dir"];
         if !generator.is_empty() {
@@ -768,13 +547,13 @@ fn cmake_profiles_control_commands_names_and_environment() {
         assert_eq!(build.args, ["--build", "output dir", "--config", "Release", "-j", "8", "--", "VERBOSE=1"]);
         assert_eq!(build.extras.before_launch[0].target, configure.id);
         assert!(configs.iter().all(|c| c.env == profile.env));
-        let configs = ide_run::detect_with_profiles(dir.path(), &[], Some(&[CMakeProfile::default(), profile]));
+        let configs = ide_run::detect_with_profiles(dir.path(), Some(&[CMakeProfile::default(), profile]));
         assert!(find(&configs, "cmake:profile:0:build").name.ends_with("[Debug]"));
         assert!(find(&configs, "cmake:profile:1:build").name.ends_with("[Production]"));
         assert_eq!(find(&configs, "cmake:profile:0:build").args[1], "cmake-build-debug");
     }
-    assert_eq!(ide_run::detect_with_profiles(dir.path(), &[], None), detect(dir.path()));
-    assert!(ide_run::detect_with_profiles(dir.path(), &[], Some(&[])).is_empty());
+    assert_eq!(ide_run::detect_with_profiles(dir.path(), None), detect(dir.path()));
+    assert!(ide_run::detect_with_profiles(dir.path(), Some(&[])).is_empty());
 }
 
 #[test]
@@ -790,7 +569,7 @@ fn cmake_profile_build_configures_only_without_a_cache() {
                 // Generator changes are handled by an explicit Configure, not every Build.
                 fs::write(build_dir.join("CMakeCache.txt"), "CMAKE_GENERATOR:INTERNAL=Unix Makefiles\n").unwrap();
             }
-            let configs = ide_run::detect_with_profiles(root.path(), &[], Some(std::slice::from_ref(&profile)));
+            let configs = ide_run::detect_with_profiles(root.path(), Some(std::slice::from_ref(&profile)));
             let build = find(&configs, "cmake:profile:0:build");
             if cached {
                 assert!(build.extras.before_launch.is_empty());
@@ -929,8 +708,6 @@ fn all_builtin_families_find_independent_nested_projects_and_keep_owners() {
         ("deno.json", r#"{"tasks":{"test":"deno test"}}"#, "deno"),
         ("Cargo.toml", "[package]\nname='demo'\nversion='0.1.0'\n[workspace]", "cargo"),
         ("go.mod", "module demo", "go"),
-        ("pom.xml", "<project/>", "maven"),
-        ("build.gradle.kts", "plugins { application }", "gradle"),
         ("pyproject.toml", "[tool.pytest.ini_options]", "pytest"),
         ("phpunit.xml", "<phpunit/>", "phpunit"),
         ("Rakefile.rb", "task :test do\nend", "rake"),
@@ -951,8 +728,8 @@ fn all_builtin_families_find_independent_nested_projects_and_keep_owners() {
             .collect();
         assert!(!found.is_empty(), "{kind}: {configs:?}");
         for c in found {
-            // JVM and Go configs already identify ownership through cwd / their typed model.
-            if !matches!(kind, "gradle" | "maven" | "go" | "godot") {
+            // Go configs identify ownership through their working directory.
+            if !matches!(kind, "go" | "godot") {
                 assert_eq!(c.extras.module.as_deref(), Some("packages/apps/demo"));
             }
         }
@@ -966,4 +743,14 @@ fn cmake_subdirectories_are_not_independent_builds() {
         ("lib/CMakeLists.txt", "add_library(lib lib.cpp)"),
     ]);
     assert!(detect(dir.path()).iter().filter(|c| c.kind == "cmake").all(|c| c.cwd.is_none()));
+}
+
+#[test]
+fn jvm_projects_do_not_create_run_configurations() {
+    let dir = project(&[
+        ("pom.xml", "<project/>"),
+        ("build.gradle", "plugins { id 'java' }"),
+        ("src/main/java/Main.java", "class Main {}"),
+    ]);
+    assert!(detect(dir.path()).is_empty());
 }

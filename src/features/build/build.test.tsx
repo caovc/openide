@@ -42,17 +42,17 @@ const warn = (path: string, line: number): BuildMessage => ({ ...err(path, line,
 
 describe("build model", () => {
   it("groups messages by file, errors first, build messages last", () => {
-    const messages = [warn("/p/B.java", 3), err(null, 0, "BUILD FAILURE"), err("/p/A.java", 9), warn("/p/A.java", 2)];
+    const messages = [warn("/p/B.ts", 3), err(null, 0, "BUILD FAILURE"), err("/p/A.ts", 9), warn("/p/A.ts", 2)];
     const children = rootChildren(messages);
-    expect(children.map((c) => (c.kind === "file" ? c.path : c.kind))).toEqual(["/p/A.java", "/p/B.java", "message"]);
+    expect(children.map((c) => (c.kind === "file" ? c.path : c.kind))).toEqual(["/p/A.ts", "/p/B.ts", "message"]);
     const a = children[0]!;
     expect(a.kind === "file" && a.messages.map((m) => m.range?.start.line)).toEqual([2, 9]);
     expect(rootNode("demo", "failed", messages)).toMatchObject({ errors: 2, warnings: 2 });
-    expect(messageFiles(messages)).toEqual(["/p/B.java", "/p/A.java"]);
+    expect(messageFiles(messages)).toEqual(["/p/B.ts", "/p/A.ts"]);
     const first = firstError(messages)!;
     expect(first.message.range?.start.line).toBe(9);
     expect(findNode(messages, first.key)).toEqual(first);
-    expect(firstError([warn("/p/B.java", 3)])).toBeUndefined();
+    expect(firstError([warn("/p/B.ts", 3)])).toBeUndefined();
   });
 
   it("formats IDEA's finish summaries", () => {
@@ -111,7 +111,7 @@ class FakeBackend implements BuildBackend {
 }
 
 const result = (messages: BuildMessage[], success: boolean): BuildResult => ({
-  system: "maven",
+  system: "typescript",
   title: "demo",
   success,
   errors: messages.filter((m) => m.severity === "error").length,
@@ -175,18 +175,18 @@ describe("build feature", () => {
     expect(isActionEnabled(getAction("build.buildProject")!)).toBe(false);
     expect(show).toHaveBeenCalledWith("build", false);
     expect(useTasks.getState().tasks.some((t) => t.id === BUILD_TASK_ID && !t.done)).toBe(true);
-    const messages = [err("/p/src/A.java", 11), warn("/p/src/B.java", 2)];
+    const messages = [err("/p/src/A.ts", 11), warn("/p/src/B.ts", 2)];
     await act(async () => {
-      fake.emit!({ kind: "started", system: "maven", title: "demo" });
+      fake.emit!({ kind: "started", system: "typescript", title: "demo" });
       fake.emit!({ kind: "step", command: "mvnw -B test-compile", cwd: "/p" });
-      fake.emit!({ kind: "output", text: "[ERROR] /p/src/A.java:[12,5] cannot find symbol\n", stderr: false });
+      fake.emit!({ kind: "output", text: "src/A.ts(12,5): error TS2304: Cannot find name\n", stderr: false });
       fake.emit!({ kind: "message", message: messages[0]! });
       await new Promise((r) => setTimeout(r, 30));
     });
     expect(useBuildRun.getState().lines.map((l) => l.kind)).toEqual(["system", "out"]);
     render(<BuildView />);
     expect(screen.getByText("demo")).toBeInTheDocument();
-    expect(screen.getByText("A.java")).toBeInTheDocument();
+    expect(screen.getByText("A.ts")).toBeInTheDocument();
     await act(async () => {
       fake.resolve(result(messages, false));
       await run;
@@ -199,7 +199,7 @@ describe("build feature", () => {
     expect(show).toHaveBeenCalledWith("build", false);
     expect(useBuildRun.getState().selected).toBe(firstError(messages)!.key);
     expect(openFile).toHaveBeenCalledWith(
-      "/p/src/A.java",
+      "/p/src/A.ts",
       expect.objectContaining({ focus: true, selection: { line: 11, col: 4 } }),
     );
     expect(screen.getByRole("document", { name: "Build message" })).toHaveTextContent("cannot find symbol");
@@ -207,7 +207,7 @@ describe("build feature", () => {
 
     const second = startBuild("rebuild");
     await act(async () => {});
-    expect(fake.calls.at(-1)).toEqual({ kind: "rebuild", file: null, clear: ["/p/src/A.java", "/p/src/B.java"] });
+    expect(fake.calls.at(-1)).toEqual({ kind: "rebuild", file: null, clear: ["/p/src/A.ts", "/p/src/B.ts"] });
     await act(async () => {
       fake.resolve(result([], true));
       await second;
@@ -218,7 +218,7 @@ describe("build feature", () => {
 
   it.each([
     ["build.buildProject", undefined],
-    ["build.buildModule", "/p/core/src/A.java"],
+    ["build.buildModule", "/p/core/src/A.ts"],
     ["build.rebuildProject", undefined],
   ])("opens the Build window without focus when %s starts", async (id, arg) => {
     const run = executeAction(id!, arg);
@@ -247,7 +247,7 @@ describe("build feature", () => {
     const failed = executeAction("build.buildProject", { activate: false });
     await act(async () => {});
     expect(show).not.toHaveBeenCalled();
-    const messages = [err("/p/src/A.java", 11)];
+    const messages = [err("/p/src/A.ts", 11)];
     await act(async () => {
       fake.resolve(result(messages, false));
       await failed;
@@ -255,7 +255,7 @@ describe("build feature", () => {
     expect(show).toHaveBeenCalledExactlyOnceWith("build", false);
     expect(useBuildRun.getState().selected).toBe(firstError(messages)!.key);
     expect(openFile).toHaveBeenCalledWith(
-      "/p/src/A.java",
+      "/p/src/A.ts",
       expect.objectContaining({ focus: true, selection: { line: 11, col: 4 } }),
     );
   });
@@ -275,7 +275,7 @@ describe("build feature", () => {
   });
 
   it("shows a message on single click and navigates on F4", async () => {
-    const messages = [err("/p/src/A.java", 11, "first problem"), warn("/p/src/B.java", 2)];
+    const messages = [err("/p/src/A.ts", 11, "first problem"), warn("/p/src/B.ts", 2)];
     const run = startBuild("build");
     await act(async () => {});
     await act(async () => {
@@ -288,13 +288,13 @@ describe("build feature", () => {
     expect(openFile).not.toHaveBeenCalled();
     expect(screen.getByRole("document", { name: "Build message" })).toHaveTextContent("deprecated");
     fireEvent.keyDown(screen.getByRole("tree"), { key: "F4" });
-    expect(openFile).toHaveBeenCalledWith("/p/src/B.java", expect.objectContaining({ focus: true }));
+    expect(openFile).toHaveBeenCalledWith("/p/src/B.ts", expect.objectContaining({ focus: true }));
   });
 
   it("builds the module of the given file and can be stopped", async () => {
-    const run = startBuild("build", "/p/core/src/A.java");
+    const run = startBuild("build", "/p/core/src/A.ts");
     await act(async () => {});
-    expect(fake.calls.at(-1)?.file).toBe("/p/core/src/A.java");
+    expect(fake.calls.at(-1)?.file).toBe("/p/core/src/A.ts");
     stopBuild();
     expect(fake.cancelled).toHaveLength(1);
     await act(async () => {

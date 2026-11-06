@@ -91,7 +91,6 @@ export function withoutDuplicates(items: readonly CompletionItem[]): CompletionI
 
 const IMPORT_SOURCE = [
   /^\s*from\s+([\w.]+)\s+import\b/m, // Python
-  /^\s*import\s+(?:static\s+)?([\w.]+?)\.\w+;?\s*$/m, // Java, Kotlin
   /^\s*use\s+([\w:]+)::/m, // Rust
   /\bfrom\s+["']([^"']+)["']/, // JS / TS
 ];

@@ -31,10 +31,10 @@ describe("markdown rendering", () => {
     const root = document.createElement("div");
     root.innerHTML = md.markupToHtml({
       kind: "markdown",
-      value: "[doc](jdt://contents/a.class) [web](https://example.com)\n\n| A |\n| - |\n| 1 |\n",
+      value: "[doc](file:///src/a.py) [web](https://example.com)\n\n| A |\n| - |\n| 1 |\n",
     });
     expect([...root.querySelectorAll("a")].map((a) => a.getAttribute("href"))).toEqual([
-      "jdt://contents/a.class",
+      "file:///src/a.py",
       "https://example.com",
     ]);
     expect(root.querySelector("td")?.textContent).toBe("1");

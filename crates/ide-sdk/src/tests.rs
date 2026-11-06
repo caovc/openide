@@ -1,6 +1,6 @@
 use crate::apply::{
-    apply_to_run_configs, configure_server, jdtls_jdk, maven_command, maven_options, project_jdk, python_interpreter,
-    ruff_configuration, terminal_activation, tsdk, without_derived,
+    apply_to_run_configs, configure_server, python_interpreter, ruff_configuration, terminal_activation, tsdk,
+    without_derived,
 };
 use crate::python::parse_pip_list;
 use crate::{bin_dir, exe, venv_of};
@@ -35,7 +35,6 @@ fn server(name: &str) -> LanguageServerConfig {
         fallback: false,
         features: Vec::new(),
         code_action_kinds: Vec::new(),
-        max_java: None,
         launch_error: None,
         tsserver_project: false,
         resync_on_configuration: false,
@@ -103,16 +102,6 @@ fn pyright_gets_python_path_and_venv_env() {
     assert_eq!(opts["python"]["pythonPath"], py.to_string_lossy().as_ref());
     assert_eq!(cfg.env["VIRTUAL_ENV"], tmp.path().join(".venv").to_string_lossy());
     assert!(cfg.env["PATH"].starts_with(&*tmp.path().join(".venv").join(bin_dir()).to_string_lossy()));
-}
-
-#[test]
-fn jdtls_vm_args() {
-    let tmp = tempfile::tempdir().unwrap();
-    let mut s = Settings::default();
-    s.languages.java.jdtls_vm_args = " -Xmx2g  -javaagent:/opt/lombok.jar ".into();
-    let mut cfg = server("jdtls");
-    configure_server(&mut cfg, tmp.path(), tmp.path(), &s);
-    assert_eq!(cfg.args, ["--jvm-arg=-Xmx2g", "--jvm-arg=-javaagent:/opt/lombok.jar"]);
 }
 
 #[test]
@@ -218,211 +207,6 @@ fn npm_config_runs_on_its_own_node_interpreter() {
     let mut reloaded = vec![saved];
     apply_to_run_configs(&mut reloaded, tmp.path(), &s);
     assert_eq!(first(&reloaded[0]), "/opt/node18/bin");
-}
-
-fn fake_jdk(dir: &Path) {
-    std::fs::create_dir_all(dir.join("bin")).unwrap();
-    std::fs::write(dir.join("bin").join(exe("java")), "").unwrap();
-    std::fs::write(
-        dir.join("release"),
-        "JAVA_VERSION=\"17.0.9\"\nMODULES=\"java.base jdk.compiler jdk.jdi jdk.unsupported\"\n",
-    )
-    .unwrap();
-    std::fs::write(dir.join("bin").join(crate::exe("javac")), "").unwrap();
-}
-
-#[test]
-fn project_jdk_and_maven_settings() {
-    if cfg!(windows) {
-        return; // Unix paths and shells
-    }
-    let tmp = tempfile::tempdir().unwrap();
-    let jdk = tmp.path().join("jdk17");
-    fake_jdk(&jdk);
-    let maven = tmp.path().join("maven");
-    std::fs::create_dir_all(maven.join("bin")).unwrap();
-    std::fs::write(maven.join("bin/mvn"), "").unwrap();
-
-    let mut s = Settings::default();
-    assert_eq!(project_jdk(tmp.path(), &s), None);
-    assert_eq!(maven_command(tmp.path(), &s), None);
-    assert!(maven_options(tmp.path(), &s).is_empty());
-
-    // Project-relative paths, a JDK's `bin/java`, a Maven home.
-    s.languages.java.jdk = "jdk17/bin/java".into();
-    s.languages.java.maven.home = maven.to_string_lossy().into_owned();
-    s.languages.java.maven.user_settings = "/m2/settings.xml".into();
-    s.languages.java.maven.local_repository = "/m2/repo".into();
-    assert_eq!(project_jdk(tmp.path(), &s).map(|j| j.major), Some(17));
-    assert_eq!(maven_command(tmp.path(), &s), Some(maven.join("bin/mvn")));
-    assert_eq!(maven_options(tmp.path(), &s), ["-s", "/m2/settings.xml", "-Dmaven.repo.local=/m2/repo"]);
-
-    let mut configs = vec![run("maven", "./mvnw", &["package"]), run("gradle", "./gradlew", &["build"])];
-    apply_to_run_configs(&mut configs, tmp.path(), &s);
-    let home = project_jdk(tmp.path(), &s).unwrap().home.to_string_lossy().into_owned();
-    assert_eq!(configs[0].command, maven.join("bin/mvn").to_string_lossy());
-    assert_eq!(configs[0].args, ["-s", "/m2/settings.xml", "-Dmaven.repo.local=/m2/repo", "package"]);
-    assert_eq!(configs[0].env["JAVA_HOME"], home);
-    assert_eq!(configs[1].env["JAVA_HOME"], home);
-    apply_to_run_configs(&mut configs, tmp.path(), &s);
-    assert_eq!(configs[0].args.len(), 4, "applied once");
-
-    s.languages.java.jdk = "missing".into();
-    assert_eq!(project_jdk(tmp.path(), &s), None);
-}
-
-#[test]
-fn saved_maven_goal_configs_take_the_configured_launcher() {
-    if cfg!(windows) {
-        return; // Unix paths
-    }
-    let tmp = tempfile::tempdir().unwrap();
-    let maven = tmp.path().join("maven");
-    std::fs::create_dir_all(maven.join("bin")).unwrap();
-    std::fs::write(maven.join("bin/mvn"), "").unwrap();
-    let mut s = Settings::default();
-    s.languages.java.maven.home = maven.to_string_lossy().into_owned();
-    s.languages.java.maven.user_settings = "/m2/settings.xml".into();
-
-    // A goal configuration saved from the tool window (`mvn -s … clean`):
-    // the bare launcher resolves to the configured Maven home (#328) and its
-    // own args are left alone.
-    let mut saved = run("maven", "mvn", &["-s", "/m2/settings.xml", "clean"]);
-    saved.detected = false;
-    // A custom path / the wrapper stay as configured.
-    let mut custom = run("maven", "/opt/other/bin/mvn", &["package"]);
-    custom.detected = false;
-    let mut wrapper = run("maven", "./mvnw", &["package"]);
-    wrapper.detected = false;
-    let mut configs = vec![saved, custom, wrapper];
-    apply_to_run_configs(&mut configs, tmp.path(), &s);
-    assert_eq!(configs[0].command, maven.join("bin/mvn").to_string_lossy());
-    assert_eq!(configs[0].args, ["-s", "/m2/settings.xml", "clean"], "saved args are kept");
-    assert_eq!(configs[1].command, "/opt/other/bin/mvn");
-    assert_eq!(configs[2].command, "./mvnw");
-}
-
-#[test]
-fn maven_launch_refreshes_legacy_defaults_but_keeps_user_overrides() {
-    use crate::apply::prepare_maven_run;
-
-    let tmp = tempfile::tempdir().unwrap();
-    std::fs::write(tmp.path().join("pom.xml"), "<project/>").unwrap();
-    let home = tmp.path().join("new-maven");
-    std::fs::create_dir_all(home.join("bin")).unwrap();
-    let launcher = home.join("bin").join(if cfg!(windows) { "mvn.cmd" } else { "mvn" });
-    std::fs::write(&launcher, "").unwrap();
-    let mut s = Settings::default();
-    s.languages.java.maven.home = home.to_string_lossy().into_owned();
-    s.languages.java.maven.user_settings = "new-settings.xml".into();
-    s.languages.java.maven.local_repository = "new-repo".into();
-    let options = maven_options(tmp.path(), &s);
-
-    for id in [
-        "maven:goal:pom.xml:test",
-        "maven:test",
-        "context:maven:test:src/test/java/ExampleTest.java",
-        "context:target:context:maven:test:src/test/java/ExampleTest.java:ExampleTest#example",
-        "workspace:abc:maven:test",
-        "context:target:context:workspace:abc:maven:test:src/test/java/ExampleTest.java:ExampleTest#example",
-    ] {
-        let mut config = run(
-            "maven",
-            "//?/UNC/server/old-maven/bin/mvn.cmd",
-            &["-s", "old-settings.xml", "-Dmaven.repo.local=old-repo", "test", "-Dtest=ExampleTest#example"],
-        );
-        config.id = id.into();
-        config.detected = !id.starts_with("maven:goal:");
-        let original = config.clone();
-        prepare_maven_run(&mut config, tmp.path(), &s);
-        assert_eq!(config.command, launcher.to_string_lossy(), "{id}");
-        assert_eq!(
-            config.args,
-            [options.clone(), vec!["test".into(), "-Dtest=ExampleTest#example".into()]].concat(),
-            "{id}"
-        );
-        // Rerunning the stored configuration reads settings again, without changing the stored input.
-        s.languages.java.maven.local_repository = "other-repo".into();
-        let mut rerun = original;
-        prepare_maven_run(&mut rerun, tmp.path(), &s);
-        assert!(rerun.args.contains(&format!("-Dmaven.repo.local={}", tmp.path().join("other-repo").display())));
-        s.languages.java.maven.local_repository = "new-repo".into();
-    }
-
-    for args in [
-        vec!["-s", "own-settings.xml", "-Dmaven.repo.local=own-repo", "test"],
-        vec!["--settings=own-settings.xml", "-D", "maven.repo.local=own-repo", "test"],
-    ] {
-        let mut config = run("maven", "mvn", &args);
-        config.detected = false;
-        prepare_maven_run(&mut config, tmp.path(), &s);
-        assert_eq!(config.command, launcher.to_string_lossy());
-        assert_eq!(config.args, args);
-    }
-
-    let mut explicit = run("maven", "/custom/mvn", &["-s", "own-settings.xml", "-Dmaven.repo.local=own-repo", "test"]);
-    explicit.detected = false;
-    prepare_maven_run(&mut explicit, tmp.path(), &s);
-    assert_eq!(explicit.command, "/custom/mvn");
-    assert_eq!(explicit.args, ["-s", "own-settings.xml", "-Dmaven.repo.local=own-repo", "test"]);
-
-    // A gutter configuration derived from a user-edited default must keep that user's choices.
-    let mut saved = explicit.clone();
-    saved.id = "maven:test".into();
-    ide_run::save_user_configs(tmp.path(), &[saved]).unwrap();
-    explicit.id = "context:maven:test:src/test/java/ExampleTest.java".into();
-    explicit.detected = true;
-    prepare_maven_run(&mut explicit, tmp.path(), &s);
-    assert_eq!(explicit.command, "/custom/mvn");
-    assert_eq!(explicit.args, ["-s", "own-settings.xml", "-Dmaven.repo.local=own-repo", "test"]);
-
-    std::fs::create_dir(tmp.path().join("child")).unwrap();
-    std::fs::write(tmp.path().join("child/pom.xml"), "<project/>").unwrap();
-    let mut nested = explicit.clone();
-    nested.id = "maven:test:child".into();
-    nested.detected = false;
-    ide_run::save_user_configs(tmp.path(), &[nested]).unwrap();
-    explicit.id = "context:maven:test:child:src/test/java/ExampleTest.java".into();
-    prepare_maven_run(&mut explicit, tmp.path(), &s);
-    assert_eq!(explicit.command, "/custom/mvn", "an edited child must not fall back to the parent's defaults");
-    assert_eq!(explicit.args, ["-s", "own-settings.xml", "-Dmaven.repo.local=own-repo", "test"]);
-}
-
-#[test]
-fn maven_goal_keeps_explicit_settings_and_nested_wrapper() {
-    use crate::apply::prepare_maven_run;
-
-    let tmp = tempfile::tempdir().unwrap();
-    std::fs::create_dir(tmp.path().join("child")).unwrap();
-    let wrapper = tmp.path().join("child").join(if cfg!(windows) { "mvnw.cmd" } else { "mvnw" });
-    std::fs::write(&wrapper, "").unwrap();
-    let mut config = run("maven", "old-maven", &["-s", "old-settings.xml", "-s", "own-settings.xml", "test"]);
-    config.id = "maven:goal:child/pom.xml:-s own-settings.xml test".into();
-    config.cwd = Some("child".into());
-    config.detected = false;
-    let mut s = Settings::default();
-    s.languages.java.maven.user_settings = "new-settings.xml".into();
-    prepare_maven_run(&mut config, tmp.path(), &s);
-    assert_eq!(config.command, wrapper.to_string_lossy());
-    assert_eq!(config.args, ["-s", "own-settings.xml", "test"]);
-}
-
-#[test]
-fn persisting_a_maven_goal_keeps_explicit_options_equal_to_the_defaults() {
-    let tmp = tempfile::tempdir().unwrap();
-    let mut s = Settings::default();
-    s.languages.java.maven.user_settings = tmp.path().join("settings.xml").to_string_lossy().into_owned();
-    s.languages.java.maven.local_repository = tmp.path().join("repo").to_string_lossy().into_owned();
-    let options = maven_options(tmp.path(), &s);
-    for goals in [vec![options[2].clone(), "test".into()], [options.clone(), vec!["test".into()]].concat()] {
-        let mut config = run("maven", "mvn", &[]);
-        config.id = format!("maven:goal:pom.xml:{}", goals.join(" "));
-        config.detected = false;
-        config.args = goals.clone();
-        apply_to_run_configs(std::slice::from_mut(&mut config), tmp.path(), &s);
-        let kept = without_derived(&config, tmp.path(), &s);
-        assert_eq!(kept.args, goals);
-    }
 }
 
 #[test]
@@ -556,36 +340,6 @@ fn ruff_configuration_directory_resolves_files_and_validates_pyproject() {
         cfg.settings.as_ref().and_then(|s| s.get("configuration")).and_then(|v| v.as_str()),
         Some(configured.as_str())
     );
-}
-
-#[test]
-fn jdtls_jdk_setting() {
-    if cfg!(windows) {
-        return; // Unix paths
-    }
-    let tmp = tempfile::tempdir().unwrap();
-    fake_jdk(&tmp.path().join("jdk17"));
-    let mut s = Settings::default();
-    assert_eq!(jdtls_jdk(tmp.path(), &s), Ok(None));
-    // Separate from the project JDK, which run configurations keep using.
-    s.languages.java.jdk = "jdk17".into();
-    assert_eq!(jdtls_jdk(tmp.path(), &s), Ok(None));
-    s.languages.java.jdtls_jdk = "jdk17/bin".into();
-    assert_eq!(jdtls_jdk(tmp.path(), &s).unwrap().map(|j| j.major), Some(17));
-    std::fs::write(
-        tmp.path().join("jdk17/release"),
-        "JAVA_VERSION=\"25\"\nIMAGE_TYPE=\"JRE\"\nMODULES=\"java.base jdk.compiler jdk.jdi jdk.unsupported\"\n",
-    )
-    .unwrap();
-    assert!(jdtls_jdk(tmp.path(), &s).unwrap_err().contains("full JDK"));
-    // A chosen path that is not a JDK is an error, not a silent fallback.
-    std::fs::create_dir(tmp.path().join("not-a-jdk")).unwrap();
-    s.languages.java.jdtls_jdk = "not-a-jdk".into();
-    assert!(jdtls_jdk(tmp.path(), &s).unwrap_err().contains("is not a JDK home"));
-    // A JDK removed after it was chosen (a version manager upgraded it) says so.
-    s.languages.java.jdtls_jdk = "jdk17.0.1".into();
-    let err = jdtls_jdk(tmp.path(), &s).unwrap_err();
-    assert!(err.contains("jdk17.0.1 does not exist") && err.contains("Languages & Frameworks › Java"), "{err}");
 }
 
 #[test]
@@ -773,7 +527,7 @@ fn python_library_paths_are_parsed_and_deduplicated() {
 #[test]
 fn no_libraries_without_an_interpreter() {
     let tmp = tempfile::tempdir().unwrap();
-    assert!(crate::libraries::project_libraries(tmp.path(), &Settings::default(), &[]).is_empty());
+    assert!(crate::libraries::project_libraries(tmp.path(), &Settings::default()).is_empty());
 }
 
 #[test]
@@ -831,74 +585,6 @@ fn go_modules_skip_the_main_module_and_missing_downloads() {
 }
 
 #[test]
-fn jdk_library_is_the_jdk_home() {
-    let tmp = tempfile::tempdir().unwrap();
-    let home = tmp.path().join("temurin-21.jdk/Contents/Home");
-    std::fs::create_dir_all(&home).unwrap();
-    assert_eq!(crate::libraries::jdk_name(&home).as_deref(), Some("temurin-21"));
-    assert_eq!(crate::libraries::jdk_name(&tmp.path().join("jdk-17")).as_deref(), Some("jdk-17"));
-    let group = crate::libraries::jdk_library(&crate::java::Jdk { major: 21, home: home.clone() }).unwrap();
-    assert_eq!((group.name.as_str(), group.kind.as_str()), ("temurin-21", "jdk"));
-    assert_eq!(group.roots[0].path, ide_core::IpcPath::from(home.clone()));
-    assert_eq!(group.roots.len(), 1, "no sources archive");
-
-    std::fs::create_dir_all(home.join("lib")).unwrap();
-    std::fs::write(home.join("lib/src.zip"), "").unwrap();
-    let group = crate::libraries::jdk_library(&crate::java::Jdk { major: 21, home: home.clone() }).unwrap();
-    assert_eq!(group.roots[1].name, "src.zip");
-    assert_eq!(group.roots[1].path, ide_core::IpcPath::from(ide_vfs::archive_root(&home.join("lib/src.zip"))));
-}
-
-#[test]
-fn build_dependencies_resolve_to_local_jars() {
-    use crate::libraries::{BuildDependency, dependency_libraries};
-    let tmp = tempfile::tempdir().unwrap();
-    let (m2, gradle) = (tmp.path().join("m2"), tmp.path().join("gradle"));
-    let touch = |p: std::path::PathBuf| {
-        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
-        std::fs::write(&p, "").unwrap();
-        p
-    };
-    let guava = touch(m2.join("com/google/guava/guava/33.0/guava-33.0.jar"));
-    touch(m2.join("com/google/guava/guava/33.0/guava-33.0-sources.jar"));
-    let junit = touch(m2.join("junit/junit/4.13/junit-4.13.jar"));
-    let files = gradle.join("caches/modules-2/files-2.1/org.slf4j/slf4j-api/2.0.9");
-    let slf4j = touch(files.join("a1b2/slf4j-api-2.0.9.jar"));
-    touch(files.join("c3d4/slf4j-api-2.0.9-sources.jar"));
-    let dep = |gradle: bool, g: &str, a: &str, v: &str| BuildDependency {
-        gradle,
-        group: g.into(),
-        artifact: a.into(),
-        version: v.into(),
-    };
-    let deps = [
-        dep(false, "junit", "junit", "4.13"),
-        dep(false, "com.google.guava", "guava", "33.0"),
-        dep(false, "com.google.guava", "guava", "33.0"),
-        dep(true, "org.slf4j", "slf4j-api", "2.0.9"),
-        dep(false, "missing", "nope", "1.0"),
-        dep(false, "..", "evil", "1"),
-    ];
-    let groups = dependency_libraries(&deps, Some(&m2), Some(&gradle));
-    let shown: Vec<(&str, &str, &str)> =
-        groups.iter().map(|g| (g.name.as_str(), g.kind.as_str(), g.roots[0].name.as_str())).collect();
-    assert_eq!(
-        shown,
-        [
-            ("Maven: com.google.guava:guava:33.0", "maven", "guava-33.0.jar"),
-            ("Maven: junit:junit:4.13", "maven", "junit-4.13.jar"),
-            ("Gradle: org.slf4j:slf4j-api:2.0.9", "gradle", "slf4j-api-2.0.9.jar"),
-        ]
-    );
-    assert_eq!(groups[0].roots[0].path, ide_core::IpcPath::from(ide_vfs::archive_root(&guava)));
-    assert_eq!(groups[1].roots[0].path, ide_core::IpcPath::from(ide_vfs::archive_root(&junit)));
-    assert_eq!(groups[2].roots[0].path, ide_core::IpcPath::from(ide_vfs::archive_root(&slf4j)));
-    // A Gradle build also finds jars installed in the Maven local repository (`mavenLocal()`).
-    let groups = dependency_libraries(&[dep(true, "junit", "junit", "4.13")], Some(&m2), Some(&gradle));
-    assert_eq!(groups[0].name, "Gradle: junit:junit:4.13");
-}
-
-#[test]
 fn library_detection_is_cached_until_a_manifest_changes() {
     let tmp = tempfile::tempdir().unwrap();
     let manifest = tmp.path().join("package.json");
@@ -923,7 +609,7 @@ fn library_detection_is_cached_until_a_manifest_changes() {
 fn no_ecosystem_libraries_without_manifests() {
     let tmp = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(tmp.path().join("node_modules/react")).unwrap();
-    assert!(crate::libraries::project_libraries(tmp.path(), &Settings::default(), &[]).is_empty());
+    assert!(crate::libraries::project_libraries(tmp.path(), &Settings::default()).is_empty());
 }
 
 /// Tools dir with vue-language-server and the given TypeScript files, plus a
@@ -1204,87 +890,6 @@ fn query_times_out_when_the_child_does_not_exit() {
     assert_eq!(out, None);
 }
 
-#[test]
-fn max_java_picks_an_older_jdk() {
-    let dir = tempfile::tempdir().unwrap();
-    let jdk = |major: u32| {
-        let home = dir.path().join(format!("jdk-{major}"));
-        std::fs::create_dir_all(home.join("bin")).unwrap();
-        std::fs::write(home.join("release"), format!("JAVA_VERSION=\"{major}.0.1\"\n")).unwrap();
-        std::fs::write(home.join("bin").join(exe("java")), "").unwrap();
-        crate::java::jdk_at(&home).unwrap()
-    };
-    let (j17, j21, j25) = (jdk(17), jdk(21), jdk(25));
-    let jdks = [j25.clone(), j21.clone(), j17];
-    let mut cfg = LanguageServerConfig { max_java: Some(21), ..server("kotlin-language-server") };
-    cfg.env.insert("JAVA_HOME".into(), j25.home.to_string_lossy().into_owned());
-    crate::java::cap_java_home(&mut cfg, &jdks);
-    assert_eq!(cfg.env["JAVA_HOME"], j21.home.to_string_lossy());
-
-    // A JAVA_HOME that fits, or no limit: left alone.
-    crate::java::cap_java_home(&mut cfg, &[]);
-    assert_eq!(cfg.env["JAVA_HOME"], j21.home.to_string_lossy());
-    let mut free = server("other");
-    free.env.insert("JAVA_HOME".into(), j25.home.to_string_lossy().into_owned());
-    crate::java::cap_java_home(&mut free, &jdks);
-    assert_eq!(free.env["JAVA_HOME"], j25.home.to_string_lossy());
-}
-
-#[test]
-fn gradle_settings_precedence() {
-    use crate::apply::{gradle_command, gradle_env};
-    use ide_core::settings::GradleDistribution;
-    let tmp = tempfile::tempdir().unwrap();
-    let root = tmp.path();
-    let plain = if cfg!(windows) { "gradle.bat" } else { "gradle" };
-    let wrapper = root.join(if cfg!(windows) { "gradlew.bat" } else { "gradlew" });
-    let mut settings = Settings::default();
-    assert_eq!(gradle_command(root, root, &settings), std::path::PathBuf::from(plain));
-    std::fs::write(&wrapper, "").unwrap();
-    assert_eq!(gradle_command(root, root, &settings), wrapper);
-    let fallback = std::collections::BTreeMap::from([("JAVA_HOME".into(), "project-jdk".into())]);
-    assert_eq!(gradle_env(root, &settings, fallback.clone()), fallback);
-    settings.languages.java.gradle.jvm = "gradle-jdk".into();
-    settings.languages.java.gradle.user_home = "gradle-cache".into();
-    settings.languages.java.gradle.home = "local-gradle".into();
-    let env = gradle_env(root, &settings, fallback);
-    assert_eq!(env["JAVA_HOME"], root.join("gradle-jdk").to_string_lossy());
-    assert_eq!(env["GRADLE_USER_HOME"], root.join("gradle-cache").to_string_lossy());
-    // A stored local home is inactive in wrapper mode.
-    assert_eq!(gradle_command(root, root, &settings), wrapper);
-    for local in [false, true] {
-        settings.languages.java.gradle.distribution =
-            if local { GradleDistribution::Local } else { GradleDistribution::Wrapper };
-        let expected = if local { root.join("local-gradle").join("bin").join(plain) } else { plain.into() };
-        for explicit_java in [false, true] {
-            for is_test in [false, true] {
-                let mut configs =
-                    [run("gradle", wrapper.to_str().unwrap(), &["test"]), run("gradle", plain, &["test"])];
-                for c in &mut configs {
-                    c.is_test = is_test;
-                    if explicit_java {
-                        c.env.insert("JAVA_HOME".into(), "explicit-jdk".into());
-                    }
-                }
-                apply_to_run_configs(&mut configs, root, &settings);
-                assert_eq!(configs[0].command, wrapper.to_string_lossy());
-                assert_eq!(configs[1].command, expected.to_string_lossy());
-                for c in &configs {
-                    assert_eq!(
-                        c.env["JAVA_HOME"],
-                        if explicit_java {
-                            "explicit-jdk".into()
-                        } else {
-                            root.join("gradle-jdk").to_string_lossy().into_owned()
-                        }
-                    );
-                }
-            }
-        }
-        assert_eq!(gradle_command(root, root, &settings), if local { expected } else { wrapper.clone() });
-    }
-}
-
 /// The reporter of #440 has Node 26 in `~/.local/bin` and an 18 in `/usr/bin`; an SSH
 /// exec channel's PATH puts `/usr/bin` first, so only the system's Node was listed.
 #[test]
@@ -1531,12 +1136,6 @@ fn saving_a_loaded_run_configuration_drops_what_settings_derived() {
     s.languages.go.goroot = root.join("go").to_string_lossy().into_owned();
     s.languages.go.gopath = root.join("gopath").to_string_lossy().into_owned();
     s.languages.go.modules.env = BTreeMap::from([("GOPROXY".into(), "https://proxy.example".into())]);
-    fake_jdk(&root.join("jdk17"));
-    s.languages.java.jdk = root.join("jdk17").to_string_lossy().into_owned();
-    touch("maven/bin/mvn");
-    s.languages.java.maven.home = root.join("maven").to_string_lossy().into_owned();
-    s.languages.java.maven.user_settings = "/m2/settings.xml".into();
-    s.languages.java.maven.local_repository = "/m2/repo".into();
     s.languages.ruby.interpreter = touch("ruby/bin/ruby");
     touch("ruby/bin/bundle");
     s.tools.insert("godot".into(), ide_core::settings::ToolSettings { path: touch("Godot/godot") });
@@ -1555,14 +1154,11 @@ fn saving_a_loaded_run_configuration_drops_what_settings_derived() {
         saved("cargo", "cargo", &["run"], &[]),
         saved("go", "go", &["run", "."], &[]),
         saved("go", "go", &["mod", "tidy"], &[("GOPROXY", "off")]),
-        saved("maven", "mvn", &["package"], &[]),
-        saved("tomcat", "catalina", &[], &[]),
         saved("ruby", "ruby", &["app.rb"], &[]),
         saved("rake", "bundle", &["exec", "rake"], &[("RAILS_ENV", "test")]),
         saved("godot", "godot", &["--path", "."], &[]),
         // The user's own values that merely look like derived ones stay.
         saved("cargo", "/opt/rust/bin/cargo", &["build"], &[("PATH", "/custom/bin")]),
-        saved("maven", "mvn", &["verify"], &[("JAVA_HOME", "/other/jdk")]),
         saved("python", "python", &["x.py"], &[("VIRTUAL_ENV", "/elsewhere/venv")]),
     ];
     for user in configs {
@@ -1590,30 +1186,6 @@ fn saving_a_loaded_run_configuration_drops_what_settings_derived() {
     let ruby2 = root.join("ruby2/bin");
     assert_eq!(next.command, ruby2.join("ruby").to_string_lossy());
     assert!(next.env["PATH"].starts_with(&*ruby2.to_string_lossy()), "{}", next.env["PATH"]);
-
-    // A Maven configuration (a detected one narrowed to a test, a tool window goal) follows a
-    // later Maven home, settings file, local repository and JDK; options it sets itself stay.
-    for detected in [true, false] {
-        let mut goal = saved("maven", "mvn", &["test", "-Dtest=AppTest"], &[]);
-        goal.detected = detected;
-        let mut own = saved("maven", "mvn", &["-s", "/mine.xml", "test"], &[]);
-        own.detected = detected;
-        let mut loaded = [goal, own];
-        apply_to_run_configs(&mut loaded, root, &s);
-        let mut next = loaded.map(|c| without_derived(&c, root, &s));
-        touch("maven2/bin/mvn");
-        fake_jdk(&root.join("jdk21"));
-        let mut s2 = s.clone();
-        s2.languages.java.maven.home = root.join("maven2").to_string_lossy().into_owned();
-        s2.languages.java.maven.user_settings = "/m3/settings.xml".into();
-        s2.languages.java.maven.local_repository = "/m3/repo".into();
-        s2.languages.java.jdk = root.join("jdk21").to_string_lossy().into_owned();
-        apply_to_run_configs(&mut next, root, &s2);
-        assert_eq!(next[0].command, root.join("maven2/bin/mvn").to_string_lossy());
-        assert_eq!(next[0].args, ["-s", "/m3/settings.xml", "-Dmaven.repo.local=/m3/repo", "test", "-Dtest=AppTest"]);
-        assert!(next[0].env["JAVA_HOME"].ends_with("jdk21"), "{}", next[0].env["JAVA_HOME"]);
-        assert_eq!(next[1].args, ["-Dmaven.repo.local=/m3/repo", "-s", "/mine.xml", "test"]);
-    }
 }
 
 #[test]
@@ -1651,4 +1223,14 @@ fn file_runtime_uses_nearest_virtualenv_and_explicit_project_settings_win() {
     assert_eq!(crate::apply::python_interpreter_near(root, Some(&root.join("apps/other")), &settings), Some(outer));
     settings.languages.python.interpreter = "selected/python".into();
     assert_eq!(crate::apply::python_interpreter_near(root, Some(&near), &settings), Some(root.join("selected/python")));
+}
+
+#[test]
+fn removed_jvm_sdk_kinds_are_not_discoverable() {
+    for kind in ["jdk", "maven"] {
+        assert!(serde_json::from_value::<crate::SdkKind>(serde_json::json!(kind)).is_err());
+    }
+    for kind in ["python", "node", "rust", "go", "ruby"] {
+        assert!(serde_json::from_value::<crate::SdkKind>(serde_json::json!(kind)).is_ok());
+    }
 }

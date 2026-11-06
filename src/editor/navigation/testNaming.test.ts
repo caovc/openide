@@ -10,7 +10,7 @@ import {
 
 describe("test naming conventions (Go to Test)", () => {
   it.each([
-    ["Foo.java", ["FooTest.java", "FooTests.java", "TestFoo.java", "FooIT.java", "FooSpec.java"]],
+    ["Foo.cs", ["FooTest.cs", "FooTests.cs", "TestFoo.cs", "FooIT.cs", "FooSpec.cs"]],
     ["foo.go", ["foo_test.go"]],
     ["foo.py", ["test_foo.py", "foo_test.py"]],
     ["foo.ts", ["foo.test.ts", "foo.spec.ts"]],
@@ -22,9 +22,9 @@ describe("test naming conventions (Go to Test)", () => {
   });
 
   it.each([
-    ["FooTest.java", ["Foo.java"]],
+    ["FooTest.cs", ["Foo.cs"]],
     ["FooTests.kt", ["Foo.kt"]],
-    ["TestFoo.java", ["Foo.java"]],
+    ["TestFoo.cs", ["Foo.cs"]],
     ["foo_test.go", ["foo.go"]],
     ["test_foo.py", ["foo.py"]],
     ["foo_test.py", ["foo.py"]],
@@ -39,8 +39,8 @@ describe("test naming conventions (Go to Test)", () => {
 
   it("recognises test file names", () => {
     for (const n of [
-      "FooTest.java",
-      "TestFoo.java",
+      "FooTest.cs",
+      "TestFoo.cs",
       "FooTests.cs",
       "foo_test.go",
       "test_foo.py",
@@ -50,26 +50,26 @@ describe("test naming conventions (Go to Test)", () => {
       "bar_test.cc",
     ])
       expect(isTestName(n), n).toBe(true);
-    for (const n of ["Foo.java", "Test.java", "Testing.java", "foo.go", "foo.py", "foo.ts", "contest.py", "latest.ts"])
+    for (const n of ["Foo.cs", "Test.cs", "Testing.cs", "foo.go", "foo.py", "foo.ts", "contest.py", "latest.ts"])
       expect(isTestName(n), n).toBe(false);
-    expect(newTestName("Foo.java")).toBe("FooTest.java");
+    expect(newTestName("Foo.cs")).toBe("FooTest.cs");
   });
 
   it("ranks the mirrored package first, then the closest file", () => {
     const below = (p: string) => p.replace(/^\/p\/(?:a|b)\/src\/(?:main|test)\/java\//, "");
     const ranked = rankCandidates(
-      "/p/a/src/main/java/com/x/Foo.java",
+      "/p/a/src/main/java/com/x/Foo.cs",
       [
-        "/p/b/src/test/java/com/y/FooTest.java",
-        "/p/a/src/test/java/com/z/FooTest.java",
-        "/p/a/src/test/java/com/x/FooTest.java",
+        "/p/b/src/test/java/com/y/FooTest.cs",
+        "/p/a/src/test/java/com/z/FooTest.cs",
+        "/p/a/src/test/java/com/x/FooTest.cs",
       ],
       below,
     );
     expect(ranked).toEqual([
-      "/p/a/src/test/java/com/x/FooTest.java",
-      "/p/a/src/test/java/com/z/FooTest.java",
-      "/p/b/src/test/java/com/y/FooTest.java",
+      "/p/a/src/test/java/com/x/FooTest.cs",
+      "/p/a/src/test/java/com/z/FooTest.cs",
+      "/p/b/src/test/java/com/y/FooTest.cs",
     ]);
   });
 

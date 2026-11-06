@@ -5,7 +5,6 @@ use ide_run::RunConfig;
 use ide_run::wrap::{self, program_name};
 use std::path::{Path, PathBuf};
 
-const ASYNC_PROFILER_HOME: &str = "https://github.com/async-profiler/async-profiler/releases";
 const PY_SPY_HOME: &str = "https://github.com/benfred/py-spy";
 
 fn s(v: &str) -> String {
@@ -34,11 +33,13 @@ fn append_env(config: &mut RunConfig, key: &str, value: &str) {
 /// How to run `config` under a sampling profiler. `out` is an existing empty
 /// directory for the profile. Probes tools: call from a blocking thread.
 pub fn prepare(root: &Path, config: &RunConfig, out: &Path) -> ProfilePrepared {
+    if ide_run::is_removed_jvm_config(config) {
+        return unsupported("JVM run configurations are no longer supported.");
+    }
     let dir = wrap::run_dir(root, config);
     let program = program_name(&config.command);
     match program.as_str() {
         "node" | "npx" | "tsx" | "ts-node" | "npm" | "pnpm" | "yarn" => node(root, config, out),
-        "java" => jvm(root, config, &dir, out),
         "cargo" => cargo(config, &dir, out),
         "bun" | "deno" => unsupported(format!("Profiling {program} programs is not supported.")),
         _ if config.kind == "native" => native(config, &dir, out),
@@ -60,7 +61,7 @@ fn node(root: &Path, config: &RunConfig, out: &Path) -> ProfilePrepared {
     )
 }
 
-/// `NODE_OPTIONS` / `JAVA_TOOL_OPTIONS` values are split on spaces; quote paths that have them.
+/// `NODE_OPTIONS` values are split on spaces; quote paths that have them.
 fn quote_opt(v: &str) -> String {
     if v.contains(' ') { format!("\"{v}\"") } else { v.to_owned() }
 }
@@ -104,55 +105,8 @@ fn python(root: &Path, config: &RunConfig, dir: &Path, out: &Path, py: wrap::Pyt
         dir: out.to_path_buf().into(),
         ext: s("txt"),
         base: dir.to_path_buf().into(),
-        jvm_root: None,
     };
     ready("py-spy", launch, spec)
-}
-
-/// `libasyncProfiler.{so,dylib}` from `ASYNC_PROFILER_HOME` or next to `asprof` on the search path.
-fn async_profiler_lib(config: &RunConfig) -> Option<PathBuf> {
-    let lib = if cfg!(target_os = "macos") { "libasyncProfiler.dylib" } else { "libasyncProfiler.so" };
-    let mut homes: Vec<PathBuf> = Vec::new();
-    if let Some(h) =
-        config.env.get("ASYNC_PROFILER_HOME").cloned().or_else(|| std::env::var("ASYNC_PROFILER_HOME").ok())
-    {
-        homes.push(h.into());
-    }
-    if let Some(asprof) = ide_run::which::find_executable("asprof", &wrap::search_path(config)) {
-        let real = std::fs::canonicalize(&asprof).unwrap_or(asprof);
-        if let Some(home) = real.parent().and_then(Path::parent) {
-            homes.push(home.to_path_buf());
-        }
-    }
-    homes.into_iter().map(|h| h.join("lib").join(lib)).find(|p| p.is_file())
-}
-
-fn jvm(root: &Path, config: &RunConfig, dir: &Path, out: &Path) -> ProfilePrepared {
-    if cfg!(windows) {
-        return unsupported("async-profiler, used to profile JVM applications, does not run on Windows.");
-    }
-    let Some(lib) = async_profiler_lib(config) else {
-        return ProfilePrepared::MissingTool {
-            tool: s("async-profiler"),
-            message: s(
-                "Profiling JVM applications needs async-profiler: unpack a release and put its bin/asprof on the PATH (or set ASYNC_PROFILER_HOME).",
-            ),
-            install: None,
-            homepage: Some(ASYNC_PROFILER_HOME.into()),
-        };
-    };
-    let mut launch = config.clone();
-    let file = out.join("profile-%p.collapsed");
-    let agent = format!("-agentpath:{}=start,event=cpu,collapsed,file={}", path(&lib), path(&file));
-    append_env(&mut launch, "JAVA_TOOL_OPTIONS", &quote_opt(&agent));
-    let spec = ProfileSpec::Folded {
-        profiler: s("async-profiler"),
-        dir: out.to_path_buf().into(),
-        ext: s("collapsed"),
-        base: dir.to_path_buf().into(),
-        jvm_root: Some(root.to_path_buf().into()),
-    };
-    ready("async-profiler", launch, spec)
 }
 
 fn perf(config: &RunConfig) -> Result<PathBuf, Box<ProfilePrepared>> {
@@ -277,30 +231,6 @@ mod tests {
                 assert_eq!(&launch.args[..4], ["record", "--format", "raw", "--function"]);
                 let dash = launch.args.iter().position(|a| a == "--").unwrap();
                 assert_eq!(&launch.args[dash + 1..], [python.to_string_lossy().as_ref(), "main.py"]);
-            }
-            other => panic!("{other:?}"),
-        }
-    }
-
-    #[test]
-    fn jvm_without_async_profiler_points_to_releases() {
-        if cfg!(windows) {
-            return;
-        }
-        let dir = tempfile::tempdir().unwrap();
-        let mut c = cfg("application", "java", &["-cp", "${classpath}", "com.x.App"]);
-        c.env.insert("PATH".into(), dir.path().to_string_lossy().into_owned());
-        c.env.insert("ASYNC_PROFILER_HOME".into(), dir.path().join("none").to_string_lossy().into_owned());
-        assert!(matches!(prepare(dir.path(), &c, dir.path()), ProfilePrepared::MissingTool { install: None, .. }));
-        let lib_dir = dir.path().join("ap/lib");
-        std::fs::create_dir_all(&lib_dir).unwrap();
-        let lib =
-            lib_dir.join(if cfg!(target_os = "macos") { "libasyncProfiler.dylib" } else { "libasyncProfiler.so" });
-        std::fs::write(&lib, "").unwrap();
-        c.env.insert("ASYNC_PROFILER_HOME".into(), dir.path().join("ap").to_string_lossy().into_owned());
-        match prepare(dir.path(), &c, dir.path()) {
-            ProfilePrepared::Ready { launch, .. } => {
-                assert!(launch.env["JAVA_TOOL_OPTIONS"].contains("collapsed,file="));
             }
             other => panic!("{other:?}"),
         }

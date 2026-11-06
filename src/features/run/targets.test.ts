@@ -132,12 +132,6 @@ describe("detectRunTargets", () => {
       [4, "test", "TestMap/small_n"],
       [9, "test", 'TestMap/a"b'],
     ]);
-    const kt = ["class CalcTest {", "  @Test", "  fun `adds numbers`() {}", "  @Test fun subs() {}", "}"].join("\n");
-    expect(pick(detectRunTargets(kt, "src/test/kotlin/CalcTest.kt"))).toEqual([
-      [0, "suite", "CalcTest"],
-      [2, "test", "CalcTest/adds numbers"],
-      [3, "test", "CalcTest/subs"],
-    ]);
   });
 });
 
@@ -204,11 +198,6 @@ describe("targetConfig", () => {
       "./pkg",
       "-run",
       "^TestAdd$",
-    ]);
-    expect(first("class FooTest {\n  @Test\n  void bar() {}\n}", "src/test/java/FooTest.java").args).toEqual([
-      "test",
-      "--tests",
-      "FooTest.bar",
     ]);
   });
 

@@ -19,10 +19,7 @@ async function tokens(mode: string, source: string) {
 
 describe("frontend string interpolation", () => {
   it.each([
-    ["Kotlin", 'println("$i + 1 = ${i + 1}")'],
-    ["Scala", 'println(s"$i + 1 = ${i + 1}")'],
     ["Dart", 'print("$i + 1 = ${i + 1}")'],
-    ["Groovy", 'println("$i + 1 = ${i + 1}")'],
     ["C#", 'Console.WriteLine($"{i} + 1 = {i + 1}")'],
   ])("%s separates delimiters, names, operators and numbers", async (mode, source) => {
     const out = await tokens(mode, source);
@@ -34,33 +31,19 @@ describe("frontend string interpolation", () => {
     expect(out.some((t) => t.text === "}" && !t.style.includes("tok-string"))).toBe(true);
   });
 
-  it.each(["Kotlin", "Scala", "Dart", "Groovy", "C#"])(
-    "%s keeps nested braces, strings and comments inside expressions",
-    async (mode) => {
-      const source =
-        mode === "C#"
-          ? '$"{call(new Foo { n = 2 }, "}") /* } */ + 1} tail"'
-          : `${mode === "Scala" ? "s" : ""}"\${call({ n -> 2 }, "}") /* } */ + 1} tail"`;
-      const out = await tokens(mode, source);
-      expect(out).toContainEqual(expect.objectContaining({ text: "1", style: "tok-number" }));
-      expect(out.some((t) => t.text.includes("tail") && t.style === "tok-string")).toBe(true);
-      expect(out.some((t) => t.text.includes("/* } */") && t.style === "tok-comment")).toBe(true);
-    },
-  );
-
-  it("handles Kotlin multiline raw templates and nested templates", async () => {
-    const out = await tokens("Kotlin", 'val s = """raw \\$name\n${list.map { "${it + 1}" }} tail"""\nval after = 3');
-    for (const text of ["name", "it", "after"])
-      expect(out.some((t) => t.text === text && t.style.includes("variableName"))).toBe(true);
-    expect(out.filter((t) => t.style === "tok-number").map((t) => t.text)).toEqual(["1", "3"]);
+  it.each(["Dart", "C#"])("%s keeps nested braces, strings and comments inside expressions", async (mode) => {
+    const source =
+      mode === "C#"
+        ? '$"{call(new Foo { n = 2 }, "}") /* } */ + 1} tail"'
+        : `${mode === "Scala" ? "s" : ""}"\${call({ n -> 2 }, "}") /* } */ + 1} tail"`;
+    const out = await tokens(mode, source);
+    expect(out).toContainEqual(expect.objectContaining({ text: "1", style: "tok-number" }));
+    expect(out.some((t) => t.text.includes("tail") && t.style === "tok-string")).toBe(true);
+    expect(out.some((t) => t.text.includes("/* } */") && t.style === "tok-comment")).toBe(true);
   });
 
   it.each([
-    ["Kotlin", '"\\$name \\${value}"'],
-    ["Scala", '"$name ${value}"'],
-    ["Scala", 's"$$name"'],
     ["Dart", 'r"$name ${value}"'],
-    ["Groovy", "'$name ${value}'"],
     ["C#", '$"{{value}}"'],
   ])("%s preserves literal dollars and braces in %s", async (mode, source) => {
     const out = await tokens(mode, source);
@@ -81,17 +64,8 @@ describe("frontend string interpolation", () => {
     expect(out.some((t) => t.text === "}}" && !t.style.includes("string"))).toBe(true);
     expect(out.some((t) => t.text.includes("{brace}") && t.style === "tok-string")).toBe(true);
   });
-
-  it("keeps Groovy dotted interpolation in code", async () => {
-    const out = await tokens("Groovy", '"$person.name tail"');
-    expect(out).toContainEqual(expect.objectContaining({ text: "name", style: "tok-variableName" }));
-    expect(out.some((t) => t.text.includes("tail") && t.style === "tok-string")).toBe(true);
-  });
   it.each([
-    ["Kotlin", "a.kt"],
-    ["Scala", "a.scala"],
     ["Dart", "a.dart"],
-    ["Groovy", "a.groovy"],
     ["C#", "a.cs"],
     ["Shell", "a.sh"],
   ])("%s uses the same patched mode by name, alias and filename", (mode, path) => {

@@ -3,7 +3,7 @@
 //! Adapters come from `languages/*.toml` `[debugger]` tables, with built-in
 //! fallbacks for the common ones. `${port}` in the arguments of a `tcp`
 //! adapter is replaced by a free local port; the client then connects to it.
-//! Adapters that run inside another process (java-debug inside jdtls) are
+//! Adapters that run inside another process are
 //! reached through a `debugServer` port in the launch arguments instead.
 
 use ide_core::process::executable_names;
@@ -66,12 +66,6 @@ fn builtin(adapter: &str) -> Option<DebuggerConfig> {
             "tcp",
             "Install CodeLLDB in Settings › Languages & Frameworks › Language Servers",
         ),
-        "kotlin-debug-adapter" => cfg(
-            "kotlin-debug-adapter",
-            &[],
-            "stdio",
-            "Install Kotlin Debug Adapter in Settings › Languages & Frameworks › Language Servers",
-        ),
         // Windows installs `python.exe`; `python3.exe` there is at most a Store alias.
         "debugpy" => cfg(
             if cfg!(windows) { "python" } else { "python3" },
@@ -101,13 +95,6 @@ fn builtin(adapter: &str) -> Option<DebuggerConfig> {
         "lldb-dap" => {
             cfg("lldb-dap", &[], "stdio", "Install LLVM's lldb-dap (brew install llvm; on macOS `xcrun -f lldb-dap`)")
         }
-        // A jdtls bundle: the session is started through jdtls and reached via `debugServer`.
-        "java-debug" => cfg(
-            "com.microsoft.java.debug.plugin.jar",
-            &[],
-            "tcp",
-            "Install Microsoft java-debug (Settings › Languages & Frameworks › Language Servers)",
-        ),
         _ => return None,
     })
 }
@@ -126,7 +113,6 @@ pub fn default_type(adapter: &str) -> Option<&'static str> {
         "delve" => "go",
         "netcoredbg" => "coreclr",
         "lldb-dap" => "lldb-dap",
-        "java-debug" => "java",
         _ => return None,
     })
 }
@@ -326,8 +312,7 @@ pub async fn prepare_debugpy(spec: &mut AdapterSpec) -> IdeResult<()> {
     )))
 }
 
-/// An adapter that is a plugin of another program (java-debug, a jdtls bundle) rather
-/// than a program: it has no process of its own and is reached through `debugServer`.
+/// Archives cannot be launched directly as executable adapters.
 pub fn is_plugin_bundle(command: &str) -> bool {
     Path::new(command).extension().is_some_and(|e| e.eq_ignore_ascii_case("jar"))
 }
@@ -335,9 +320,7 @@ pub fn is_plugin_bundle(command: &str) -> bool {
 /// A launch of a plugin adapter without the `debugServer` of its host program.
 pub fn not_standalone(spec: &AdapterSpec) -> IdeError {
     IdeError::unavailable(format!(
-        "debug adapter `{}` runs inside the Java language server and can't be started on its own. \
-         Debug an Application, Spring Boot, JUnit, Maven or Gradle configuration, or start the JVM \
-         with a JDWP agent and attach with a Remote JVM Debug configuration",
+        "debug adapter `{}` is an archive and cannot be started as an executable",
         spec.adapter
     ))
 }
@@ -674,7 +657,7 @@ mod tests {
 
     #[test]
     fn builtins_cover_common_adapters() {
-        for name in ["codelldb", "debugpy", "js-debug", "delve", "netcoredbg", "java-debug"] {
+        for name in ["codelldb", "debugpy", "js-debug", "delve", "netcoredbg"] {
             let cfg = builtin(name).unwrap();
             assert!(cfg.install_hint.is_some());
         }
@@ -706,27 +689,27 @@ mod tests {
     }
 
     /// The managed tools layout (`<tools>/<tool>/bin`) as Windows sees it: only `PATHEXT`
-    /// files run, so the java-debug bundle jar and POSIX shims are never adapter programs.
+    /// files run, so archives and POSIX shims are never adapter programs.
     #[test]
     fn windows_resolution_only_takes_pathext_files() {
         let dir = std::env::temp_dir().join(format!("openidea-dap-win-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        let java_debug = dir.join("java-debug").join("bin");
+        let archive_adapter = dir.join("archive-adapter").join("bin");
         let js_debug = dir.join("js-debug").join("bin");
         let codelldb = dir.join("codelldb").join("bin");
-        for d in [&java_debug, &js_debug, &codelldb] {
+        for d in [&archive_adapter, &js_debug, &codelldb] {
             std::fs::create_dir_all(d).unwrap();
         }
-        let jar = "com.microsoft.java.debug.plugin.jar";
-        std::fs::write(java_debug.join(jar), "PK").unwrap();
+        let jar = "plugin.jar";
+        std::fs::write(archive_adapter.join(jar), "PK").unwrap();
         std::fs::write(js_debug.join("js-debug-adapter"), "#!/bin/sh\n").unwrap();
         std::fs::write(js_debug.join("js-debug-adapter.cmd"), "@echo off\r\n").unwrap();
         std::fs::write(codelldb.join("codelldb.exe"), "MZ").unwrap();
-        let dirs = [java_debug.clone(), js_debug.clone(), codelldb.clone()];
+        let dirs = [archive_adapter.clone(), js_debug.clone(), codelldb.clone()];
         let cwd = dir.clone();
         let win = |cmd: &str| find_binary_in(cmd, &cwd, &dirs, true, Some(".COM;.EXE;.BAT;.CMD"));
         assert_eq!(win(jar), None);
-        assert_eq!(win(&java_debug.join(jar).to_string_lossy()), None);
+        assert_eq!(win(&archive_adapter.join(jar).to_string_lossy()), None);
         assert_eq!(win("js-debug-adapter"), Some(js_debug.join("js-debug-adapter.cmd")));
         assert_eq!(win("codelldb"), Some(codelldb.join("codelldb.exe")));
         assert_eq!(win(&codelldb.join("codelldb").to_string_lossy()), Some(codelldb.join("codelldb.exe")));
@@ -752,18 +735,25 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// java-debug (from `languages/java.toml` or the built-in) is only reachable through
-    /// jdtls: a launch without `debugServer` is refused instead of starting the jar.
+    #[test]
+    fn jvm_debuggers_have_no_builtin_fallback() {
+        for adapter in ["java-debug", "kotlin-debug-adapter"] {
+            assert!(builtin(adapter).is_none());
+            assert!(default_type(adapter).is_none());
+        }
+    }
+
     #[tokio::test]
     async fn plugin_adapters_are_never_started_as_processes() {
-        assert!(is_plugin_bundle("com.microsoft.java.debug.plugin.jar"));
-        assert!(is_plugin_bundle("C:\\tools\\java-debug\\bin\\Plugin.JAR"));
+        assert!(is_plugin_bundle("plugin.jar"));
+        assert!(is_plugin_bundle("C:\\tools\\archive-adapter\\bin\\Plugin.JAR"));
         for cmd in ["codelldb", "python3", "js-debug-adapter", "dlv", "netcoredbg.exe", "lldb-dap"] {
             assert!(!is_plugin_bundle(cmd), "{cmd}");
         }
-        let spec = resolve(&builtin("java-debug").unwrap(), std::env::temp_dir());
+        let mut spec = resolve(&builtin("debugpy").unwrap(), std::env::temp_dir());
+        spec.command = "adapter.jar".into();
         let err = ProcessLauncher.launch(spec, None).await.err().unwrap();
         assert_eq!(err.kind, ide_core::error::ErrorKind::Unavailable);
-        assert!(err.message.contains("runs inside the Java language server"), "{}", err.message);
+        assert!(err.message.contains("archive"), "{}", err.message);
     }
 }

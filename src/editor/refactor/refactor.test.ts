@@ -1,15 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { suggestNames, uniqueNames } from "./names";
-import {
-  constantDeclaration,
-  isLiteral,
-  javaConstructedType,
-  javaTypeFromHover,
-  literalType,
-  replacesBareStatement,
-  variableDeclaration,
-} from "./templates";
-import { ancestorDirs, cStandardIs23, javaLanguageLevel, javaLevelFromGradle, javaLevelFromPom } from "./projectLevel";
+import { constantDeclaration, isLiteral, literalType, replacesBareStatement, variableDeclaration } from "./templates";
+import { cStandardIs23 } from "./projectLevel";
 import { expressionWords, findTextOccurrences, normalizeExpression } from "./occurrences";
 
 describe("suggestNames", () => {
@@ -68,18 +60,13 @@ describe("templates", () => {
   };
 
   it("declares variables per language", () => {
-    expect(decl("java", { javaVar: true })).toBe("var n = e();");
-    expect(decl("java", { type: "String" })).toBe("String n = e();");
-    expect(decl("java")).toMatch(/Java 10/);
     expect(decl("csharp")).toBe("var n = e();");
-    expect(decl("kotlin")).toBe("val n = e()");
     expect(decl("typescript", { semicolons: true })).toBe("const n = e();");
     expect(decl("javascript", { semicolons: false })).toBe("const n = e()");
     expect(decl("python")).toBe("n = e()");
     expect(decl("rust")).toBe("let n = e();");
     expect(decl("go")).toBe("n := e()");
     expect(decl("swift")).toBe("let n = e()");
-    expect(decl("scala")).toBe("val n = e()");
     expect(decl("ruby")).toBe("n = e()");
     expect(decl("lua")).toBe("local n = e()");
     expect(decl("elixir")).toBe("n = e()");
@@ -103,42 +90,21 @@ describe("templates", () => {
       const r = constantDeclaration(language, "N", "1", cx);
       return r.ok ? r.decl.text : r.reason;
     };
-    expect(c("java", { type: "int" })).toBe("private static final int N = 1;");
-    expect(c("java")).toMatch(/needs a type/);
     expect(c("typescript")).toBe("const N = 1;");
     expect(c("python")).toBe("N = 1");
-    expect(c("kotlin")).toBe("private const val N = 1");
     expect(c("go")).toMatch(/not supported/);
   });
 
   it("replaces bare statements only where they discard their value", () => {
-    expect(replacesBareStatement("java", "expression_statement")).toBe(true);
     expect(replacesBareStatement("python", "expression_statement")).toBe(true);
     expect(replacesBareStatement("rust", "expression_statement")).toBe(true);
     expect(replacesBareStatement("rust", "call_expression")).toBe(false);
-    expect(replacesBareStatement("kotlin", "call_expression")).toBe(false);
     expect(replacesBareStatement("ruby", "call")).toBe(false);
   });
 
   it("types literals and plain constructions", () => {
-    expect(literalType("java", "string_literal", '"x"')).toBe("String");
-    expect(literalType("java", "decimal_integer_literal", "10L")).toBe("long");
-    expect(literalType("java", "hex_integer_literal", "0xFF")).toBe("int");
-    expect(literalType("java", "decimal_floating_point_literal", "1.5f")).toBe("float");
-    expect(literalType("java", "decimal_floating_point_literal", "1e3")).toBe("double");
-    expect(literalType("java", "unary_expression", "-1")).toBe("int");
-    expect(literalType("java", "character_literal", "'c'")).toBe("char");
-    expect(literalType("java", "true", "true")).toBe("boolean");
-    expect(literalType("java", "null_literal", "null")).toBeNull();
-    expect(literalType("java", "binary_expression", '"a" + "b"')).toBeNull();
     expect(literalType("c", "string_literal", '"x"')).toBe("const char *");
     expect(literalType("c", "number_literal", "3UL")).toBeNull();
-    expect(javaConstructedType('new StringBuilder("a")')).toBe("StringBuilder");
-    expect(javaConstructedType("new HashMap<String, Integer>()")).toBe("HashMap<String,Integer>");
-    expect(javaConstructedType("new ArrayList<>()")).toBeNull();
-    expect(javaConstructedType("new Runnable() { public void run() {} }")).toBeNull();
-    expect(javaConstructedType("new Foo().bar()")).toBeNull();
-    expect(javaConstructedType("new int[3]")).toBe("int[]");
   });
 
   it("recognises literals that do not depend on scope", () => {
@@ -148,54 +114,10 @@ describe("templates", () => {
     expect(isLiteral("python", "string", 'f"{x}"')).toBe(false);
     expect(isLiteral("python", "string", '"x"')).toBe(true);
     expect(isLiteral("python", "unary_operator", "-1")).toBe(true);
-    expect(isLiteral("kotlin", "string_literal", '"a$b"')).toBe(false);
-    expect(isLiteral("kotlin", "identifier", "true")).toBe(true);
-  });
-
-  it("reads a Java type from a jdtls hover", () => {
-    expect(javaTypeFromHover("```java\nString java.lang.String.trim()\n```", "trim")).toBe("String");
-    expect(javaTypeFromHover("```java\njava.util.List<java.lang.String> a.B.names()\n```", "names")).toBe(
-      "java.util.List<java.lang.String>",
-    );
-    expect(javaTypeFromHover("```java\nint count - a.B.f()\n```", "count")).toBe("int");
-    expect(javaTypeFromHover("```java\nvoid a.B.run()\n```", "run")).toBeNull();
-    expect(javaTypeFromHover("something else", "x")).toBeNull();
   });
 });
 
 describe("project language levels", () => {
-  it("reads Maven poms", () => {
-    expect(javaLevelFromPom("<properties><maven.compiler.release>17</maven.compiler.release></properties>")).toBe(17);
-    expect(javaLevelFromPom("<properties><maven.compiler.source>1.8</maven.compiler.source></properties>")).toBe(8);
-    expect(javaLevelFromPom("<properties><java.version>21</java.version></properties>")).toBe(21);
-    expect(
-      javaLevelFromPom(
-        "<properties><jdk>11</jdk></properties><plugin><artifactId>maven-compiler-plugin</artifactId><configuration><release>${jdk}</release></configuration></plugin>",
-      ),
-    ).toBe(11);
-    expect(javaLevelFromPom("<!-- <java.version>17</java.version> --><project/>")).toBeNull();
-  });
-
-  it("reads Gradle builds", () => {
-    expect(javaLevelFromGradle("java { sourceCompatibility = JavaVersion.VERSION_1_8 }")).toBe(8);
-    expect(javaLevelFromGradle("sourceCompatibility = '11'")).toBe(11);
-    expect(javaLevelFromGradle("java { toolchain { languageVersion = JavaLanguageVersion.of(21) } }")).toBe(21);
-    expect(javaLevelFromGradle("kotlin { jvmToolchain(17) }")).toBe(17);
-    expect(javaLevelFromGradle("// sourceCompatibility = 17\nplugins {}")).toBeNull();
-  });
-
-  it("finds the nearest build file below the project root", async () => {
-    expect(ancestorDirs("/p/a/src/A.java", "/p")).toEqual(["/p/a/src", "/p/a", "/p"]);
-    const files: Record<string, string> = {
-      "/p/a/build.gradle": "plugins { id 'java' }",
-      "/p/pom.xml": "<properties><maven.compiler.release>17</maven.compiler.release></properties>",
-    };
-    const read = (path: string) =>
-      path in files ? Promise.resolve(files[path]!) : Promise.reject(new Error("missing"));
-    expect(await javaLanguageLevel("/p/a/src/Main.java", "/p", read)).toBe(17);
-    expect(await javaLanguageLevel("/q/Other.java", "/q", read)).toBeNull();
-  });
-
   it("detects C23", () => {
     expect(cStandardIs23("CMakeLists.txt", "set(CMAKE_C_STANDARD 23)")).toBe(true);
     expect(cStandardIs23("compile_flags.txt", "-std=c2x\n-Wall")).toBe(true);

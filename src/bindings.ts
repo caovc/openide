@@ -8,13 +8,6 @@ import { invoke as __TAURI_INVOKE, Channel } from "@tauri-apps/api/core";
 /** Commands */
 export const commands = {
 	appInfo: () => __TAURI_INVOKE<AppInfo>("app_info"),
-	/**  Devices `adb` knows about, online ones first. */
-	androidDevices: () => typedError<AndroidDevice[], IdeError>(__TAURI_INVOKE("android_devices")),
-	/**
-	 *  Follows `serial`'s log until the request is cancelled, in batches of lines.
-	 *  `clear` empties the device's buffers first.
-	 */
-	androidLogcat: (request: RequestId, serial: string, clear: boolean, onLines: Channel<LogcatLine[]>) => typedError<null, IdeError>(__TAURI_INVOKE("android_logcat", { request, serial, clear, onLines })),
 	recentProjects: () => __TAURI_INVOKE<RecentProject[]>("recent_projects"),
 	removeRecentProject: (path: string) => typedError<null, IdeError>(__TAURI_INVOKE("remove_recent_project", { path })),
 	/**  The welcome screen's project groups. */
@@ -282,7 +275,6 @@ export const commands = {
 	 *  Large documents fall back to word / line / document ranges.
 	 */
 	docSelectionRanges: (doc: DocId, offset: number) => typedError<Range[], IdeError>(__TAURI_INVOKE("doc_selection_ranges", { doc, offset })),
-	jvmFilePresentations: (paths: string[]) => typedError<JvmFilePresentation[], IdeError>(__TAURI_INVOKE("jvm_file_presentations", { paths })),
 	/**
 	 *  What the structure service supports for a language (`tree`: every query,
 	 *  `locals`: scope analysis).
@@ -358,8 +350,6 @@ export const commands = {
 	appRestart: () => __TAURI_INVOKE<void>("app_restart"),
 	indexStatus: () => typedError<IndexStatus, IdeError>(__TAURI_INVOKE("index_status")),
 	indexFileExtensions: () => typedError<ExtensionCount[], IdeError>(__TAURI_INVOKE("index_file_extensions")),
-	/**  Spring Web mapping sources for the request-path index of Search Everywhere. */
-	springRouteSources: () => typedError<RouteSource[], IdeError>(__TAURI_INVOKE("spring_route_sources")),
 	findFiles: (query: string, limit: number) => typedError<FileMatch[], IdeError>(__TAURI_INVOKE("find_files", { query, limit })),
 	/**  Folders holding indexed files, for `@` references. */
 	findDirs: (query: string, limit: number) => typedError<FileMatch[], IdeError>(__TAURI_INVOKE("find_dirs", { query, limit })),
@@ -433,12 +423,8 @@ export const commands = {
 	 *  Cancel with `cancel_request(request)`.
 	 */
 	lspGotoImplementation: (request: RequestId, doc: DocId, pos: Pos, onPartial: Channel<Location[]>) => typedError<Location[], IdeError>(__TAURI_INVOKE("lsp_goto_implementation", { request, doc, pos, onPartial })),
-	/**
-	 *  Contents of a read-only language-server document, including JDT library
-	 *  classes and disk class files. Cached per project.
-	 */
+	/**  Contents of a read-only language-server document. Cached per project. */
 	lspVirtualDocument: (uri: string) => typedError<VirtualDocument, IdeError>(__TAURI_INVOKE("lsp_virtual_document", { uri })),
-	lspResolveClassFile: (path: string) => typedError<string, IdeError>(__TAURI_INVOKE("lsp_resolve_class_file", { path })),
 	/**
 	 *  References of the symbol at `pos`. `project_wide` also searches project files
 	 *  outside the language server's analysis scope; bulk scans over many symbols
@@ -460,10 +446,6 @@ export const commands = {
 } | null, IdeError>(__TAURI_INVOKE("lsp_prepare_rename", { doc, pos })),
 	/**  Computes the rename edit without applying it, so the UI can preview conflicts. */
 	lspRename: (request: RequestId, doc: DocId, pos: Pos, newName: string) => typedError<Renamed, IdeError>(__TAURI_INVOKE("lsp_rename", { request, doc, pos, newName })),
-	/**  The class at `pos` and the members Pull Members Up / Push Members Down can move. */
-	lspHierarchyMembers: (request: RequestId, doc: DocId, pos: Pos, kind: HierarchyRefactoring) => typedError<HierarchyMembers, IdeError>(__TAURI_INVOKE("lsp_hierarchy_members", { request, doc, pos, kind })),
-	/**  Checks Pull Members Up / Push Members Down and computes the edit without applying it. */
-	lspHierarchyRefactor: (request: RequestId, doc: DocId, pos: Pos, kind: HierarchyRefactoring, target: string | null, choices: HierarchyChoice[]) => typedError<HierarchyRefactored, IdeError>(__TAURI_INVOKE("lsp_hierarchy_refactor", { request, doc, pos, kind, target, choices })),
 	lspFormat: (doc: DocId, range: {
 	start: Pos,
 	end: Pos,
@@ -683,83 +665,7 @@ export const commands = {
 	runCloseStdin: (id: RunId) => typedError<null, IdeError>(__TAURI_INVOKE("run_close_stdin", { id })),
 	/**  Terminal size of a run started with "Emulate terminal in output console". */
 	runResize: (id: RunId, cols: number, rows: number) => typedError<null, IdeError>(__TAURI_INVOKE("run_resize", { id, cols, rows })),
-	/**  Writes the Gradle init script adding `jvm_args` to the JVMs the build forks; returns its path. */
-	runGradleJvmArgsScript: (jvmArgs: string[]) => typedError<string, IdeError>(__TAURI_INVOKE("run_gradle_jvm_args_script", { jvmArgs })),
-	/**  Writes one of the IDE's Gradle init scripts where the build runs; returns its path. */
-	runGradleInitScript: (name: string, text: string) => typedError<string, IdeError>(__TAURI_INVOKE("run_gradle_init_script", { name, text })),
-	runTomcatHome: (home: string) => typedError<TomcatHome, IdeError>(__TAURI_INVOKE("run_tomcat_home", { home })),
-	runTomcatArtifacts: () => typedError<WebArtifact[], IdeError>(__TAURI_INVOKE("run_tomcat_artifacts")),
-	runTomcatBuild: (config: RunConfig_Deserialize) => typedError<({
-	/**  Stable id, e.g. `npm:dev`, `cargo:run:app`, or a uuid for user-defined. */
-	id: string,
-	name: string,
-	/**  `npm` | `cargo` | `gradle` | `maven` | `go` | `python` | `pytest` | `make` | `shell` … */
-	kind: string,
-	command: string,
-	args: string[],
-	cwd: IpcPath | null,
-	env: { [key in string]: string },
-	/**  Detected configs are regenerated; user configs persist in `.openidea/run.toml`. */
-	detected: boolean,
-	/**  Test runner configs render results in the test tree. */
-	isTest: boolean,
-	/**  DAP adapter that can debug this config, if any. */
-	debugAdapter: string | null,
-	/**  "Allow multiple instances": Run on a running config starts another one instead of restarting it. */
-	allowParallel?: boolean,
-}) & (RunExtras_Serialize) | null, IdeError>(__TAURI_INVOKE("run_tomcat_build", { config })),
-	runApplicationBuild: (config: RunConfig_Deserialize, module: string) => typedError<RunConfig_Serialize, IdeError>(__TAURI_INVOKE("run_application_build", { config, module })),
-	runApplicationPublish: (config: RunConfig_Deserialize, classPaths: string[], mainClass: string) => typedError<null, IdeError>(__TAURI_INVOKE("run_application_publish", { config, classPaths, mainClass })),
-	runTomcatSync: (config: RunConfig_Deserialize, module: string, classPaths: string[], resourcesOnly: boolean) => typedError<boolean, IdeError>(__TAURI_INVOKE("run_tomcat_sync", { config, module, classPaths, resourcesOnly })),
-	runTomcatUpdate: (config: RunConfig_Deserialize, mode: string) => typedError<null, IdeError>(__TAURI_INVOKE("run_tomcat_update", { config, mode })),
-	/**
-	 *  Results from the JUnit XML reports (Surefire, Failsafe, Gradle) of the module at
-	 *  `module` (relative to the project root) written since `since_ms` (Unix epoch, ms).
-	 */
-	runTestReports: (module: string | null, sinceMs: number | null) => typedError<TestCaseReport[], IdeError>(__TAURI_INVOKE("run_test_reports", { module, sinceMs })),
-	/**  Maven and Gradle projects of the window's project, from the build files plus the last sync. */
-	buildModel: () => typedError<BuildModel, IdeError>(__TAURI_INVOKE("build_model")),
-	gradleLinkProjects: (paths: string[]) => typedError<BuildModel, IdeError>(__TAURI_INVOKE("gradle_link_projects", { paths })),
-	gradleUnlinkProjects: (paths: string[]) => typedError<BuildModel, IdeError>(__TAURI_INVOKE("gradle_unlink_projects", { paths })),
-	/**
-	 *  Runs Maven (`help:effective-pom dependency:tree`) or Gradle (`tasks --all`) in the
-	 *  background, reporting progress on `on_progress`; cancellable with `cancel_request(request)`.
-	 *  Returns the refreshed model; a failed build is reported in its `syncError`.
-	 */
-	buildSync: (tool: BuildTool, request: RequestId, offline: boolean, profiles: string[], buildDir: string | null, onProgress: Channel<SyncProgress>) => typedError<BuildModel, IdeError>(__TAURI_INVOKE("build_sync", { tool, request, offline, profiles, buildDir, onProgress })),
-	/**  The resolved dependency tree of a Gradle project for one configuration (Dependency Analyzer). */
-	gradleDependencies: (gradlePath: string, configuration: string, offline: boolean, request: RequestId, buildDir: string | null) => typedError<GradleDependency[], IdeError>(__TAURI_INVOKE("gradle_dependencies", { gradlePath, configuration, offline, request, buildDir })),
-	/**
-	 *  The `.toml` of a version catalog the build imports as `group:artifact:version`, once a
-	 *  build has downloaded it.
-	 */
-	gradlePublishedCatalog: (coordinates: string) => typedError<string | null, IdeError>(__TAURI_INVOKE("gradle_published_catalog", { coordinates })),
-	/**  Where the direct dependency `dependency` of the Maven module `pom` is declared. */
-	mavenDependencyDeclaration: (pom: string, dependency: ArtifactKey) => typedError<Location, IdeError>(__TAURI_INVOKE("maven_dependency_declaration", { pom, dependency })),
-	/**
-	 *  Adds an `<exclusion>` of `exclusion` to the declaration of the direct dependency
-	 *  `dependency` of the Maven module `pom`, through the open document when there is one
-	 *  (saved). Returns the declaration; nothing changes when it already excludes it.
-	 */
-	mavenExcludeDependency: (pom: string, dependency: ArtifactKey, exclusion: ArtifactKey) => typedError<Location, IdeError>(__TAURI_INVOKE("maven_exclude_dependency", { pom, dependency, exclusion })),
-	/**
-	 *  Build › Build Project / Rebuild Project / Build Module (`file`: a file or folder of the
-	 *  module) / Build Artifacts, streaming the console and messages on `on_event`; cancellable
-	 *  with `cancel_request(request)`. Diagnostics of `clear` (the files of the previous build)
-	 *  are cleared first; the new messages are published as `build` diagnostics.
-	 */
 	buildRun: (kind: BuildKind, file: string | null, request: RequestId, clear: string[], onEvent: Channel<BuildEvent>) => typedError<BuildResult, IdeError>(__TAURI_INVOKE("build_run", { kind, file, request, clear, onEvent })),
-	/**
-	 *  Cancellable with `cancel_request(request)`.
-	 *  Builds the workspace (when `build`), then resolves the runtime (or test)
-	 *  classpath and the JDK of the module at `module` (absolute, or relative to the project root).
-	 *  A module with Kotlin / Groovy / Scala sources is built by its build system, whose class directories come first.
-	 */
-	javaResolveLaunch: (module: string, test: boolean, build: boolean, request: RequestId) => typedError<JavaLaunchInfo, IdeError>(__TAURI_INVOKE("java_resolve_launch", { module, test, build, request })),
-	/**  Port of java-debug's DAP server inside the jdtls serving `module` (started on demand). */
-	javaDebugServer: (module: string) => typedError<number, IdeError>(__TAURI_INVOKE("java_debug_server", { module })),
-	/**  Incremental build of the jdtls workspace serving `module` (e.g. before HotSwap). */
-	javaBuildWorkspace: (module: string) => typedError<JavaBuildStatus, IdeError>(__TAURI_INVOKE("java_build_workspace", { module })),
 	/**  Starts a session owned by this window: its events (and those of child sessions) go here only. */
 	debugStart: (config: LaunchConfig) => typedError<DebugSessionId, IdeError>(__TAURI_INVOKE("debug_start", { config })),
 	debugSetBreakpoints: (path: string, breakpoints: Breakpoint[]) => typedError<BreakpointState[], IdeError>(__TAURI_INVOKE("debug_set_breakpoints", { path, breakpoints })),
@@ -794,19 +700,6 @@ export const commands = {
 	toolsInstall: (name: string, request: RequestId, onEvent: Channel<InstallEvent>) => typedError<ToolInfo, IdeError>(__TAURI_INVOKE("tools_install", { name, request, onEvent })),
 	/**  Removes a tool the IDE installed. */
 	toolsUninstall: (name: string) => typedError<ToolInfo, IdeError>(__TAURI_INVOKE("tools_uninstall", { name })),
-	/**  JDK distributions Download JDK offers. */
-	jdkDownloadVendors: () => __TAURI_INVOKE<JdkVendor[]>("jdk_download_vendors"),
-	/**  Java versions `vendor` publishes; cancellable with `cancel_request(request)`. */
-	jdkDownloadReleases: (vendor: string, request: RequestId) => typedError<JdkReleases, IdeError>(__TAURI_INVOKE("jdk_download_releases", { vendor, request })),
-	/**  Where Download JDK puts JDKs unless told otherwise. */
-	jdkDownloadLocation: () => typedError<IpcPath, IdeError>(__TAURI_INVOKE("jdk_download_location")),
-	/**
-	 *  Downloads the latest `vendor` JDK of Java `version` into `location` (default:
-	 *  [`jdk_download_location`]), streaming progress through `on_event`; cancellable
-	 *  with `cancel_request(request)`. The JDK is then detected like an installed one,
-	 *  and language servers waiting for a JDK (jdtls) start on it.
-	 */
-	jdkDownload: (vendor: string, version: number, location: string | null, request: RequestId, onEvent: Channel<InstallEvent>) => typedError<Sdk, IdeError>(__TAURI_INVOKE("jdk_download", { vendor, version, location, request, onEvent })),
 	/**  Installed interpreters / toolchains of `kind`; project-local ones first. */
 	sdkDetect: (kind: SdkKind) => typedError<Sdk[], IdeError>(__TAURI_INVOKE("sdk_detect", { kind })),
 	/**  The interpreter the project uses: the configured one, else its virtualenv. */
@@ -964,13 +857,6 @@ export const commands = {
 	debugDataBreakpointInfo: (session: DebugSessionId, container: number, name: string, frameId: number | null) => typedError<DataBreakpointInfo, IdeError>(__TAURI_INVOKE("debug_data_breakpoint_info", { session, container, name, frameId })),
 	/**  Attach to Process: the user's processes a debugger can attach to. */
 	debugAttachableProcesses: () => typedError<AttachableProcess[], IdeError>(__TAURI_INVOKE("debug_attachable_processes")),
-	/**
-	 *  Remote JVM Debug in listen mode: waits (cancellable through `request`) for the remote
-	 *  JVM to connect to `host:port`; returns the loopback port java-debug attaches to.
-	 */
-	debugListenForJvm: (request: RequestId, host: string, port: number) => typedError<number, IdeError>(__TAURI_INVOKE("debug_listen_for_jvm", { request, host, port })),
-	/**  HotSwap (Reload Changed Classes) in a java-debug session. */
-	debugRedefineClasses: (session: DebugSessionId) => typedError<HotSwapResult, IdeError>(__TAURI_INVOKE("debug_redefine_classes", { session })),
 	/**
 	 *  How to run `config` with coverage: the command to launch and where its report will be,
 	 *  or which tool is missing.
@@ -1673,19 +1559,6 @@ export type AgentUsage = {
 	cost?: AgentCost | null,
 };
 
-/**  One entry of `adb devices -l`. */
-export type AndroidDevice = {
-	/**  `adb -s` value: a USB serial number, `emulator-5554`, or `host:port`. */
-	serial: string,
-	/**  `device` (usable), `offline`, `unauthorized` or `no permissions`. */
-	state: string,
-	model: string | null,
-	product: string | null,
-	/**  The device's own name from the build (`ro.product.device`). */
-	device: string | null,
-	transportId: string | null,
-};
-
 export type AppInfo = {
 	version: string,
 	platform: string,
@@ -1780,12 +1653,6 @@ export type ApplyOutcome = {
 	conflicts: string[],
 };
 
-/**  `groupId:artifactId` of a dependency. */
-export type ArtifactKey = {
-	groupId: string,
-	artifactId: string,
-};
-
 /**  What an askpass prompt asks for. */
 export type AskpassKind = 
 /**  Password or passphrase: hidden input. */
@@ -1795,7 +1662,7 @@ export type AskpassKind =
 /**  Yes / no (an unknown host key); answered with `yes` or `no`. */
 "confirm";
 
-export type AttachKind = "java" | "node" | "python" | "go" | "native";
+export type AttachKind = "node" | "python" | "go" | "native";
 
 export type AttachableProcess = {
 	pid: number,
@@ -1805,7 +1672,7 @@ export type AttachableProcess = {
 	kind: AttachKind,
 	/**  Debug adapter that attaches to it. */
 	adapter: string,
-	/**  Debug port the process listens on (JDWP, `--inspect`, `debugpy --listen`). */
+	/**  Debug port the process listens on (`--inspect`, `debugpy --listen`). */
 	host: string | null,
 	port: number | null,
 };
@@ -1959,12 +1826,6 @@ export type BuildMessage = {
 	code: string | null,
 };
 
-/**  The build systems of a project; `None` when the project does not use one. */
-export type BuildModel = {
-	maven: MavenModel | null,
-	gradle?: GradleModel[],
-};
-
 export type BuildResult = {
 	system: BuildSystem,
 	title: string,
@@ -1975,9 +1836,7 @@ export type BuildResult = {
 	messages: BuildMessage[],
 };
 
-export type BuildSystem = "maven" | "gradle" | "cargo" | "go" | "typescript" | "cmake";
-
-export type BuildTool = "maven" | "gradle";
+export type BuildSystem = "cargo" | "go" | "typescript" | "cmake";
 
 /**  A slice of a file: `data` is base64; `total` is the file size. */
 export type ByteRange = {
@@ -2123,7 +1982,7 @@ export type CheckoutOutcome = { kind: "done" } |
 { kind: "conflicts"; files: string[] };
 
 export type ClassifiedReference = {
-	/**  Optional for older Java extensions; missing means unclassified. */
+	/**  Missing metadata means the reference is unclassified. */
 	access?: ReferenceAccess | null,
 	location: Location,
 	kind: ReferenceKind,
@@ -2563,7 +2422,7 @@ export type CustomKeymap = {
 
 /**
  *  A field watchpoint (DAP data breakpoint) on a `dataId` from [`DebugManager::data_breakpoint_info`]
- *  (java-debug ids, `Class#field`, stay valid across sessions).
+ *  Adapter-specific identifiers may stay valid across sessions.
  */
 export type DataBreakpoint = {
 	dataId: string,
@@ -2892,8 +2751,6 @@ export type DebugCapabilities = {
 	conditionalBreakpoints: boolean,
 	hitConditionalBreakpoints: boolean,
 	logPoints: boolean,
-	/**  HotSwap ("Reload Changed Classes"): java-debug's `redefineClasses` request. */
-	hotCodeReplace: boolean,
 };
 
 /**  A completion the adapter offers for an expression (DAP `completions`). */
@@ -2917,12 +2774,7 @@ export type DebugEvent =
  *  The program runs in a terminal the IDE gave it (`runInTerminal`): what is typed for it
  *  in the debug console reaches its input.
  */
-{ kind: "programInput" } | { kind: "breakpointsChanged"; path: IpcPath } | { kind: "terminated" } | { kind: "exited"; code: number } | 
-/**
- *  java-debug's `hotcodereplace` event: `change_type` is `BUILD_COMPLETE` (classes
- *  changed and can be reloaded), `STARTING`, `END`, `WARNING` or `ERROR`.
- */
-{ kind: "hotCodeReplace"; changeType: string; message: string };
+{ kind: "programInput" } | { kind: "breakpointsChanged"; path: IpcPath } | { kind: "terminated" } | { kind: "exited"; code: number };
 
 /**  A debug adapter session. */
 export type DebugSessionId = number;
@@ -3856,7 +3708,7 @@ export type FsConnection = { kind: "sftp"; ssh: string } | { kind: "local" };
 
 /**
  *  A method breakpoint (DAP function breakpoint). `name` uses the adapter's syntax:
- *  `pkg.Class#method` for java-debug, `pkg.Func` / `pkg.(*T).Method` for Delve, a plain
+ *  `pkg.Func` / `pkg.(*T).Method` for Delve, a plain
  *  function name for debugpy and LLDB.
  */
 export type FunctionBreakpoint = {
@@ -4023,63 +3875,7 @@ export type GoSettings = {
 
 export type GotoKind = "definition" | "declaration" | "typeDefinition" | "implementation";
 
-/**  One line of the report: an occurrence of a dependency where it is requested. */
-export type GradleDependency = {
-	/**  `group`, empty for a project dependency. */
-	group: string,
-	/**  Artifact name, or the project path (`:core`) of a project dependency. */
-	name: string,
-	/**  The version asked for here; `None` when a platform or constraint supplies it. */
-	requested: string | null,
-	/**  The version Gradle selected (`-> 1.2`), when it differs from the request. */
-	selected: string | null,
-	/**  A project of the build (`project :core`, or a module substituted by one). */
-	project: boolean,
-	/**  `(*)`: listed with its dependencies earlier in the tree. */
-	repeated: boolean,
-	/**  `(c)`: a dependency constraint rather than a dependency. */
-	constraint: boolean,
-	/**  `(n)` / `FAILED`: not resolved. */
-	unresolved: boolean,
-	children: GradleDependency[],
-};
-
 export type GradleDistribution = "wrapper" | "local";
-
-export type GradleModel = {
-	/**  Project-relative directory of the build (where `settings.gradle` is); `""` = project root. */
-	dir: string,
-	/**  The root project first, then subprojects in `include` order. */
-	projects: GradleProject[],
-	javaVersion: number | null,
-	/**  `gradlew` of the build (absolute), else `gradle`. */
-	command: string,
-	/**  Environment for runs (`JAVA_HOME`); filled in by the shell. */
-	env: { [key in string]: string },
-	/**  When the task list was last read from Gradle (Unix ms); `None` = static defaults. */
-	syncedAt: number | null,
-	stale: boolean,
-	syncError: string | null,
-};
-
-export type GradleProject = {
-	/**
-	 *  Gradle path: `:` for the root project, `:app`, `:libs:core`; for a project of a
-	 *  nested build its identity path (`:lib:core`), which addresses its tasks from the root.
-	 */
-	path: string,
-	name: string,
-	/**  Project-relative directory. */
-	dir: string,
-	/**  Project-relative build script, if any. */
-	buildFile: string | null,
-	tasks: GradleTask[],
-	/**
-	 *  Identity path of the nested build holding the project (`:lib` for `includeBuild`,
-	 *  `:buildSrc`); null for the opened build.
-	 */
-	build?: string | null,
-};
 
 /**  IDEA's "Build and run using" for Gradle builds; IDEA defaults to Gradle. */
 export type GradleRunUsing = 
@@ -4088,7 +3884,7 @@ export type GradleRunUsing =
 /**  The Java language server's classpath, launched by OpenIDEA. */
 "ide";
 
-/**  Build Tools › Gradle. */
+/**  Legacy Gradle settings retained for round-trip compatibility only. */
 export type GradleSettings = {
 	/**  Linked build directories; absent preserves automatic discovery, empty unlinks all builds. */
 	linkedProjects?: string[] | null,
@@ -4101,32 +3897,12 @@ export type GradleSettings = {
 	userHome?: string,
 	/**  IDEA's "Build and run using": who builds and launches an Application main. */
 	runUsing?: GradleRunUsing,
-};
-
-export type GradleTask = {
-	name: string,
-	/**  Lower-case group (`build`, `build setup`, `other`). */
-	group: string,
-	description: string | null,
-};
+} & { [key in string]: unknown };
 
 /**  HEAD before and after a history rewrite, for its Undo. */
 export type HeadChange = {
 	before: string,
 	after: string,
-};
-
-export type HierarchyChoice = {
-	id: string,
-	makeAbstract: boolean,
-};
-
-export type HierarchyClass = {
-	/**  Server-owned identity, passed back as the pull-up destination. */
-	id: string,
-	name: string,
-	qualifiedName: string,
-	interface: boolean,
 };
 
 export type HierarchyDirection = 
@@ -4148,38 +3924,6 @@ export type HierarchyItem = {
 	/**  Call sites, for call hierarchy. */
 	fromRanges: Range[],
 };
-
-export type HierarchyMember = {
-	id: string,
-	/**  `name(Params) : Type`, as the server renders it. */
-	label: string,
-	kind: HierarchyMemberKind,
-	/**  The member at the caret. */
-	selected: boolean,
-	/**  Can be declared abstract in the destination (pull up) or kept abstract (push down). */
-	abstractable: boolean,
-};
-
-export type HierarchyMemberKind = "field" | "method" | "type";
-
-/**
- *  The class at a position and what can move: pull-up destinations, or the subclasses
- *  members are pushed into.
- */
-export type HierarchyMembers = {
-	className: string,
-	targets: HierarchyClass[],
-	members: HierarchyMember[],
-};
-
-/**  A checked refactoring: what the server found, and the edit unless a problem is fatal. */
-export type HierarchyRefactored = {
-	problems: RefactoringProblem[],
-	edit: WorkspaceEdit | null,
-};
-
-/**  IDEA's class-hierarchy refactorings. */
-export type HierarchyRefactoring = "pullUp" | "pushDown";
 
 export type Highlight = {
 	range: Range,
@@ -4207,13 +3951,6 @@ export type HistoryKind =
  *  for everything under `path` (the project root); has no content.
  */
 "label";
-
-/**  Result of [`DebugManager::redefine_classes`]. */
-export type HotSwapResult = {
-	/**  Fully qualified names of the classes reloaded (empty: nothing had changed). */
-	changedClasses: string[],
-	errorMessage: string | null,
-};
 
 export type Hover = {
 	contents: Markup,
@@ -4662,45 +4399,7 @@ export type IssueLink = {
 	link?: string,
 };
 
-/**  Result of `java/buildWorkspace` (jdtls `BuildWorkspaceStatus`). */
-export type JavaBuildStatus = "failed" | "succeeded" | 
-/**  Compiled, but some project has compile errors. */
-"withErrors" | "cancelled";
-
-/**  One error diagnostic; `line` / `column` are 1-based for display. */
-export type JavaCompileError = {
-	path: IpcPath,
-	line: number,
-	column: number,
-	message: string,
-};
-
-/**  Everything needed to launch a class of a module: build outcome, classpath and JDK. */
-export type JavaLaunchInfo = {
-	/**  `None` when no build was requested. */
-	build: JavaBuildStatus | null,
-	projectRoot: IpcPath | null,
-	classPaths: string[],
-	modulePaths: string[],
-	/**  Path list separator of the host that runs the JVM. */
-	pathListSeparator: string,
-	/**  JDK home jdtls compiles the project against. */
-	javaHome: IpcPath | null,
-	/**  The `java` launcher to use (filled in by the caller from the installed JDKs). */
-	javaExec: string | null,
-	/**
-	 *  How a launcher that builds the command line itself must shorten it (java-debug's
-	 *  `shortenCommandLine`: `none` | `jarmanifest` | `argfile`; filled in by the caller).
-	 */
-	shortenCommandLine: string | null,
-	/**  First compile errors of the workspace when the build had errors. */
-	errors: JavaCompileError[],
-	/**  All compile errors (`errors` is capped). */
-	errorCount: number,
-	/**  Likely causes of the errors worth telling the user (e.g. a missing Lombok agent). */
-	hints: string[],
-};
-
+/**  Legacy data-only schema. It does not enable JVM tooling. */
 export type JavaSettings = {
 	/**
 	 *  Project JDK home; empty = per module, the installed JDK matching the
@@ -4718,49 +4417,20 @@ export type JavaSettings = {
 	 *  (VS Code's `java.jdt.ls.vmargs`).
 	 */
 	jdtlsVmArgs?: string,
-	/**  Build Tools › Maven. */
+	/**  Legacy Maven settings retained for round-trip compatibility only. */
 	maven?: MavenSettings,
-	/**  Build Tools › Gradle. */
+	/**  Legacy Gradle settings retained for round-trip compatibility only. */
 	gradle?: GradleSettings,
-};
-
-/**  Java versions a vendor publishes. */
-export type JdkReleases = {
-	/**  Feature versions, newest first. */
-	versions: number[],
-	/**  The long-term-support ones among them. */
-	lts: number[],
-	/**  The version offered first (the newest LTS). */
-	recommended: number,
-};
-
-/**  A JDK distribution the IDE can download. */
-export type JdkVendor = {
-	id: string,
-	name: string,
-};
-
-export type JvmFilePresentation = {
-	path: string,
-	presentation: JvmPresentation,
-};
-
-export type JvmPresentation = {
-	kind: JvmTypeKind | null,
-	springBoot: boolean,
-	runnable: boolean,
-};
-
-export type JvmTypeKind = "class" | "abstractClass" | "interface" | "enum" | "record" | "annotation" | "exception" | "object";
+} & { [key in string]: unknown };
 
 /**  Editor › Code Style › <Language> › Tabs and Indents (unset fields inherit). */
 export type LanguageCodeStyle = LanguageCodeStyle_Serialize | LanguageCodeStyle_Deserialize;
 
 /**  Editor › Code Style › <Language> › Tabs and Indents (unset fields inherit). */
 export type LanguageCodeStyle_Deserialize = {
-	/**  Java formatter: `default` | `intellij` | `custom` (other languages ignore it). */
+	/**  Legacy formatter preference retained for settings compatibility; not executed. */
 	formatter?: string | null,
-	/**  Eclipse formatter XML; relative paths start at the project root. */
+	/**  Legacy formatter profile path retained on save; not loaded or executed. */
 	formatterPath?: string | null,
 	useTab?: boolean | null,
 	tabSize?: number | null,
@@ -4774,9 +4444,9 @@ export type LanguageCodeStyle_Deserialize = {
 
 /**  Editor › Code Style › <Language> › Tabs and Indents (unset fields inherit). */
 export type LanguageCodeStyle_Serialize = {
-	/**  Java formatter: `default` | `intellij` | `custom` (other languages ignore it). */
+	/**  Legacy formatter preference retained for settings compatibility; not executed. */
 	formatter?: string | null,
-	/**  Eclipse formatter XML; relative paths start at the project root. */
+	/**  Legacy formatter profile path retained on save; not loaded or executed. */
 	formatterPath?: string | null,
 	useTab?: boolean | null,
 	tabSize?: number | null,
@@ -4788,7 +4458,7 @@ export type LanguageCodeStyle_Serialize = {
 	lineCommentAddSpace?: boolean | null,
 };
 
-/**  Language identifier, e.g. `rust`, `typescript`, `kotlin`. Matches LSP `languageId`. */
+/**  Language identifier, e.g. `rust`, `typescript`, `python`. Matches LSP `languageId`. */
 export type LanguageId = string;
 
 /**  The UI-facing view of a language. */
@@ -4924,6 +4594,10 @@ export type LanguagesSettings = {
 	prettier?: ExternalFormatterSettings,
 	oxfmt?: ExternalFormatterSettings,
 	ruff?: ExternalFormatterSettings,
+	/**
+	 *  Inert compatibility data from earlier JVM-enabled releases. Retained on save;
+	 *  never consumed by SDK discovery, execution, debugging or language services.
+	 */
 	java?: JavaSettings,
 	ruby?: RubySettings,
 	markdown?: MarkdownSettings,
@@ -4966,7 +4640,7 @@ export type LaunchConfig = {
 	 *  Adapter specific extra arguments as JSON text, merged into the launch request.
 	 *  A `"cargo": {"args": [...], "filter": {"name", "kind"}}` entry builds with cargo
 	 *  and launches the produced executable; `"debugServer": <port>` connects to an
-	 *  adapter already listening on that local port (e.g. java-debug inside jdtls)
+	 *  adapter already listening on that local port
 	 *  instead of starting one, `"debugServer": "host:port"` to one on another machine
 	 *  (`dlv --headless`, `debugpy --listen`).
 	 */
@@ -4977,7 +4651,7 @@ export type LaunchConfig = {
 export type LibraryGroup = {
 	/**  Display name, e.g. `Python 3.12 (.venv)`. */
 	name: string,
-	/**  `python` | `jdk` | `nodeModules` | `nodeCore` | `rust` | `cargo` | `go` | `goModules` | `maven` | `gradle`. */
+	/**  `python` | `nodeModules` | `nodeCore` | `rust` | `cargo` | `go` | `goModules`. */
 	kind: string,
 	roots: LibraryRoot[],
 };
@@ -4985,7 +4659,7 @@ export type LibraryGroup = {
 export type LibraryRoot = {
 	/**
 	 *  Folder name, e.g. `python3.12` or `site-packages`, the package (`serde 1.0.200`)
-	 *  or the archive (`src.zip`, `guava-33.0.0-jre-sources.jar`).
+	 *  or a browsable archive.
 	 */
 	name: string,
 	/**  A folder, or an archive's root (`<archive>!`). */
@@ -5061,7 +4735,7 @@ export type LocalSymbol = {
 	/**
 	 *  The resolution is unambiguous. `false` when the scope declares the name
 	 *  more than once in a language where that is not plain shadowing (JS `var`
-	 *  re-declaration, broken Java…): references were split by position and
+	 *  re-declaration, broken syntax…): references were split by position and
 	 *  callers should confirm before renaming.
 	 */
 	certain: boolean,
@@ -5178,22 +4852,6 @@ export type LogQuery = {
 	stopAt?: string | null,
 };
 
-/**  The single-letter logcat priority, in increasing severity. */
-export type LogcatLevel = "verbose" | "debug" | "info" | "warn" | "error" | "fatal" | 
-/**  A line logcat prints outside the message format (`--------- beginning of main`). */
-"unknown";
-
-/**  One [`LogcatLevel`]-tagged line of `adb logcat -v threadtime`. */
-export type LogcatLine = {
-	/**  `MM-DD HH:MM:SS.mmm`, as logcat prints it (no year, device time zone). */
-	time: string,
-	pid: number,
-	tid: number,
-	level: LogcatLevel,
-	tag: string,
-	message: string,
-};
-
 export type LspRefreshKind = "inlayHints" | "semanticTokens" | "codeLens";
 
 export type MainToolbarSettings = {
@@ -5231,84 +4889,7 @@ export type Markup = {
 	value: string,
 };
 
-export type MavenDependency = {
-	groupId: string,
-	artifactId: string,
-	version: string | null,
-	/**  `jar`, `pom`, `test-jar`… */
-	type: string,
-	classifier: string | null,
-	scope: string,
-	optional: boolean,
-	/**  Transitive dependencies (only after a sync). */
-	children: MavenDependency[],
-	/**  Why Maven left this occurrence out of the resolved graph (`dependency:tree -Dverbose`). */
-	omitted?: Omission | null,
-	/**  The version that won when `omitted` is `Conflict`. */
-	conflictWith?: string | null,
-	/**  The version requested before `<dependencyManagement>` replaced it. */
-	managedFrom?: string | null,
-};
-
-export type MavenModel = {
-	/**  Pre-order: every aggregator comes before its modules. */
-	projects: MavenProject[],
-	/**  Profiles declared by any project, first declaration wins. */
-	profiles: MavenProfile[],
-	/**  When the effective build was last read (Unix ms); `None` = only the static POM parse. */
-	syncedAt: number | null,
-	/**  Build files changed since that sync. */
-	stale: boolean,
-	syncError: string | null,
-};
-
-export type MavenPlugin = {
-	groupId: string,
-	artifactId: string,
-	version: string | null,
-	/**  Goal prefix (`clean`, `spring-boot`): goals run as `<prefix>:<goal>`. */
-	prefix: string,
-	/**  Sorted goal names. */
-	goals: string[],
-};
-
-export type MavenProfile = {
-	id: string,
-	activeByDefault: boolean,
-};
-
-export type MavenProject = {
-	/**  Project-relative, `/`-separated (`pom.xml`, `core/pom.xml`). */
-	pom: string,
-	/**  Project-relative directory; `""` = the project root. */
-	dir: string,
-	groupId: string,
-	artifactId: string,
-	version: string,
-	packaging: string,
-	/**  `<name>` (resolved), else the artifactId. */
-	displayName: string,
-	/**  `groupId:artifactId:version` of the parent POM. */
-	parent: string | null,
-	/**  `pom` paths of this aggregator's modules. */
-	modules: string[],
-	/**  Listed as a module of another project here. */
-	aggregated: boolean,
-	plugins: MavenPlugin[],
-	dependencies: MavenDependency[],
-	/**  Profile ids declared in this POM. */
-	profiles: string[],
-	/**  Java feature version the project compiles for (`maven.compiler.release`, `java.version`…). */
-	javaVersion: number | null,
-	/**  Maven launcher: the nearest `mvnw` up to the project root (absolute), else `mvn`. */
-	command: string,
-	/**  Options before the goals (`-s`, `-Dmaven.repo.local=`); filled in by the shell from settings. */
-	options: string[],
-	/**  Environment for runs (`JAVA_HOME` of the matching JDK); filled in by the shell. */
-	env: { [key in string]: string },
-};
-
-/**  Build Tools › Maven. */
+/**  Legacy Maven settings retained for round-trip compatibility only. */
 export type MavenSettings = {
 	/**  Project-relative root POMs removed from the Maven project model. */
 	unlinkedProjects?: string[],
@@ -5330,7 +4911,7 @@ export type MavenSettings = {
 	 *  `mvnd` on `PATH` / common install dirs. Only used when `daemon` is on.
 	 */
 	mvndHome?: string,
-};
+} & { [key in string]: unknown };
 
 export type MemoryCategory = 
 /**  The backend and its WebView processes. */
@@ -5454,7 +5035,7 @@ export type NodeSettings = {
 
 /**  Why an identifier is not treated as a local. */
 export type NotLocalReason = 
-/**  Member position (`obj.name`, `name:` labels, `foo()` method names in Java…). */
+/**  Member position (`obj.name`, `name:` labels, method names in calls…). */
 "member" | 
 /**
  *  Declared at file / class / module level (fields, methods, top-level
@@ -5555,15 +5136,6 @@ export type NotificationSettings = {
 };
 
 export type NotifyLevel = "info" | "warning" | "error";
-
-/**  Why a dependency occurrence is not part of the resolved graph. */
-export type Omission = 
-/**  Another occurrence of the same version is nearer the root. */
-"duplicate" | 
-/**  Another version is nearer the root (or declared first) and wins. */
-"conflict" | 
-/**  The artifact depends on itself through this path. */
-"cycle";
 
 /**  How `open_project_window` satisfied the request. */
 export type OpenOutcome = 
@@ -5941,10 +5513,6 @@ export type PreparedRequest = {
 	body: string | null,
 };
 
-export type ProblemSeverity = "info" | "warning" | "error" | 
-/**  The refactoring can't run at all; there is no edit. */
-"fatal";
-
 /**  Memory of one row of the breakdown. */
 export type ProcessMemory = {
 	category: MemoryCategory,
@@ -5957,7 +5525,7 @@ export type ProcessMemory = {
 };
 
 export type Profile = {
-	/**  `node --cpu-prof`, `py-spy`, `async-profiler`, `perf`. */
+	/**  `node --cpu-prof`, `py-spy`, `perf`. */
 	profiler: string,
 	/**  `ms` (time-weighted) or `samples`. */
 	unit: string,
@@ -6004,9 +5572,9 @@ export type ProfileSpec =
 { kind: "cpuProfiles"; dir: IpcPath; root: IpcPath } | 
 /**
  *  Collapsed-stack files with extension `ext` in `dir`; relative frame files resolve
- *  against `base`. `jvm_root`: map JVM class frames to sources below it.
+ *  against `base`.
  */
-{ kind: "folded"; profiler: string; dir: IpcPath; ext: string; base: IpcPath; jvmRoot: IpcPath | null } | 
+{ kind: "folded"; profiler: string; dir: IpcPath; ext: string; base: IpcPath } | 
 /**  `perf script -i <data>` output. */
 { kind: "perf"; perf: string; data: IpcPath; cwd: IpcPath; env: { [key in string]: string } };
 
@@ -6209,11 +5777,6 @@ export type RecentProjectGroup = {
 	/**  Its projects, in the order they were added. */
 	paths: IpcPath[],
 	expanded?: boolean,
-};
-
-export type RefactoringProblem = {
-	severity: ProblemSeverity,
-	message: string,
 };
 
 export type ReferenceAccess = "read" | "write" | "readWrite" | "unknown";
@@ -6466,11 +6029,6 @@ export type Risk =
 
 export type RootKind = "source" | "test" | "resources" | "testResources" | "excluded";
 
-export type RouteSource = {
-	path: IpcPath,
-	text: string,
-};
-
 export type RubySettings = {
 	/**  Project interpreter executable; empty = auto-detect (`.ruby-version`, mise / asdf, else `ruby` on PATH). */
 	interpreter?: string,
@@ -6482,7 +6040,7 @@ export type RunConfig_Deserialize = {
 	/**  Stable id, e.g. `npm:dev`, `cargo:run:app`, or a uuid for user-defined. */
 	id: string,
 	name: string,
-	/**  `npm` | `cargo` | `gradle` | `maven` | `go` | `python` | `pytest` | `make` | `shell` … */
+	/**  `npm` | `cargo` | `go` | `python` | `pytest` | `make` | `shell` … */
 	kind: string,
 	command: string,
 	args: string[],
@@ -6502,7 +6060,7 @@ export type RunConfig_Serialize = {
 	/**  Stable id, e.g. `npm:dev`, `cargo:run:app`, or a uuid for user-defined. */
 	id: string,
 	name: string,
-	/**  `npm` | `cargo` | `gradle` | `maven` | `go` | `python` | `pytest` | `make` | `shell` … */
+	/**  `npm` | `cargo` | `go` | `python` | `pytest` | `make` | `shell` … */
 	kind: string,
 	command: string,
 	args: string[],
@@ -6522,7 +6080,7 @@ export type RunExtras = RunExtras_Serialize | RunExtras_Deserialize;
 
 export type RunExtras_Deserialize = {
 	/**
-	 *  Owning module, independent of the working directory; also supplies a JVM application's classpath.
+	 *  Owning module, independent of the working directory.
 	 *  Empty means the project root.
 	 */
 	module?: string | null,
@@ -6564,7 +6122,7 @@ export type RunExtras_Deserialize = {
 
 export type RunExtras_Serialize = {
 	/**
-	 *  Owning module, independent of the working directory; also supplies a JVM application's classpath.
+	 *  Owning module, independent of the working directory.
 	 *  Empty means the project root.
 	 */
 	module?: string | null,
@@ -6672,6 +6230,7 @@ export type RunTarget = {
 	/**  Interpreters on the target; empty = the one on the remote `PATH`. */
 	python?: string,
 	node?: string,
+	/**  Legacy target value preserved on save; no JVM launcher consumes it. */
 	java?: string,
 	/**
 	 *  Id of a Docker connection of the Services tool window (Docker, Compose);
@@ -6751,11 +6310,7 @@ export type SdkKind = "python" | "node" |
 /**  `php` CLI executables. */
 "php" | 
 /**  npm / pnpm / yarn executables. */
-"packageManager" | "rust" | "go" | "typeScript" | 
-/**  JDK homes. */
-"jdk" | 
-/**  Maven homes. */
-"maven" | "ruby";
+"packageManager" | "rust" | "go" | "typeScript" | "ruby";
 
 /**
  *  IDEA's search context: matches anywhere, only in, or outside comments and
@@ -6826,7 +6381,7 @@ export type ServerInfo = {
 
 export type ServerStatus = "starting" | "ready" | "busy" | "crashed" | "stopped" | "missing" | 
 /**
- *  Not started: its configuration can't launch it (e.g. no JDK new enough);
+ *  Not started: its configuration can't launch it (e.g. a configured executable is missing);
  *  the message says what to change, and a settings change retries.
  */
 "misconfigured";
@@ -7345,12 +6900,6 @@ export type SyncEntry = {
 	status: SyncStatus,
 };
 
-export type SyncProgress = {
-	message: string,
-	/**  0..1, or `None` when indeterminate. */
-	fraction: number | null,
-};
-
 export type SyncStatus = "localOnly" | "remoteOnly" | "localNewer" | "remoteNewer" | 
 /**  Same time, different size. */
 "different" | "same";
@@ -7484,21 +7033,6 @@ export type TerminalSettings = {
 	columnWidth?: number | null,
 };
 
-export type TestCaseReport = {
-	/**  Fully qualified class (`com.acme.OrderTest`, nested: `com.acme.OrderTest$Nested`). */
-	className: string,
-	/**  Method name without `()`. */
-	name: string,
-	status: TestCaseStatus,
-	durationMs: number | null,
-	/**  Failure / error / skip message. */
-	message: string | null,
-	/**  Failure stack trace and captured output. */
-	output: string | null,
-};
-
-export type TestCaseStatus = "passed" | "failed" | "skipped";
-
 /**  Editor › Color Scheme override of one text attribute. */
 export type TextAttributesOverride = TextAttributesOverride_Serialize | TextAttributesOverride_Deserialize;
 
@@ -7555,10 +7089,6 @@ export type ThreadInfo = {
 	name: string,
 };
 
-export type TomcatHome = {
-	version: string,
-};
-
 /**  UI-facing state of one tool. */
 export type ToolInfo = {
 	/**  Server / adapter name from `languages/*.toml`. */
@@ -7595,7 +7125,7 @@ export type ToolInfo = {
 };
 
 export type ToolKind = "languageServer" | "debugger" | 
-/**  Loaded into another tool's process, e.g. a jdtls agent. */
+/**  Loaded into another tool's process, e.g. a language-server extension. */
 "plugin" | "formatter";
 
 export type ToolSettings = {
@@ -7816,31 +7346,24 @@ export type Viewport = {
 
 /**
  *  Read-only contents a language server provides for a non-`file:` URI
- *  (library class source or decompiled code from `jdt://`, …).
+ *  (for example, generated sources served by a language server).
  */
 export type VirtualDocument = {
 	uri: string,
 	text: string,
 	languageId: LanguageId,
-	/**  Tab title, e.g. `SpringApplication.class` (decompiled) or `SpringApplication.java`. */
+	/**  Tab title supplied by the language server or derived from its URI. */
 	title: string,
 	/**  Origin shown in the tooltip / banner, e.g. the jar path. */
 	description: string | null,
-	/**  Generated Java from a decompiler, rather than real source or a disassembler stub. */
+	/**  Whether the content was generated by a decompiler. */
 	decompiled: boolean,
 };
 
 /**  Declared (or conventional) visibility of an outline symbol. */
 export type Visibility = "public" | "protected" | 
-/**  Package / module / assembly scope (Java default, `internal`, `pub(crate)`, Go unexported). */
+/**  Package / module / assembly scope (`internal`, `pub(crate)`, Go unexported). */
 "package" | "private";
-
-export type WebArtifact = {
-	id: string,
-	name: string,
-	module: string,
-	tool: string,
-};
 
 /**
  *  A web reference no language server resolves and where it points: `class="card"` →

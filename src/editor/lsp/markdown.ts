@@ -194,7 +194,7 @@ function highlightBlocks(root: HTMLElement, fallback: string | null) {
   });
 }
 
-/** A documentation link to a source position (`file://…#L12,5`, `jdt://…#L42`); null for web links. */
+/** A documentation link to a source position (`file://…#L12,5`, `rust-analyzer://…#L42`); null for web links. */
 export function sourceLink(href: string): { path: string; line: number; col: number } | null {
   if (href.startsWith("file://")) {
     let url: URL;
@@ -211,7 +211,7 @@ export function sourceLink(href: string): { path: string; line: number; col: num
     };
   }
   if (isVirtualUri(href) && !/^https?:/i.test(href) && !/^mailto:/i.test(href)) {
-    // Library class links (jdtls hover: `jdt://contents/…#L42`).
+    // Language-server virtual source links.
     const hash = href.indexOf("#");
     const m = hash >= 0 ? /^L?(\d+)/.exec(href.slice(hash + 1)) : null;
     return { path: hash >= 0 ? href.slice(0, hash) : href, line: m ? Math.max(0, Number(m[1]) - 1) : 0, col: 0 };

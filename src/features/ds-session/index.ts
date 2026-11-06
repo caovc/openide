@@ -9,7 +9,7 @@ export function activate(): () => void {
     registerToolWindow({
       id: "ds-variables",
       title: "Variables",
-      icon: "toolwindow-debug",
+      icon: "toolwindow-ds-variables",
       anchor: "right",
       order: 8,
       component: VariablesPanel,
@@ -17,7 +17,7 @@ export function activate(): () => void {
     registerToolWindow({
       id: "ds-plots",
       title: "Plots",
-      icon: "db-chart",
+      icon: "toolwindow-ds-plots",
       anchor: "right",
       order: 9,
       component: PlotsPanel,

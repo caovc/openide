@@ -64,7 +64,6 @@ const caps = (p: Partial<DebugCapabilities> = {}): DebugCapabilities => ({
   stepInTargets: false,
   functionBreakpoints: false,
   dataBreakpoints: false,
-  hotCodeReplace: false,
   setValue: true,
   conditionalBreakpoints: true,
   hitConditionalBreakpoints: true,
@@ -145,7 +144,6 @@ describe("debugger actions (IDEA parity)", () => {
       "debug.jumpToSource": ["F4", "Meta+Down"],
       "debug.resetFrame": undefined,
       "debug.toggleMethodBreakpoint": undefined,
-      "debug.toggleFieldWatchpoint": undefined,
     };
     for (const [id, keys] of Object.entries(expected)) {
       expect(getAction(id), id).toBeTruthy();
@@ -278,14 +276,6 @@ describe("debugger actions (IDEA parity)", () => {
     expect(useSpecialBreakpoints.getState().methods).toMatchObject([{ name: "run", path: "/p/a.py", line: 1 }]);
     await executeAction("debug.toggleMethodBreakpoint");
     expect(useSpecialBreakpoints.getState().methods).toEqual([]);
-
-    const java = "package a;\nclass A {\n  private int count;\n}";
-    caret("/p/A.java", "java", java, 2);
-    await executeAction("debug.toggleFieldWatchpoint");
-    expect(useSpecialBreakpoints.getState().fields).toMatchObject([{ dataId: "a.A#count", accessType: "write" }]);
-    // ⌘F8 on a Java declaration toggles the watchpoint off again.
-    await executeAction("debug.toggleBreakpoint");
-    expect(useSpecialBreakpoints.getState().fields).toEqual([]);
   });
 
   it("Attach to Process opens the popup and loads the process list", async () => {
@@ -310,25 +300,5 @@ describe("debugger actions (IDEA parity)", () => {
     };
     await executeAction("debug.evaluate");
     expect(useOverlays.getState().evaluate?.expression).toBe("total = order.items\nfor i in x:");
-  });
-});
-
-describe("output class breakpoint restrictions", () => {
-  it.each([
-    "debug.toggleBreakpoint",
-    "debug.toggleTemporaryBreakpoint",
-    "debug.toggleMethodBreakpoint",
-    "debug.toggleFieldWatchpoint",
-    "debug.runToCursor",
-    "debug.forceRunToCursor",
-  ])("blocks %s for a source-less output class", async (id) => {
-    paused();
-    const path = "file:///p/target/classes/p/C.class";
-    caret(path, "java", "class C {\n int n;\n void run() {}\n}", 2);
-    await executeAction(id);
-    expect(breakpointsOf(path)).toHaveLength(0);
-    expect(useSpecialBreakpoints.getState().methods).toHaveLength(0);
-    expect(useSpecialBreakpoints.getState().fields).toHaveLength(0);
-    expect(ipc.debugRunTo).not.toHaveBeenCalled();
   });
 });

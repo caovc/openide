@@ -116,8 +116,6 @@ pub struct Server {
     /// Woken whenever a `$/progress` task ends or the server's loading state changes.
     phase_notify: Notify,
     transient: Mutex<HashMap<PathBuf, Transient>>,
-    pub java_build_lock: Arc<tokio::sync::Mutex<()>>,
-    pub java_autobuild_suspended: std::sync::atomic::AtomicBool,
     pub external_project: tokio::sync::Mutex<crate::external_project::State>,
     pub external_diagnostics: std::sync::atomic::AtomicBool,
     pub external_refresh_queued: std::sync::atomic::AtomicBool,
@@ -152,8 +150,6 @@ impl Server {
             loading: Mutex::new(None),
             phase_notify: Notify::new(),
             transient: Mutex::new(HashMap::new()),
-            java_build_lock: Arc::new(tokio::sync::Mutex::new(())),
-            java_autobuild_suspended: std::sync::atomic::AtomicBool::new(false),
             external_project: tokio::sync::Mutex::new(Default::default()),
             external_diagnostics: std::sync::atomic::AtomicBool::new(false),
             external_refresh_queued: std::sync::atomic::AtomicBool::new(false),
@@ -162,13 +158,7 @@ impl Server {
 
     /// Configuration of the current (or last) instance; the base config before the first launch.
     pub fn effective_config(&self) -> LanguageServerConfig {
-        let mut config = self.effective.lock().clone().unwrap_or_else(|| self.config.clone());
-        if self.java_autobuild_suspended.load(std::sync::atomic::Ordering::SeqCst) {
-            let mut settings = crate::handler::all_settings(&config);
-            settings["java"]["autobuild"]["enabled"] = serde_json::json!(false);
-            config.settings = Some(settings);
-        }
-        config
+        self.effective.lock().clone().unwrap_or_else(|| self.config.clone())
     }
 
     pub fn set_effective_config(&self, config: LanguageServerConfig) {
@@ -612,12 +602,6 @@ impl Server {
         self.diagnostics.lock().get(path).cloned().unwrap_or_default()
     }
 
-    /// Every published diagnostic, by file.
-    pub fn diagnostics_snapshot(&self) -> Vec<(PathBuf, lsp::Diagnostic)> {
-        let d = self.diagnostics.lock();
-        d.iter().flat_map(|(p, items)| items.iter().map(move |i| (p.clone(), i.clone()))).collect()
-    }
-
     /// The current diagnostics of each file that has some.
     pub fn diagnostics_by_path(&self) -> Vec<(PathBuf, Vec<lsp::Diagnostic>)> {
         self.diagnostics.lock().iter().map(|(p, d)| (p.clone(), d.clone())).collect()
@@ -700,19 +684,6 @@ mod tests {
         }
         *s.started.lock() = Instant::now().checked_sub(STABLE_UPTIME);
         assert_eq!(s.record_crash(), Some(Duration::from_millis(500)));
-    }
-
-    #[test]
-    fn external_build_suspends_only_the_effective_autobuild_setting() {
-        let mut config: LanguageServerConfig = toml::from_str("name = \"jdtls\"\ncommand = \"jdtls\"").unwrap();
-        config.settings = Some(serde_json::json!({"java": {"autobuild": {"enabled": true}, "other": "kept"}}));
-        let server = Server::new(config.clone(), PathBuf::from("/p"), LanguageId::new("java"));
-        server.java_autobuild_suspended.store(true, std::sync::atomic::Ordering::SeqCst);
-        let settings = crate::handler::all_settings(&server.effective_config());
-        assert_eq!(settings["java"]["autobuild"]["enabled"], false);
-        assert_eq!(settings["java"]["other"], "kept");
-        server.java_autobuild_suspended.store(false, std::sync::atomic::Ordering::SeqCst);
-        assert_eq!(server.effective_config(), config);
     }
 
     #[tokio::test(flavor = "multi_thread")]

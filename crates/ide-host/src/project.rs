@@ -45,7 +45,6 @@ pub struct Project {
     /// Per-project cache directory (build tool sync results…).
     pub cache_dir: PathBuf,
     /// Superseded launch snapshots retained until this project session ends.
-    pub(crate) java_launch_snapshots: Mutex<crate::ops::java::cache::Session>,
     /// Database tool window: data sources and their connections.
     pub db: Arc<ide_db::DbManager>,
     /// HTTP Client responses (IDEA's `.idea/httpRequests`), in the app data dir.
@@ -54,7 +53,6 @@ pub struct Project {
     pub agents: Arc<ide_agent::AgentManager>,
     /// Native notebooks and owned kernels, scoped to this project incarnation.
     pub notebooks: Arc<crate::notebook::NotebookService>,
-    pub(crate) kotlin_bridge: Option<Arc<crate::kotlin_bridge::KotlinBridge>>,
     pub(crate) phpstan: Option<Arc<crate::phpstan::Phpstan>>,
     pub(crate) watcher: Watcher,
     /// Watchers of the Project Structure content roots outside the project folder.
@@ -139,9 +137,6 @@ impl Host {
             let root = root.clone();
             let data_dir = self.local_data_dir.clone();
             let config_dir = self.config_dir.clone();
-            let build_cache = self.local_data_dir.join("cache").join(&project_key).join("build");
-            let sink = sink.clone();
-            let formatter_problem = std::sync::Mutex::new(None);
             lsp.set_config_hook(Box::new(move |cfg, server_root| {
                 let member = ide_workspace::workspace::Workspace::load(&root).ok().flatten().and_then(|w| {
                     w.projects.into_iter().filter(|p| server_root.starts_with(p)).max_by_key(|p| p.components().count())
@@ -153,113 +148,13 @@ impl Host {
                 let root = member.as_ref().unwrap_or(&root);
                 ide_sdk::apply::server_launch_overrides(cfg, &effective);
                 ide_sdk::apply::configure_server(cfg, root, server_root, &effective);
-                if cfg.name == "jdtls" {
-                    // A workspace member keeps its build model under its own key (Build Project).
-                    let cache = match &member {
-                        Some(member) => build_cache.join(crate::project::project_key(member)),
-                        None => build_cache.clone(),
-                    };
-                    let profiles = ide_build::maven_profiles(&cache);
-                    ide_sdk::maven_profiles::configure_jdtls(cfg, root, &effective, &profiles, &cache);
-                }
-                ide_sdk::java::cap_java_home(cfg, &ide_sdk::java::installed_jdks());
-                if cfg.name == "jdtls" {
-                    let problem = ide_lsp::jdtls::configure_formatter(
-                        cfg,
-                        effective.editor.code_style.languages.get("java"),
-                        root,
-                        &data_dir,
-                        effective.language_servers.get("jdtls"),
-                    )
-                    .err()
-                    .map(|e| e.to_string());
-                    let mut previous = formatter_problem.lock().unwrap();
-                    if problem != *previous {
-                        if let Some(body) = &problem {
-                            sink.emit(IdeEvent::Notify {
-                                level: ide_core::event::NotifyLevel::Warning,
-                                title: "Java formatter configuration unavailable".into(),
-                                body: Some(body.clone()),
-                            });
-                        }
-                        *previous = problem;
-                    }
-                    drop(previous);
-                    ide_lsp::jdtls::configure_source_paths(
-                        cfg,
-                        ide_workspace::roots::unmanaged_java_source_paths(
-                            root,
-                            server_root,
-                            &effective.project_structure,
-                        ),
-                    );
-                    let bundles: Vec<PathBuf> = ide_tools::managed_bundle(&data_dir, "java-debug")
-                        .into_iter()
-                        .chain(ide_sdk::java::usages_bundle(&data_dir))
-                        .chain(ide_sdk::java::kotlin_bridge_bundle(&data_dir))
-                        .collect();
-                    let min_java = ide_sdk::java::jdtls_min_java(cfg);
-                    let jdks = ide_sdk::java::jdtls_jdks(min_java, &data_dir);
-                    let lombok = ide_sdk::lombok::lombok_agent(
-                        server_root,
-                        ide_sdk::lombok::agent_in_args(cfg.args.iter().map(String::as_str)),
-                        ide_tools::managed_bundle(&data_dir, "lombok"),
-                        ide_sdk::apply::maven_local_repository(root, &effective),
-                    );
-                    if let Some(problem) = lombok.problem() {
-                        tracing::warn!("{problem}");
-                    }
-                    let server_jdk = ide_sdk::apply::jdtls_jdk(root, &effective).unwrap_or_else(|e| {
-                        cfg.launch_error = Some(e);
-                        None
-                    });
-                    ide_sdk::apply::configure_java_compiler(cfg, &data_dir, &effective.inspections);
-                    ide_sdk::java::configure_jdtls(
-                        cfg,
-                        server_root,
-                        &data_dir,
-                        &jdks,
-                        ide_sdk::apply::project_jdk(root, &effective).as_ref(),
-                        server_jdk.as_ref(),
-                        min_java,
-                        &bundles,
-                        lombok.jar(),
-                    );
-                    ide_sdk::jdtls::launch_directly(cfg);
-                }
+
                 ide_sdk::apply::server_protocol_overrides(cfg, &effective);
                 // After the overrides: the PHP version they may set decides the storage.
                 ide_sdk::php::configure_intelephense_storage(cfg, &data_dir);
-                if cfg.name == "jdtls" {
-                    let (excluded_poms, build_files) = jdtls_maven_import(root, &effective);
-                    ide_sdk::apply::configure_maven_import(cfg, root, &excluded_poms, build_files.as_deref());
-                    ide_sdk::apply::configure_gradle_import(
-                        cfg,
-                        effective.languages.java.gradle.linked_projects.as_deref(),
-                        build_files.as_deref(),
-                    );
-                }
             }));
         }
-        {
-            let settings = settings.clone();
-            let root = root.clone();
-            let data_dir = self.local_data_dir.clone();
-            let sink = sink.clone();
-            lsp.set_prepare_hook(Box::new(move |cfg, _, cancel| {
-                let effective = settings.effective();
-                if cfg.name == "jdtls" {
-                    crate::java_runtime::prepare(
-                        cfg,
-                        &data_dir,
-                        !effective.languages.java.jdtls_jdk.trim().is_empty()
-                            || ide_sdk::apply::jdtls_jdk(&root, &effective).is_err(),
-                        &sink,
-                        cancel,
-                    );
-                }
-            }));
-        }
+
         {
             let settings = settings.clone();
             lsp.set_servers_hook(Box::new(move |language, defined| {
@@ -283,16 +178,6 @@ impl Host {
             trusted: trusted.clone(),
         }));
 
-        let kotlin_bridge = crate::kotlin_bridge::KotlinBridge::new(
-            root.clone(),
-            build_cache.clone(),
-            &self.local_data_dir,
-            settings.clone(),
-            lsp.clone(),
-            sink.clone(),
-            trusted.clone(),
-        );
-        documents.add_observer(kotlin_bridge.clone());
         let phpstan = crate::phpstan::Phpstan::new(
             root.clone(),
             self.config_dir.clone(),
@@ -306,7 +191,6 @@ impl Host {
             repo.set_execution_allowed(trusted.load(Ordering::Acquire));
         }
         let watcher = {
-            let kotlin_bridge = kotlin_bridge.clone();
             let phpstan = phpstan.clone();
             let repos = repos.clone();
             let settings = settings.clone();
@@ -330,7 +214,6 @@ impl Host {
                     let changed: Vec<PathBuf> = batch.created.iter().chain(&batch.modified).cloned().collect();
                     let (ignored, ignored_gone) = ignored_changes(batch);
                     index.update(&[&changed[..], &ignored].concat(), &[&batch.removed[..], &ignored_gone].concat());
-                    kotlin_bridge.files_changed(changed.iter().chain(&batch.removed));
                     phpstan.files_removed(batch.removed.iter());
                     lsp.project_files_changed(batch.created.iter().chain(&batch.removed));
                     lsp.watched_files_changed(&batch.created, &batch.modified, &batch.removed, &batch.excluded_dirs);
@@ -442,17 +325,7 @@ impl Host {
         let content_watchers = extra_roots
             .iter()
             .filter_map(|r| {
-                let w = content_root_watcher(
-                    r,
-                    &excludes,
-                    &sink,
-                    &index,
-                    &documents,
-                    &history,
-                    &lsp,
-                    Some(&kotlin_bridge),
-                    Some(&phpstan),
-                )?;
+                let w = content_root_watcher(r, &excludes, &sink, &index, &documents, &history, &lsp, Some(&phpstan))?;
                 Some((r.clone(), w))
             })
             .collect();
@@ -490,14 +363,10 @@ impl Host {
             syntax,
             detected_roots,
             cache_dir: self.local_data_dir.join("cache").join(&project_key),
-            java_launch_snapshots: Mutex::new(crate::ops::java::cache::Session::new(
-                self.local_data_dir.join("cache").join(&project_key).join("build"),
-            )),
             db,
             http_history,
             agents,
             notebooks,
-            kotlin_bridge: Some(kotlin_bridge),
             phpstan: Some(phpstan),
             watcher,
             content_watchers: Mutex::new(content_watchers),
@@ -526,10 +395,7 @@ impl Host {
             }));
         }
         self.insert_project(window, project.clone());
-        project.lsp.prewarm_java_configuration();
-        if let Some(bridge) = &project.kotlin_bridge {
-            bridge.start(&self.runtime);
-        }
+
         if let Some(phpstan) = &project.phpstan {
             phpstan.start(&self.runtime);
         }
@@ -635,14 +501,10 @@ impl Host {
             syntax,
             detected_roots: Arc::default(),
             cache_dir: self.local_data_dir.join("cache").join(&project_key),
-            java_launch_snapshots: Mutex::new(crate::ops::java::cache::Session::new(
-                self.local_data_dir.join("cache").join(&project_key).join("build"),
-            )),
             db,
             http_history,
             agents,
             notebooks,
-            kotlin_bridge: None,
             phpstan: None,
             watcher,
             content_watchers: Mutex::new(Vec::new()),
@@ -904,16 +766,11 @@ impl Project {
     /// Effective source / test / resource / excluded roots (detected + Project Structure marks).
     pub fn roots(&self) -> ProjectRoots {
         let settings = self.settings.effective();
-        let detected = with_gradle_roots(
-            &self.root,
-            &self.build_cache_dir(),
-            &settings.languages.java.gradle,
-            &self.detected_roots.read(),
-        );
+        let detected = self.detected_roots.read();
         linked_roots(&self.root, &settings, &detected)
     }
 
-    /// Where the Maven / Gradle tool windows cache what the build tools reported.
+    /// Cache directory for build metadata.
     pub fn build_cache_dir(&self) -> PathBuf {
         self.cache_dir.join("build")
     }
@@ -1019,7 +876,6 @@ impl Project {
                 &self.documents,
                 &self.history,
                 &self.lsp,
-                self.kotlin_bridge.as_ref(),
                 self.phpstan.as_ref(),
             ) {
                 watchers.push((r, w));
@@ -1104,15 +960,14 @@ fn index_roots(root: &Path, folders: Vec<PathBuf>) -> ide_index::IndexRoots {
     ide_index::IndexRoots { include_root: !root.join(ide_workspace::workspace::FILE).is_file(), folders }
 }
 
-/// Workspace members in manifest order, or extra Project Structure directories and the
-/// Gradle project folders outside the project as of the last sync (`build_cache`).
-fn content_roots(settings: &ide_core::settings::Settings, root: &Path, build_cache: &Path) -> Vec<PathBuf> {
+/// Workspace members in manifest order, or extra Project Structure directories.
+fn content_roots(settings: &ide_core::settings::Settings, root: &Path, _build_cache: &Path) -> Vec<PathBuf> {
     if let Ok(Some(workspace)) = ide_workspace::workspace::Workspace::load(root) {
         return workspace.projects;
     }
     let mut out: Vec<PathBuf> = Vec::new();
     let user = settings.project_structure.content_roots.iter().map(|r| PathBuf::from(r.trim()));
-    for p in user.chain(ide_build::gradle_external_roots(root, build_cache, &settings.languages.java.gradle)) {
+    for p in user {
         if p.is_absolute() && p.is_dir() && !p.starts_with(root) && !out.contains(&p) {
             out.push(p);
         }
@@ -1155,10 +1010,9 @@ fn content_root_watcher(
     documents: &Arc<Documents>,
     history: &Arc<LocalHistory>,
     lsp: &Arc<LspManager>,
-    kotlin_bridge: Option<&Arc<crate::kotlin_bridge::KotlinBridge>>,
     phpstan: Option<&Arc<crate::phpstan::Phpstan>>,
 ) -> Option<Watcher> {
-    let (kotlin_bridge, phpstan) = (kotlin_bridge.cloned(), phpstan.cloned());
+    let phpstan = phpstan.cloned();
     let (index, documents, history, lsp) = (index.clone(), documents.clone(), history.clone(), lsp.clone());
     let root = dir.to_path_buf();
     Watcher::start(
@@ -1173,9 +1027,7 @@ fn content_root_watcher(
             if composer_changed(&root, changed.iter().chain(&batch.removed)) {
                 lsp.reconfigure_soon();
             }
-            if let Some(bridge) = &kotlin_bridge {
-                bridge.files_changed(changed.iter().chain(&batch.removed));
-            }
+
             if let Some(phpstan) = &phpstan {
                 phpstan.files_removed(batch.removed.iter());
             }
@@ -1208,132 +1060,8 @@ fn agent_worktrees_dir(root: &Path, fallback: impl FnOnce() -> PathBuf) -> PathB
     }
 }
 
-pub(crate) fn unlinked_maven_poms(root: &Path, settings: &ide_core::settings::Settings) -> Vec<PathBuf> {
-    ide_build::maven::UnlinkedProjects::load(root, &settings.languages.java.maven).poms().map(PathBuf::from).collect()
-}
-
-/// The unlinked Maven POMs jdtls leaves out, and the build files (`file:` URIs) it is to
-/// import when that takes more than exclusions: an unlinked module of a linked reactor.
-/// Those then include the Gradle build, which jdtls would otherwise find by itself.
-pub(crate) fn jdtls_maven_import(
-    root: &Path,
-    settings: &ide_core::settings::Settings,
-) -> (Vec<PathBuf>, Option<Vec<String>>) {
-    let maven = &settings.languages.java.maven;
-    let gradle = &settings.languages.java.gradle;
-    if maven.unlinked_projects.is_empty() && gradle.linked_projects.is_none() {
-        return (Vec::new(), None);
-    }
-    let model = ide_build::maven::load_linked(root, maven);
-    let unlinked = ide_build::maven::UnlinkedProjects::from_model(&model, maven);
-    let excluded = unlinked.poms().map(PathBuf::from).collect();
-    let poms = unlinked.import_poms(&model).or_else(|| {
-        gradle.linked_projects.as_ref().map(|_| {
-            model
-                .projects
-                .iter()
-                .filter(|p| !p.aggregated && !unlinked.contains(&p.pom))
-                .map(|p| p.pom.clone())
-                .collect()
-        })
-    });
-    let build_files = poms.map(|poms| {
-        let gradle = ide_build::gradle::load_linked(root, gradle).into_iter().filter_map(|g| {
-            let dir = root.join(&g.dir);
-            let names = ide_build::gradle::SETTINGS_FILES.iter().chain(ide_build::gradle::BUILD_FILES);
-            names.map(|n| dir.join(n)).find(|f| f.is_file())
-        });
-        let eclipse = if settings.languages.java.gradle.linked_projects.is_some() {
-            independent_eclipse_projects(root)
-        } else {
-            Vec::new()
-        };
-        poms.iter()
-            .map(|pom| root.join(pom))
-            .chain(gradle)
-            .chain(eclipse)
-            .map(|f| ide_lsp::path_to_uri_string(&f))
-            .collect()
-    });
-    (excluded, build_files)
-}
-
-/// Explicit Gradle imports must retain Eclipse projects without re-importing generated build metadata.
-fn independent_eclipse_projects(root: &Path) -> Vec<PathBuf> {
-    let managed = |dir: &Path| {
-        std::iter::once("pom.xml")
-            .chain(ide_build::gradle::SETTINGS_FILES.iter().copied())
-            .chain(ide_build::gradle::BUILD_FILES.iter().copied())
-            .any(|name| dir.join(name).is_file())
-    };
-    if managed(root) {
-        return Vec::new();
-    }
-    let walker = ignore::WalkBuilder::new(root)
-        .standard_filters(false)
-        .filter_entry(move |entry| {
-            if !entry.file_type().is_some_and(|kind| kind.is_dir()) {
-                return false;
-            }
-            if entry.depth() > 0
-                && (entry.file_name().to_string_lossy().starts_with('.')
-                    || matches!(
-                        entry.file_name().to_str(),
-                        Some("node_modules" | "target" | "build" | "dist" | "out" | "bin" | "vendor")
-                    )
-                    || entry.path().parent().is_some_and(|parent| parent.join(".project").is_file()))
-            {
-                return false;
-            }
-            !managed(entry.path())
-        })
-        .build();
-    let mut projects: Vec<_> =
-        walker.flatten().map(|entry| entry.path().join(".project")).filter(|path| path.is_file()).collect();
-    projects.sort();
-    projects
-}
-
-/// The detected roots with the last Gradle sync's source sets first: Gradle evaluated what
-/// static detection guesses. Folders outside the project keep their absolute path, which
-/// `normalize` turns into the same form the UI compares (`Users/me/svc/src/main/java`).
-fn with_gradle_roots(
-    root: &Path,
-    build_cache: &Path,
-    settings: &ide_core::settings::GradleSettings,
-    detected: &[SourceFolder],
-) -> Vec<SourceFolder> {
-    use ide_build::gradle::ReportedRoot;
-    use ide_workspace::roots::RootKind;
-    let mut out: Vec<SourceFolder> = Vec::new();
-    for (dir, kind) in ide_build::gradle_source_roots(root, build_cache, settings) {
-        if !dir.is_dir() {
-            continue;
-        }
-        let path = ide_workspace::roots::normalize(&dir.strip_prefix(root).unwrap_or(&dir).to_string_lossy());
-        let kind = match kind {
-            ReportedRoot::Source => RootKind::Source,
-            ReportedRoot::Test => RootKind::Test,
-            ReportedRoot::Resources => RootKind::Resources,
-            ReportedRoot::TestResources => RootKind::TestResources,
-            ReportedRoot::Excluded => RootKind::Excluded,
-        };
-        if !out.iter().any(|f| f.path == path) {
-            out.push(SourceFolder { path, kind, detected_from: Some("Gradle".into()) });
-        }
-    }
-    out.extend(detected.iter().filter(|d| !out.iter().any(|o| o.path == d.path)).cloned().collect::<Vec<_>>());
-    out
-}
-
-fn linked_roots(root: &Path, settings: &ide_core::settings::Settings, detected: &[SourceFolder]) -> ProjectRoots {
-    let unlinked = ide_build::maven::UnlinkedProjects::load(root, &settings.languages.java.maven);
-    let detected = detected
-        .iter()
-        .filter(|folder| !folder.detected_from.as_ref().is_some_and(|pom| unlinked.contains(pom)))
-        .cloned()
-        .collect();
-    ProjectRoots::compute(detected, &settings.project_structure)
+fn linked_roots(_root: &Path, settings: &ide_core::settings::Settings, detected: &[SourceFolder]) -> ProjectRoots {
+    ProjectRoots::compute(detected.to_vec(), &settings.project_structure)
 }
 
 fn exclude_globs(root: &Path, settings: &ide_core::settings::Settings, detected: &[SourceFolder]) -> Vec<String> {
@@ -1474,150 +1202,8 @@ pub fn apply_git_executable(settings: &ide_core::settings::Settings) {
     ide_vcs::set_git_executable((!exe.is_empty()).then(|| Path::new(exe)));
 }
 
-#[cfg(test)]
-mod maven_linkage_tests {
-    #[test]
-    fn explicit_gradle_links_preserve_independent_eclipse_projects() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path();
-        for dir in
-            ["linked", "unlinked", "eclipse", "nested/eclipse", "unlinked/subproject", "maven", "build/generated"]
-        {
-            std::fs::create_dir_all(root.join(dir)).unwrap();
-            std::fs::write(root.join(dir).join(".project"), "<projectDescription/>").unwrap();
-        }
-        for dir in ["linked", "unlinked"] {
-            std::fs::write(root.join(dir).join("settings.gradle"), "").unwrap();
-        }
-        std::fs::write(root.join("maven/pom.xml"), "<project/>").unwrap();
-        let mut settings = ide_core::settings::Settings::default();
-        settings.languages.java.gradle.linked_projects = Some(vec!["linked".into()]);
-        let (_, files) = super::jdtls_maven_import(root, &settings);
-        let files = files.unwrap();
-        let uri = |path: &str| ide_lsp::path_to_uri_string(&root.join(path));
-        assert!(files.contains(&uri("linked/settings.gradle")));
-        assert!(files.contains(&uri("maven/pom.xml")));
-        assert!(files.contains(&uri("eclipse/.project")));
-        assert!(files.contains(&uri("nested/eclipse/.project")));
-        assert!(!files.iter().any(|path| path.contains("unlinked") || path.contains("build/generated")));
-        assert!(!files.contains(&uri("linked/.project")));
-        assert!(!files.contains(&uri("maven/.project")));
-        settings.languages.java.gradle.linked_projects = Some(vec![]);
-        let (_, files) = super::jdtls_maven_import(root, &settings);
-        assert_eq!(files.unwrap(), [uri("maven/pom.xml"), uri("eclipse/.project"), uri("nested/eclipse/.project")]);
-    }
-
-    #[test]
-    fn jdtls_imports_the_linked_modules_and_the_gradle_build_once_a_reactor_module_is_unlinked() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path();
-        for (dir, body) in [("", "<modules><module>x</module><module>y</module></modules>"), ("x", ""), ("y", "")] {
-            std::fs::create_dir_all(root.join(dir)).unwrap();
-            std::fs::write(root.join(dir).join("pom.xml"), format!("<project>{body}</project>")).unwrap();
-        }
-        std::fs::write(root.join("settings.gradle"), "rootProject.name = 'g'").unwrap();
-        let mut settings = ide_core::settings::Settings::default();
-        assert_eq!(super::jdtls_maven_import(root, &settings), (Vec::new(), None));
-        settings.languages.java.maven.unlinked_projects.push("y/pom.xml".into());
-        let (excluded, files) = super::jdtls_maven_import(root, &settings);
-        assert_eq!(excluded, vec![std::path::PathBuf::from("y/pom.xml")]);
-        let uri = |f: &str| ide_lsp::path_to_uri_string(&root.join(f));
-        assert_eq!(files, Some(vec![uri("x/pom.xml"), uri("settings.gradle")]));
-        // The whole reactor unlinked: the import exclusions are enough.
-        settings.languages.java.maven.unlinked_projects = vec!["pom.xml".into()];
-        assert_eq!(super::jdtls_maven_import(root, &settings).1, None);
-    }
-
-    #[test]
-    fn unlinked_roots_remain_plain_files() {
-        let tmp = tempfile::tempdir().unwrap();
-        for name in ["a", "b"] {
-            std::fs::create_dir_all(tmp.path().join(name).join("src/main/java")).unwrap();
-            std::fs::write(tmp.path().join(name).join("pom.xml"), "<project/>").unwrap();
-        }
-        std::fs::create_dir_all(tmp.path().join("a/child/src/main/java")).unwrap();
-        std::fs::write(tmp.path().join("a/pom.xml"), "<project><modules><module>child</module></modules></project>")
-            .unwrap();
-        std::fs::write(tmp.path().join("a/child/pom.xml"), "<project/>").unwrap();
-        let detected = ide_workspace::roots::detect(tmp.path());
-        let mut settings = ide_core::settings::Settings::default();
-        settings.languages.java.maven.unlinked_projects.push("a/pom.xml".into());
-        let excluded_poms = super::unlinked_maven_poms(tmp.path(), &settings);
-        assert_eq!(excluded_poms, vec![std::path::PathBuf::from("a/child/pom.xml"), "a/pom.xml".into()]);
-        let configs = ide_run::detect_excluding(tmp.path(), &excluded_poms);
-        assert!(configs.iter().any(|c| c.kind == "maven"));
-        assert!(
-            configs
-                .iter()
-                .filter(|c| c.kind == "maven")
-                .all(|c| { c.cwd.as_ref().is_some_and(|dir| dir.as_ref() == std::path::Path::new("b")) })
-        );
-        let mut server = serde_json::from_value::<ide_language::LanguageServerConfig>(
-            serde_json::json!({"name": "jdtls", "command": "jdtls"}),
-        )
-        .unwrap();
-        ide_sdk::apply::configure_maven_import(&mut server, tmp.path(), &excluded_poms, None);
-        let options = serde_json::to_value(server.initialization_options).unwrap();
-        let exclusions = options.pointer("/settings/java/import/exclusions").unwrap().as_array().unwrap();
-        assert!(exclusions.contains(&serde_json::json!(tmp.path().join("a").to_string_lossy().replace('\\', "/"))));
-        assert!(
-            exclusions.contains(&serde_json::json!(tmp.path().join("a/child").to_string_lossy().replace('\\', "/")))
-        );
-        let roots = super::linked_roots(tmp.path(), &settings, &detected);
-        assert!(roots.roots.iter().any(|r| r.path == "b/src/main/java"));
-        assert!(!roots.roots.iter().any(|r| r.path.starts_with("a/")));
-        assert!(tmp.path().join("a/pom.xml").is_file());
-        let model = crate::ops::build::load(tmp.path(), &tmp.path().join("cache"), &settings);
-        assert_eq!(model.maven.unwrap().projects.len(), 1);
-        settings.languages.java.maven.unlinked_projects.push("b/pom.xml".into());
-        let model = crate::ops::build::load(tmp.path(), &tmp.path().join("cache"), &settings);
-        assert!(model.maven.unwrap().projects.is_empty());
-    }
-}
-
 fn vcs_path_changed(path: &Path) -> bool {
     !path.ends_with(".git/index") || !ide_vcs::is_own_index_write(path)
-}
-
-#[cfg(test)]
-mod gradle_roots_tests {
-    use super::*;
-    use ide_workspace::RootKind;
-
-    #[test]
-    fn gradle_sync_roots_win_and_reach_outside_the_project() {
-        let tmp = tempfile::tempdir().unwrap();
-        let ws = dunce::canonicalize(tmp.path()).unwrap();
-        let (root, svc, cache) = (ws.join("p"), ws.join("svc"), ws.join("cache"));
-        for d in [root.join("src/it/java"), svc.join("src/main/java"), svc.join("build")] {
-            std::fs::create_dir_all(d).unwrap();
-        }
-        let s = |p: PathBuf| p.to_string_lossy().into_owned();
-        let json = serde_json::json!({ "hash": "", "at_ms": 1.0, "error": null, "tasks": [], "projects": [
-            { "path": ":", "dir": s(root.clone()), "sourceSets": [
-                { "name": "integrationTest", "test": true, "src": [s(root.join("src/it/java"))], "res": [] } ] },
-            { "path": ":svc", "dir": s(svc.clone()), "buildDir": s(svc.join("build")), "sourceSets": [
-                { "name": "main", "test": false,
-                  "src": [s(svc.join("src/main/java")), s(svc.join("src/main/kotlin"))], "res": [] } ] },
-        ]});
-        std::fs::create_dir_all(&cache).unwrap();
-        std::fs::write(cache.join("gradle.json"), json.to_string()).unwrap();
-        let guessed = SourceFolder { path: "src/it/java".into(), kind: RootKind::Source, detected_from: None };
-        let other = SourceFolder { path: "web".into(), kind: RootKind::Source, detected_from: None };
-        std::fs::write(root.join("build.gradle"), "").unwrap();
-        let out = with_gradle_roots(&root, &cache, &Default::default(), &[guessed, other.clone()]);
-        let abs = |p: PathBuf| ide_workspace::roots::normalize(&s(p));
-        let got: Vec<(String, RootKind)> = out.iter().map(|f| (f.path.clone(), f.kind)).collect();
-        assert_eq!(
-            got,
-            [
-                ("src/it/java".into(), RootKind::Test),
-                (abs(svc.join("src/main/java")), RootKind::Source),
-                (abs(svc.join("build")), RootKind::Excluded),
-                ("web".into(), RootKind::Source),
-            ]
-        );
-    }
 }
 
 #[cfg(test)]

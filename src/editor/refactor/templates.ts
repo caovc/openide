@@ -12,8 +12,6 @@ export function isTsJs(language: string): boolean {
 
 /** Facts about the project / file a template depends on. */
 export interface DeclContext {
-  /** Java: language level ≥ 10 (`var`). */
-  javaVar?: boolean;
   /** C: C23 (`auto`). */
   cAuto?: boolean;
   /** TS/JS: the file ends statements with `;`. */
@@ -55,19 +53,8 @@ export function variableDeclaration(language: string, name: string, expr: string
   const ok = (decl: Declaration): DeclResult => ({ ok: true, decl });
   const v = (prefix: string, op: string, suffix = "") => ok(build(prefix, name, ` ${op} ${expr}`, suffix));
   switch (language) {
-    case "java":
-      if (cx.javaVar) return v("var ", "=", ";");
-      if (cx.type) return v(typed(cx.type), "=", ";");
-      return {
-        ok: false,
-        reason:
-          "the type of the expression is unknown and `var` needs Java 10+ (set maven.compiler.release / sourceCompatibility, or wait for the language server)",
-      };
     case "csharp":
       return v("var ", "=", ";");
-    case "kotlin":
-    case "scala":
-      return v("val ", "=");
     case "swift":
       return v("let ", "=");
     case "rust":
@@ -92,8 +79,6 @@ export function variableDeclaration(language: string, name: string, expr: string
       return v("final ", "=", ";");
     case "zig":
       return v("const ", "=", ";");
-    case "groovy":
-      return v("def ", "=");
     default:
       if (TS_JS.has(language)) return v("const ", "=", cx.semicolons === false ? "" : ";");
       return { ok: false, reason: `not supported for ${language} without the language server` };
@@ -106,14 +91,8 @@ export function constantDeclaration(language: string, name: string, expr: string
     decl: build(prefix, name, ` = ${expr}`, suffix),
   });
   switch (language) {
-    case "java":
-      if (!cx.type)
-        return { ok: false, reason: "a constant needs a type; only literals are typed without the language server" };
-      return ok(`private static final ${typed(cx.type)}`, ";");
     case "python":
       return ok("");
-    case "kotlin":
-      return ok("private const val ");
     default:
       if (TS_JS.has(language)) return ok("const ", cx.semicolons === false ? "" : ";");
       return { ok: false, reason: `Introduce Constant is not supported for ${language} without the language server` };
@@ -122,7 +101,6 @@ export function constantDeclaration(language: string, name: string, expr: string
 
 /** Languages whose block-level expression statements discard their value. */
 const STATEMENT_VALUE_DISCARDED = new Set([
-  "java",
   "csharp",
   "python",
   "go",
@@ -146,14 +124,14 @@ export function replacesBareStatement(language: string, statementKind: string): 
   return STATEMENT_VALUE_DISCARDED.has(language);
 }
 
-const JAVA_INT = /^(0[xX][\da-fA-F_]+|0[bB][01_]+|\d[\d_]*)([lL]?)$/;
-const JAVA_FLOAT = /^(\d[\d_]*\.?[\d_]*([eE][+-]?\d+)?|\.\d[\d_]*([eE][+-]?\d+)?)([fFdD]?)$/;
+const NUMERIC_INT = /^(0[xX][\da-fA-F_]+|0[bB][01_]+|\d[\d_]*)([lL]?)$/;
+const NUMERIC_FLOAT = /^(\d[\d_]*\.?[\d_]*([eE][+-]?\d+)?|\.\d[\d_]*([eE][+-]?\d+)?)([fFdD]?)$/;
 
 function numericType(text: string, intTypes: [string, string], floatTypes: [string, string]): string | null {
   const t = text.replace(/^-\s*/, "");
-  const i = JAVA_INT.exec(t);
+  const i = NUMERIC_INT.exec(t);
   if (i) return i[2] ? intTypes[1] : intTypes[0];
-  const f = JAVA_FLOAT.exec(t);
+  const f = NUMERIC_FLOAT.exec(t);
   if (f && /[.eEfFdD]/.test(t)) return /[fF]$/.test(t) ? floatTypes[1] : floatTypes[0];
   return null;
 }
@@ -166,17 +144,10 @@ export function isLiteral(language: string, kind: string, text: string): boolean
   const t = text.trim();
   const negNumber = /^-\s*[\d.]/.test(t) && /unary|prefix/.test(kind);
   switch (language) {
-    case "java":
-      return negNumber || (/_literal$/.test(kind) && kind !== "null_literal") || kind === "true" || kind === "false";
     case "python":
       if (negNumber) return true;
       if (kind === "string" || kind === "concatenated_string") return !/(^|["'\s])[rRbBuU]*[fF][rRbB]*["']/.test(t);
       return ["integer", "float", "true", "false"].includes(kind);
-    case "kotlin":
-      if (negNumber) return true;
-      if (kind === "string_literal") return !t.includes("$");
-      if (kind === "identifier" || kind === "boolean_literal") return t === "true" || t === "false";
-      return /^(number|float|character|integer|real|hex|bin|long|unsigned)_literal$/.test(kind);
     case "c":
     case "cpp":
       return negNumber || ["string_literal", "char_literal", "number_literal", "true", "false"].includes(kind);
@@ -194,12 +165,6 @@ export function isLiteral(language: string, kind: string, text: string): boolean
 export function literalType(language: string, kind: string, text: string): string | null {
   if (!isLiteral(language, kind, text)) return null;
   const t = text.trim();
-  if (language === "java") {
-    if (kind === "string_literal") return "String";
-    if (kind === "character_literal") return "char";
-    if (kind === "true" || kind === "false") return "boolean";
-    return numericType(t, ["int", "long"], ["double", "float"]);
-  }
   if (language === "c") {
     if (kind === "string_literal") return "const char *";
     if (kind === "char_literal") return "char";
@@ -211,41 +176,4 @@ export function literalType(language: string, kind: string, text: string): strin
     return numericType(n, ["int", "long"], ["double", "float"]);
   }
   return null;
-}
-
-/** Java type of a plain constructor call / array creation (`new Foo(…)`, `new int[3]`); null with `<>` or a class body. */
-export function javaConstructedType(text: string): string | null {
-  const t = text.trim();
-  const arr = /^new\s+([\w$.]+)\s*((?:\[[^\]]*\]\s*)+)(\{[\s\S]*\})?$/.exec(t);
-  if (arr) return `${arr[1]}${"[]".repeat((arr[2]!.match(/\[/g) ?? []).length)}`;
-  const obj = /^new\s+([\w$.]+(?:\s*<[\w$.,\s?<>[\]]+>)?)\s*\(/.exec(t);
-  if (!obj || !t.endsWith(")")) return null;
-  // The argument list must be the one closing the expression (no `{ … }` body, no chained call).
-  let depth = 0;
-  for (let i = obj[0].length - 1; i < t.length; i++) {
-    if (t[i] === "(") depth++;
-    else if (t[i] === ")" && --depth === 0 && i !== t.length - 1) return null;
-  }
-  return obj[1]!.replace(/\s+/g, "");
-}
-
-/**
- * Type of a Java expression from a jdtls-style hover (```java\nString java.lang.String.trim()\n```
- * or `String name`), for a call / name ending in `name`. Null when unclear.
- */
-export function javaTypeFromHover(hover: string, name: string): string | null {
-  const code = /```(?:java)?\n([\s\S]*?)```/.exec(hover)?.[1] ?? hover;
-  const line = code
-    .split("\n")
-    .find((l) => l.trim())
-    ?.trim();
-  if (!line) return null;
-  const at = new RegExp(`(^|[\\s.])${name.replace(/\$/g, "\\$")}\\s*(\\(|$|\\s|-)`).exec(line);
-  if (!at) return null;
-  let before = line.slice(0, at.index + at[1]!.length).trim();
-  before = before.replace(/\s*[\w$.]+\.$/, "").trim(); // owner: `java.lang.String.`
-  before = before.replace(/^((public|protected|private|static|final|abstract|synchronized|native|default)\s+)+/, "");
-  before = before.replace(/^<[^>]*>\s*/, "");
-  if (!before || before === "void") return null;
-  return /^[\w$.]+(\s*<[\w$.,\s?<>[\]]*>)?(\[\])*$/.test(before) ? before : null;
 }

@@ -15,8 +15,6 @@ fn every_bundled_locals_query_compiles() {
     }
     assert!(failures.is_empty(), "invalid locals queries:\n{}", failures.join("\n"));
     for g in [
-        "java",
-        "kotlin",
         "python",
         "javascript",
         "typescript",
@@ -29,7 +27,6 @@ fn every_bundled_locals_query_compiles() {
         "ruby",
         "php",
         "swift",
-        "scala",
         "lua",
         "bash",
         "dart",
@@ -47,18 +44,18 @@ fn snap<'a>(l: &'a LanguageId, src: &'a str) -> Snapshot<'a> {
 
 #[test]
 fn node_at_reports_smallest_named_node_and_ancestors() {
-    let src = "class A {\n  int f(int a) {\n    return foo(a + 1);\n  }\n}\n";
-    let java = lang("java");
+    let src = "int f(int a) {\n    return foo(a + 1);\n}\n";
+    let c = lang("c");
     let r = occ(src, "a", 2);
-    let at = service().node_at(&snap(&java, src), r, &none()).unwrap().unwrap();
+    let at = service().node_at(&snap(&c, src), r, &none()).unwrap().unwrap();
     assert_eq!(at.node.kind, "identifier");
     assert_eq!(at.node.range, r);
     assert_eq!(at.node.field.as_deref(), Some("left"));
     let kinds: Vec<&str> = at.ancestors.iter().map(|n| n.kind.as_str()).collect();
-    assert_eq!(&kinds[..4], ["binary_expression", "argument_list", "method_invocation", "return_statement"]);
-    assert_eq!(kinds.last(), Some(&"program"));
+    assert_eq!(&kinds[..4], ["binary_expression", "argument_list", "call_expression", "return_statement"]);
+    assert_eq!(kinds.last(), Some(&"translation_unit"));
     // A range spanning two siblings yields their parent.
-    let at = service().node_at(&snap(&java, src), span(src, "a + 1"), &none()).unwrap().unwrap();
+    let at = service().node_at(&snap(&c, src), span(src, "a + 1"), &none()).unwrap().unwrap();
     assert_eq!(at.node.kind, "binary_expression");
     assert!(!at.node.has_error);
 }
@@ -75,21 +72,21 @@ fn syntax_errors_find_missing_semicolons_and_garbage() {
     assert_eq!(e.message, "missing `;`");
     assert_eq!(e.range, Range::point(Pos::new(1, 13)));
 
-    let java = lang("java");
-    let src = "class A {\n  void f() {\n    int x = 1 +;\n  }\n}\n";
-    let errs = service().syntax_errors(&snap(&java, src), &none()).unwrap();
+    let c = lang("c");
+    let src = "void f() {\n    int x = 1 +;\n}\n";
+    let errs = service().syntax_errors(&snap(&c, src), &none()).unwrap();
     assert!(!errs.errors.is_empty());
-    assert!(errs.errors.iter().all(|e| e.range.start.line == 2), "{errs:?}");
+    assert!(errs.errors.iter().all(|e| e.range.start.line == 1), "{errs:?}");
 
-    let ok = service().syntax_errors(&snap(&java, "class A {}"), &none()).unwrap();
+    let ok = service().syntax_errors(&snap(&c, "void f() {}"), &none()).unwrap();
     assert_eq!(ok, SyntaxErrors::default());
 }
 
 #[test]
 fn expression_at_exact_enclosing_and_caret() {
-    let java = lang("java");
-    let src = "class A {\n  int f(int a, int b) {\n    int r = compute(a + b * 2, b);\n    return r;\n  }\n}\n";
-    let s = snap(&java, src);
+    let c = lang("c");
+    let src = "int f(int a, int b) {\n    int r = compute(a + b * 2, b);\n    return r;\n}\n";
+    let s = snap(&c, src);
     // Exact selection (whitespace around it is ignored).
     let sel = span(src, "b * 2");
     let e =
@@ -97,8 +94,8 @@ fn expression_at_exact_enclosing_and_caret() {
     let expr = e.expression.clone().unwrap();
     assert!(e.exact);
     assert_eq!((expr.kind.as_str(), expr.range), ("binary_expression", sel));
-    assert_eq!(e.statement.as_ref().unwrap().kind, "local_variable_declaration");
-    assert_eq!(e.block.as_ref().unwrap().kind, "block");
+    assert_eq!(e.statement.as_ref().unwrap().kind, "declaration");
+    assert_eq!(e.block.as_ref().unwrap().kind, "compound_statement");
     assert!(e.function_boundary.is_none());
     // Partial selection: the smallest enclosing expression, not exact.
     let e = service().expression_at(&s, span(src, "a + b"), &none()).unwrap();
@@ -108,7 +105,7 @@ fn expression_at_exact_enclosing_and_caret() {
     let caret = occ(src, "a", 2).start;
     let e = service().expression_at(&s, Range::point(caret), &none()).unwrap();
     let kinds: Vec<&str> = e.candidates.iter().map(|c| c.kind.as_str()).collect();
-    assert_eq!(kinds, ["identifier", "binary_expression", "method_invocation"]);
+    assert_eq!(kinds, ["identifier", "binary_expression", "call_expression"]);
     // Names in declarations are not expressions.
     let e = service().expression_at(&s, occ(src, "r", 1), &none()).unwrap();
     assert!(e.expression.is_none(), "{e:?}");
@@ -125,9 +122,9 @@ fn expression_at_flags_lambda_boundary_and_errors() {
     // Candidates stop at the lambda: hoisting out of it would break `x`.
     assert!(e.candidates.iter().all(|c| c.kind != "call_expression"), "{:?}", e.candidates);
 
-    let java = lang("java");
-    let src = "class A {\n  void f() {\n    int y = g(1) + 2\n    h(y);\n  }\n}\n";
-    let e = service().expression_at(&snap(&java, src), span(src, "g(1)"), &none()).unwrap();
+    let c = lang("c");
+    let src = "void f() {\n    int y = g(1) + 2\n    h(y);\n}\n";
+    let e = service().expression_at(&snap(&c, src), span(src, "g(1)"), &none()).unwrap();
     assert!(e.exact);
     assert!(e.has_error);
 }
@@ -138,14 +135,7 @@ fn expression_at_across_languages() {
         ("python", "def f(a):\n    return len(a) + 1\n", "len(a)", "call"),
         ("rust", "fn f(a: u32) -> u32 {\n    let b = a.pow(2) + 1;\n    b\n}\n", "a.pow(2)", "call_expression"),
         ("go", "package m\nfunc f(a int) int {\n\tb := g(a) + 1\n\treturn b\n}\n", "g(a)", "call_expression"),
-        ("kotlin", "fun f(a: Int): Int {\n    val b = g(a) + 1\n    return b\n}\n", "g(a)", "call_expression"),
         ("swift", "func f(a: Int) -> Int {\n  let b = g(a) + 1\n  return b\n}\n", "g(a)", "call_expression"),
-        (
-            "scala",
-            "object O {\n  def f(a: Int): Int = {\n    val b = g(a) + 1\n    b\n  }\n}\n",
-            "g(a)",
-            "call_expression",
-        ),
         ("dart", "int f(int a) {\n  var b = g(a) + 1;\n  return b;\n}\n", "g(a)", "call_expression"),
         (
             "csharp",
@@ -202,19 +192,19 @@ fn identifiers_named_skips_comments_and_strings() {
 
 #[test]
 fn structural_ranges_statements_and_declarations() {
-    let kotlin = lang("kotlin");
-    let src = "class A {\n  fun f() {\n    val a = 1\n    val b = a + 1\n    println(b)\n  }\n\n  fun g() {}\n}\n";
-    let s = snap(&kotlin, src);
-    // Caret in the indentation of `val b`: the statement on that line.
-    let r = service().structural_ranges(&s, Pos::new(3, 1), &none()).unwrap();
+    let ts = lang("typescript");
+    let src = "function f() {\n    const a = 1;\n    const b = a + 1;\n    print(b);\n}\n\nfunction g() {}\n";
+    let s = snap(&ts, src);
+    // Caret in the indentation of `const b`: the statement on that line.
+    let r = service().structural_ranges(&s, Pos::new(2, 1), &none()).unwrap();
     let stmt = r.statement.unwrap();
-    assert_eq!(stmt.range, span(src, "val b = a + 1"));
-    assert_eq!(r.prev_statement.unwrap().range, span(src, "val a = 1"));
-    assert_eq!(r.next_statement.unwrap().range, span(src, "println(b)"));
-    assert_eq!(r.block.unwrap().kind, "block");
+    assert_eq!(stmt.range, span(src, "const b = a + 1;"));
+    assert_eq!(r.prev_statement.unwrap().range, span(src, "const a = 1;"));
+    assert_eq!(r.next_statement.unwrap().range, span(src, "print(b);"));
+    assert_eq!(r.block.unwrap().kind, "statement_block");
     let decl = r.declaration.unwrap();
     assert_eq!(decl.kind, "function_declaration");
-    assert_eq!(r.next_declaration.unwrap().range, span(src, "fun g() {}"));
+    assert_eq!(r.next_declaration.unwrap().range, span(src, "function g() {}"));
     assert!(r.prev_declaration.is_none());
     assert!(r.selection.len() > 3);
     assert!(r.selection.windows(2).all(|w| w[0].start >= w[1].start && w[0].end <= w[1].end));
@@ -231,13 +221,13 @@ fn structural_ranges_statements_and_declarations() {
 #[test]
 fn support_and_cancellation() {
     let s = service();
-    assert_eq!(s.support(&lang("java")), StructureSupport { tree: true, locals: true });
+    assert_eq!(s.support(&lang("c")), StructureSupport { tree: true, locals: true });
     assert_eq!(s.support(&lang("json")), StructureSupport { tree: true, locals: false });
     assert_eq!(s.support(&lang("plaintext")), StructureSupport::default());
     let cancel = CancellationToken::new();
     cancel.cancel();
-    let java = lang("java");
-    assert_eq!(s.syntax_errors(&snap(&java, "class A {}"), &cancel), Err(StructureError::Cancelled));
+    let c = lang("c");
+    assert_eq!(s.syntax_errors(&snap(&c, "void f() {}"), &cancel), Err(StructureError::Cancelled));
     assert_eq!(s.locals(&snap(&lang("json"), "{}"), Pos::new(0, 0), &none()), Err(StructureError::Unsupported));
 }
 
@@ -247,13 +237,13 @@ fn open_documents_use_the_incremental_tree() {
     let syntax = Arc::new(Syntax::new());
     let cache = Arc::new(SyntaxCache::new(syntax));
     let service = StructureService::new(cache.clone());
-    let java = lang("java");
-    let mut doc = ide_text::Document::new("class A {\n  void f(int a) {\n    int x = a;\n    use(x);\n  }\n}\n");
+    let c = lang("c");
+    let mut doc = ide_text::Document::new("// cached source\nvoid f(int a) {\n    int x = a;\n    use(x);\n}\n");
     let id = DocId::next();
-    cache.open(id, &java, doc.version());
+    cache.open(id, &c, doc.version());
     let text = doc.text();
     let at = occ(&text, "x", 2).start;
-    let l = service.locals(&Snapshot::doc(id, doc.version(), &java, &text), at, &none()).unwrap();
+    let l = service.locals(&Snapshot::doc(id, doc.version(), &c, &text), at, &none()).unwrap();
     assert!(matches!(l, Locals::Local { ref symbol } if symbol.references.len() == 1));
     // Type a new use of `x`; the cache re-parses incrementally.
     let insert_at = doc.pos_to_offset(Pos::new(3, 11));
@@ -262,7 +252,7 @@ fn open_documents_use_the_incremental_tree() {
     let (_, edits) = doc.apply_detailed(doc.version(), &cs).unwrap();
     cache.edit(id, doc.version(), &edits);
     let text = doc.text();
-    let l = service.locals(&Snapshot::doc(id, doc.version(), &java, &text), at, &none()).unwrap();
+    let l = service.locals(&Snapshot::doc(id, doc.version(), &c, &text), at, &none()).unwrap();
     match l {
         Locals::Local { symbol } => assert_eq!(symbol.references, vec![occ(&text, "x", 2), occ(&text, "x", 3)]),
         other => panic!("{other:?}"),

@@ -25,7 +25,7 @@ const config = (id: string, kind = "npm"): RunConfig => ({
   isTest: false,
   debugAdapter: null,
 });
-const configs = [config("build"), config("serve"), config("App", "application")];
+const configs = [config("build"), config("serve"), config("App", "program")];
 
 beforeEach(() => {
   resetRuns();

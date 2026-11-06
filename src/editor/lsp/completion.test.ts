@@ -460,9 +460,6 @@ describe("typeColumnText", () => {
     expect(
       typeColumnText({ detail: "Auto-import", additionalEdits: edit("\nfrom collections import OrderedDict") }),
     ).toBe("collections");
-    expect(typeColumnText({ detail: "Map<K, V>", additionalEdits: edit("import java.util.HashMap;\n") })).toBe(
-      "Map<K, V> (java.util)",
-    );
     expect(typeColumnText({ detail: null, additionalEdits: edit("use std::collections::HashMap;\n") })).toBe(
       "std::collections",
     );
@@ -471,8 +468,11 @@ describe("typeColumnText", () => {
 
   it("keeps a detail that already says where", () => {
     expect(
-      typeColumnText({ detail: "java.util.ArrayList", additionalEdits: edit("import java.util.ArrayList;\n") }),
-    ).toBe("java.util.ArrayList");
+      typeColumnText({
+        detail: "collections.OrderedDict",
+        additionalEdits: edit("from collections import OrderedDict\n"),
+      }),
+    ).toBe("collections.OrderedDict");
     expect(typeColumnText({ detail: "fn()  ", additionalEdits: [] })).toBe("fn() ");
   });
 });

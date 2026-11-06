@@ -1,11 +1,5 @@
-/**
- * External Libraries: the project's SDK / library source folders (the Python
- * interpreter's standard library and site-packages, the JDK, node_modules
- * packages, Cargo crates and the Rust standard library, GOROOT and Go modules,
- * Maven / Gradle dependency jars) as a Project view root. Their files open
- * read-only, like IDEA's library sources. Archives (the JDK's `src.zip`, jars)
- * are browsed through the backend's `<archive>!/<entry>` paths.
- */
+/** External Libraries: SDK and dependency source folders shown as read-only
+ * Project roots. Generic archives use the backend's `<archive>!/<entry>` paths. */
 import { commands, type LibraryGroup } from "@/bindings";
 import { registerActions } from "@/platform/actions";
 import { setLibraryRoots } from "@/editor/api";
@@ -17,30 +11,22 @@ export const EXTERNAL_LIBRARIES_LABEL = "External Libraries";
 
 const GROUP_ICONS: Record<string, string> = {
   python: "file-python",
-  jdk: "file-java",
   nodeCore: "file-js",
   nodeModules: "file-npm",
   rust: "file-rust",
   cargo: "file-cargo",
   go: "file-go",
   goModules: "file-gomod",
-  maven: "maven-project",
-  gradle: "file-gradle",
   ruby: "file-ruby",
   gems: "file-ruby",
 };
 
-/** An archive's root (`/jdk/lib/src.zip!`): its entries live below `<archive>!/`. */
+/** An archive's root (`/libs/sources.zip!`): its entries live below `<archive>!/`. */
 const isArchiveRoot = (path: string) => path.endsWith("!");
 
 /** Files whose change can change the libraries (the backend re-detects only the affected ecosystem). */
 const MANIFESTS = new Set([
   "pyvenv.cfg",
-  "pom.xml",
-  "build.gradle",
-  "build.gradle.kts",
-  "settings.gradle",
-  "settings.gradle.kts",
   "package.json",
   "package-lock.json",
   "yarn.lock",
@@ -94,7 +80,6 @@ const sdkKey = (s: ReturnType<typeof useProject.getState>) => {
     s.project?.root ?? null,
     s.project?.trusted,
     l?.python?.interpreter,
-    l?.java?.jdk,
     l?.node?.interpreter,
     l?.rust?.toolchain,
     l?.rust?.stdlib,

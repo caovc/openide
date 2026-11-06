@@ -5,7 +5,7 @@
  */
 import type { FileEntry, OutlineItem } from "@/bindings";
 import { isIgnoredName } from "@/platform/ignoredNames";
-import { ancestorsWithin, isInside, isSameOrInside, nameOf, parentOf, relativeTo } from "./paths";
+import { ancestorsWithin, isInside, isSameOrInside, nameOf, parentOf } from "./paths";
 
 export interface TreeOptions {
   /** Applied only by the Unity pane, never persisted as a user preference. */
@@ -140,16 +140,6 @@ export function visibleEntries(listing: readonly FileEntry[], opts: TreeOptions)
   return opts.foldersFirst && opts.sortBy === "name" ? filtered : sortEntries(filtered, opts.foldersFirst, opts.sortBy);
 }
 
-/** JVM-style source folders join compacted package chains with `.` instead of `/`. */
-const PACKAGE_ROOT = /(^|\/)(java|kotlin|scala|groovy)(\/|$)/;
-
-/** `src/main/kotlin`-style source roots end a chain: packages below them compact separately. */
-const SOURCE_ROOT = /(^|\/)(main|test)\/(java|kotlin|scala|groovy)$/;
-
-function chainSeparator(root: string, head: string): string {
-  return PACKAGE_ROOT.test(relativeTo(root, parentOf(head))) ? "." : "/";
-}
-
 export interface Placeholder {
   /** Folder (effective path) receiving the new item. */
   parent: string;
@@ -204,7 +194,6 @@ export function buildModel(
     let end = entry;
     if (opts.compact && !(placeholder && placeholder.parent === entry.path)) {
       for (;;) {
-        if (SOURCE_ROOT.test(relativeTo(root.path, end.path))) break;
         const listing = listings.get(end.path);
         if (!listing) break;
         const visible = visibleEntries(listing, opts);
@@ -217,7 +206,7 @@ export function buildModel(
         names.push(only.name);
       }
     }
-    const label = names.length > 1 ? names.join(chainSeparator(root.path, entry.path)) : entry.name;
+    const label = names.length > 1 ? names.join("/") : entry.name;
     return {
       key: entry.path,
       path: end.path,

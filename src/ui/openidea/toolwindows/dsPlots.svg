@@ -1,0 +1,5 @@
+<!-- OpenIDEA: data-science plots, a sampled curve on coordinate axes. Original artwork. -->
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M2.5 2.5V13.5H14M4.5 10.5L7.5 7.5L10 9L13 4" stroke="#6C707E" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="4.5" cy="10.5" r="1" fill="#6C707E"/><circle cx="7.5" cy="7.5" r="1" fill="#6C707E"/><circle cx="10" cy="9" r="1" fill="#6C707E"/><circle cx="13" cy="4" r="1" fill="#6C707E"/>
+</svg>

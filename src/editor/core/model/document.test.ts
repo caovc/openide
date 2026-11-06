@@ -42,14 +42,14 @@ describe("DocumentManager + slots", () => {
     const settings = {
       editor: {
         codeStyle: {
-          languages: { java: { useTab: true, tabSize: 1, indent: 1 } },
+          languages: { typescript: { useTab: true, tabSize: 1, indent: 1 } },
           detectIndents: true,
           editorconfig: false,
         },
       },
     };
-    const { manager } = setup({ "/p/A.java": "class A {\n    int x;\n}\n" }, settings);
-    const model = await manager.acquire("/p/A.java");
+    const { manager } = setup({ "/p/A.ts": "class A {\n    int x;\n}\n" }, settings);
+    const model = await manager.acquire("/p/A.ts");
     const first = new EditorSlot(model, "t1", host);
     const split = new EditorSlot(model, "t2", host, { from: first });
     for (const slot of [first, split])
@@ -60,14 +60,14 @@ describe("DocumentManager + slots", () => {
     const settings = {
       editor: {
         codeStyle: {
-          languages: { java: { useTab: true, tabSize: 1, indent: 1 } },
+          languages: { typescript: { useTab: true, tabSize: 1, indent: 1 } },
           detectIndents: true,
           editorconfig: false,
         },
       },
     };
-    const { manager } = setup({ "/p/A.java": "class A {\n    int x;\n}\n" }, settings);
-    const model = await manager.acquire("/p/A.java");
+    const { manager } = setup({ "/p/A.ts": "class A {\n    int x;\n}\n" }, settings);
+    const model = await manager.acquire("/p/A.ts");
     const first = new EditorSlot(model, "t1", host);
     const split = new EditorSlot(model, "t2", host, { from: first });
     expect(first.currentState().tabSize).toBe(4);
@@ -80,7 +80,7 @@ describe("DocumentManager + slots", () => {
       expect(slot.currentState().tabSize).toBe(1);
       expect(slot.currentState().facet(indentUnit)).toBe("\t");
     }
-    expect(useDocMeta.getState()["/p/A.java"]?.indent).toEqual({ tabSize: 1, insertSpaces: false });
+    expect(useDocMeta.getState()["/p/A.ts"]?.indent).toEqual({ tabSize: 1, insertSpaces: false });
   });
 
   it("shares one document between split slots and syncs edits to the backend", async () => {
@@ -141,9 +141,9 @@ describe("DocumentManager + slots", () => {
         "/p/src/main/resources/sql/no-final.sql": "SELECT *\nFROM patients\n\tLIMIT 10 OFFSET 0",
         "/p/trailing.sql": "SELECT id   \nFROM patients;\t \n",
         "/p/crlf.sql": "SELECT id\r\nFROM patients;\r\n",
-        "/p/Untouched.java": "class Untouched {   \n\tint id;\n}",
+        "/p/Untouched.ts": "class Untouched {   \n\tint id;\n}",
         "/p/blank.sql": "SELECT 1;\n\n\n",
-        "/p/edited.java": "class Edited {}\n",
+        "/p/edited.ts": "class Edited {}\n",
       };
       const { backend, manager } = setup(files, {
         editor: { general: { stripTrailingScope: "all", removeTrailingBlankLines: true } },
@@ -158,12 +158,12 @@ describe("DocumentManager + slots", () => {
         edited.dispatchLocal({ changes: { from: 0, insert: "// edited\n" } });
         await manager.saveAll(reason);
         for (const [path, text] of Object.entries(files)) {
-          if (path !== "/p/edited.java") expect(backend.files.get(path), path).toBe(text);
+          if (path !== "/p/edited.ts") expect(backend.files.get(path), path).toBe(text);
         }
-        expect(backend.files.get("/p/edited.java")).toBe("// edited\nclass Edited {}\n");
+        expect(backend.files.get("/p/edited.ts")).toBe("// edited\nclass Edited {}\n");
         expect(save.mock.calls).toEqual([[edited.model.doc]]);
         expect(participant).toHaveBeenCalledTimes(reason === "explicit" ? 1 : 0);
-        if (reason === "explicit") expect(participant.mock.calls[0]![0].path).toBe("/p/edited.java");
+        if (reason === "explicit") expect(participant.mock.calls[0]![0].path).toBe("/p/edited.ts");
         await manager.saveAll(reason);
         expect(save).toHaveBeenCalledTimes(1);
       } finally {

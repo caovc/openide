@@ -242,7 +242,7 @@ describe("planMoveStatement", () => {
 describe("completeStatementSpec (text rules)", () => {
   it("puts the `;` before a trailing comment", () => {
     const s = state("int a = 1| // one", comments("//"));
-    expect(withCaret(s, completeStatementSpec(s, "java"))).toBe("int a = 1; // one\n|");
+    expect(withCaret(s, completeStatementSpec(s, "typescript"))).toBe("int a = 1; // one\n|");
     expect(codeEnd('s = "//x" // c', "//")).toBe(9);
   });
 
@@ -265,7 +265,7 @@ describe("planCompleteStatement", () => {
   it("inserts the `)` tree-sitter reports missing, then completes the block head", () => {
     const s = state("    if (a > 0|\n    b();\n", java);
     const at = s.doc.line(1).to;
-    const out = withCaret(s, planCompleteStatement(s, "java", null, errs(missing(s, at, ")"))));
+    const out = withCaret(s, planCompleteStatement(s, "typescript", null, errs(missing(s, at, ")"))));
     expect(out).toBe("    if (a > 0) {\n        |\n    }\n    b();\n");
   });
 
@@ -277,7 +277,7 @@ describe("planCompleteStatement", () => {
 
   it("closes an initializer brace with its `;` and ignores tokens 'missing' after a finished statement", () => {
     const arr = state("    int[] x = {1, 2|\n    foo();\n", java);
-    expect(withCaret(arr, planCompleteStatement(arr, "java", null, errs(unexpected(arr, 18, 19))))).toBe(
+    expect(withCaret(arr, planCompleteStatement(arr, "typescript", null, errs(unexpected(arr, 18, 19))))).toBe(
       "    int[] x = {1, 2};\n    |\n    foo();\n",
     );
     const done = state("    var b = 2;|\n}\n", java);
@@ -292,7 +292,7 @@ describe("planCompleteStatement", () => {
 
   it("places a missing `;` before a trailing comment", () => {
     const s = state("int a = 1| // one\nfoo();\n", java);
-    const out = withCaret(s, planCompleteStatement(s, "java", null, errs(missing(s, 9, ";"))));
+    const out = withCaret(s, planCompleteStatement(s, "typescript", null, errs(missing(s, 9, ";"))));
     expect(out).toBe("int a = 1; // one\n|\nfoo();\n");
   });
 
@@ -400,14 +400,14 @@ describe("structural commands", () => {
     expect(
       await completeStatementStructural(
         v,
-        "java",
+        "typescript",
         queries(() => null, errs(unexpected(v.state, 0, 5))),
       ),
     ).toBe("done");
     expect(v.state.doc.toString()).toBe("foo(1);\n\n");
     const w = view("x|\n");
-    expect(await completeStatementStructural(w, "java", { ranges: async () => null, errors: async () => null })).toBe(
-      "fallback",
-    );
+    expect(
+      await completeStatementStructural(w, "typescript", { ranges: async () => null, errors: async () => null }),
+    ).toBe("fallback");
   });
 });

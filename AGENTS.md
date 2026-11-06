@@ -7,6 +7,8 @@
 - **UI**：沿用 `src/styles/tokens.css` + CSS Modules；变量、图表、HTML widgets 等 DS 面板通过 `src/workbench/contributions.ts` 的 tool window 贡献点接入，不另开视觉体系；沿用 actions、文本目录与无障碍约定。
 - **许可证边界**：`posit-dev/ark` 为 MIT，可按许可证要求集成；Positron 本体为 Elastic-2.0（ELv2），只参考协议，不复制其 UI 源码进本仓。引入第三方组件先核许可证与 NOTICE。
 - **多 agent**：先读 [状态板](.agents/BOARD.md) 与 [协作协议](docs/ds/COLLAB.md)；一人一 worktree，认领 BOARD 并确认路径所有权后再改文件。本环境由 **OpenIDE大师** 协调。
+- **JVM 边界**：用户已明确授权 U11 硬剥离整个 JVM 工具链。禁止恢复内置 Java/Kotlin/Scala/Groovy/Clojure/JSP、JDK/JDT、Maven/Gradle/Tomcat/Android 支持；保留通用 LSP/DAP/运行/构建及 Python/R。旧 JVM 配置仅作无损数据兼容，不可执行。
+- **功能研究队列**：[FEATURE-BACKLOG.md](docs/ds/FEATURE-BACKLOG.md)，包含 Python 脚本/Notebook 与 R 脚本/Console/Notebook 调试的独立真实验收。研究不等于实现完成。
 - **决策日志**：`.audit/ds-ide.tsv`，本地追加，可不提交；它不是跨 worktree 的通信状态源。
 - **入口**：[产品范围](docs/ds/PRODUCT.md) · [可验证路线图](docs/ds/ROADMAP.md) · [环境与启动](ENV.md)。ENV.md 为环境快照；当前产品决策以本节及 `docs/ds/` 为准。
 
@@ -36,8 +38,6 @@ Visual style: dark, low-contrast greys, one cool accent
   `openidea-plugin` CLI (plugin starter templates live in its `templates.rs`).
 - `wit/` — plugin interface definitions; `plugins/` — sample and bundled plugins.
   Plugin docs: `plugins/README.md`, `docs/plugins/themes.md`.
-- `java/` — JDT LS extension bundles (`java-usages`, `kotlin-bridge`) and the patched
-  Lombok agent, embedded into the app by `ide-sdk` / `ide-tools`.
 - `e2e/` — Playwright UI tests (`pnpm e2e`). `fixtures/` — sample projects per language
   for manual and automated testing.
 

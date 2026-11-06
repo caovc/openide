@@ -100,8 +100,6 @@ fn interpreter<'a>(program: &str, target: &'a RunTarget) -> Option<&'a str> {
         pick(&target.python, "python3")
     } else if name == "node" {
         pick(&target.node, "node")
-    } else if name == "java" {
-        pick(&target.java, "java")
     } else {
         None
     }

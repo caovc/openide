@@ -431,7 +431,7 @@ fn uncaptured(cx: &Ctx, b: usize) -> Locals {
 
 /// Spellings of `name` in `scope` the query could not see, so the reference
 /// list may be incomplete: inside `ERROR` nodes, or as a `$name` string
-/// template the grammar keeps as plain text (Kotlin `"$x"`).
+/// template the grammar keeps as plain text.
 fn hidden_occurrences(text: &str, scope: Node, name: &str, captured: &HashSet<usize>) -> bool {
     let is_word = |c: Option<char>| c.is_some_and(|c| c.is_alphanumeric() || c == '_');
     let templated = format!("${name}");

@@ -179,7 +179,7 @@ pub enum ServerStatus {
     Crashed,
     Stopped,
     Missing,
-    /// Not started: its configuration can't launch it (e.g. no JDK new enough);
+    /// Not started: its configuration can't launch it (e.g. a configured executable is missing);
     /// the message says what to change, and a settings change retries.
     Misconfigured,
 }
@@ -238,12 +238,6 @@ pub enum DebugEvent {
     Terminated,
     Exited {
         code: i32,
-    },
-    /// java-debug's `hotcodereplace` event: `change_type` is `BUILD_COMPLETE` (classes
-    /// changed and can be reloaded), `STARTING`, `END`, `WARNING` or `ERROR`.
-    HotCodeReplace {
-        change_type: String,
-        message: String,
     },
 }
 

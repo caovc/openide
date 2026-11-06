@@ -13,7 +13,6 @@ const BUILTIN: &[(&str, &str)] = &[
     ("astro", include_str!("../../../languages/astro.toml")),
     ("bat", include_str!("../../../languages/bat.toml")),
     ("c", include_str!("../../../languages/c.toml")),
-    ("clojure", include_str!("../../../languages/clojure.toml")),
     ("cmake", include_str!("../../../languages/cmake.toml")),
     ("cpp", include_str!("../../../languages/cpp.toml")),
     ("csharp", include_str!("../../../languages/csharp.toml")),
@@ -35,21 +34,17 @@ const BUILTIN: &[(&str, &str)] = &[
     ("gowork", include_str!("../../../languages/gowork.toml")),
     ("godot-resource", include_str!("../../../languages/godot-resource.toml")),
     ("graphql", include_str!("../../../languages/graphql.toml")),
-    ("groovy", include_str!("../../../languages/groovy.toml")),
     ("haskell", include_str!("../../../languages/haskell.toml")),
     ("hcl", include_str!("../../../languages/hcl.toml")),
     ("html", include_str!("../../../languages/html.toml")),
     ("http", include_str!("../../../languages/http.toml")),
     ("ignore", include_str!("../../../languages/ignore.toml")),
     ("ini", include_str!("../../../languages/ini.toml")),
-    ("java", include_str!("../../../languages/java.toml")),
     ("javascript", include_str!("../../../languages/javascript.toml")),
     ("javascriptreact", include_str!("../../../languages/javascriptreact.toml")),
     ("json", include_str!("../../../languages/json.toml")),
     ("jsonc", include_str!("../../../languages/jsonc.toml")),
-    ("jsp", include_str!("../../../languages/jsp.toml")),
     ("julia", include_str!("../../../languages/julia.toml")),
-    ("kotlin", include_str!("../../../languages/kotlin.toml")),
     ("latex", include_str!("../../../languages/latex.toml")),
     ("less", include_str!("../../../languages/less.toml")),
     ("log", include_str!("../../../languages/log.toml")),
@@ -72,7 +67,6 @@ const BUILTIN: &[(&str, &str)] = &[
     ("ruby", include_str!("../../../languages/ruby.toml")),
     ("rust", include_str!("../../../languages/rust.toml")),
     ("sass", include_str!("../../../languages/sass.toml")),
-    ("scala", include_str!("../../../languages/scala.toml")),
     ("scss", include_str!("../../../languages/scss.toml")),
     ("shellscript", include_str!("../../../languages/shellscript.toml")),
     ("sql", include_str!("../../../languages/sql.toml")),
@@ -88,9 +82,6 @@ const BUILTIN: &[(&str, &str)] = &[
     ("yaml", include_str!("../../../languages/yaml.toml")),
     ("zig", include_str!("../../../languages/zig.toml")),
 ];
-
-// Kept on disk for phase B; only explicit user overrides can restore them by default.
-const JVM_BUILTINS: &[&str] = &["java", "kotlin", "scala", "groovy", "jsp", "clojure"];
 
 pub struct LanguageRegistry {
     /// Built-in definitions and the user's `languages/*.toml`.
@@ -234,12 +225,8 @@ impl LanguageRegistry {
     /// Loads the built-in definitions plus `*.toml` overrides from `user_dir`
     /// (a user file with the same `id` replaces the built-in one).
     pub fn load(user_dir: Option<&Path>) -> IdeResult<Self> {
-        Self::load_profile(user_dir, std::env::var("OPENIDE_JVM").is_ok_and(|v| v == "1"))
-    }
-
-    fn load_profile(user_dir: Option<&Path>, jvm: bool) -> IdeResult<Self> {
         let mut configs = Vec::new();
-        for (name, src) in BUILTIN.iter().filter(|(name, _)| jvm || !JVM_BUILTINS.contains(name)) {
+        for (name, src) in BUILTIN {
             configs.push(parse(src).map_err(|e| IdeError::internal(format!("languages/{name}.toml: {e}")))?);
         }
         if let Some(dir) = user_dir.filter(|d| d.is_dir()) {
@@ -470,7 +457,6 @@ mod tests {
         "CSS",
         "Go",
         "HTML",
-        "Java",
         "JavaScript",
         "Jinja",
         "JSON",
@@ -502,7 +488,6 @@ mod tests {
         "Brainfuck",
         "Cobol",
         "C#",
-        "Clojure",
         "ClojureScript",
         "Closure Stylesheets (GSS)",
         "CMake",
@@ -531,7 +516,6 @@ mod tests {
         "F#",
         "Gas",
         "Gherkin",
-        "Groovy",
         "Haskell",
         "Haxe",
         "HXML",
@@ -539,7 +523,6 @@ mod tests {
         "IDL",
         "JSON-LD",
         "Julia",
-        "Kotlin",
         "LiveScript",
         "Log",
         "Lua",
@@ -570,7 +553,6 @@ mod tests {
         "RPM Spec",
         "Ruby",
         "SAS",
-        "Scala",
         "Scheme",
         "Shell",
         "Sieve",
@@ -609,35 +591,32 @@ mod tests {
         "Vue",
         "Angular Template",
         "ERB",
-        "JSP",
         "Astro",
     ];
 
     fn reg() -> LanguageRegistry {
-        LanguageRegistry::load_profile(None, false).unwrap()
+        LanguageRegistry::load(None).unwrap()
     }
 
     #[test]
-    fn ds_profile_hides_jvm_but_retains_python_and_r() {
-        let ds = reg();
-        let legacy = LanguageRegistry::load_profile(None, true).unwrap();
-        for id in JVM_BUILTINS {
-            assert!(ds.get(&LanguageId::new(*id)).is_none(), "{id}");
-            assert!(legacy.get(&LanguageId::new(*id)).is_some(), "{id}");
+    fn bundled_languages_exclude_jvm_and_preserve_data_science() {
+        let registry = reg();
+        for id in ["java", "kotlin", "scala", "groovy", "clojure", "jsp"] {
+            assert!(registry.get(&LanguageId::new(id)).is_none(), "{id}");
         }
-        for (path, id) in [("analysis.py", "python"), ("analysis.R", "r")] {
-            assert_eq!(detect(&ds, path), id);
-            assert!(ds.get(&LanguageId::new(id)).is_some());
+        for path in ["Main.java", "Main.kt", "App.scala", "build.gradle", "index.jsp", "app.clj"] {
+            assert_eq!(detect(&registry, path), "plaintext", "{path}");
         }
-    }
-
-    #[test]
-    fn explicit_user_jvm_definition_can_restore_a_hidden_builtin() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("java.toml"), include_str!("../../../languages/java.toml")).unwrap();
-        let ds = LanguageRegistry::load_profile(Some(dir.path()), false).unwrap();
-        assert_eq!(detect(&ds, "Main.java"), "java");
-        assert_eq!(detect(&ds, "Main.kt"), "plaintext");
+        for (path, id) in [
+            ("analysis.py", "python"),
+            ("analysis.R", "r"),
+            ("kernel.c", "c"),
+            ("kernel.cpp", "cpp"),
+            ("config.xml", "xml"),
+            ("app.properties", "properties"),
+        ] {
+            assert_eq!(detect(&registry, path), id);
+        }
     }
 
     fn detect(reg: &LanguageRegistry, path: &str) -> String {
@@ -878,13 +857,6 @@ mod tests {
             ("stub.pyi", "python"),
             ("main.go", "go"),
             ("go.mod", "go.mod"),
-            ("Main.java", "java"),
-            ("Main.kt", "kotlin"),
-            ("build.gradle.kts", "kotlin"),
-            ("build.gradle", "groovy"),
-            ("Jenkinsfile", "groovy"),
-            ("App.scala", "scala"),
-            ("build.sbt", "scala"),
             ("x.c", "c"),
             ("x.h", "c"),
             ("x.hpp", "cpp"),
@@ -919,8 +891,6 @@ mod tests {
             ("a.less", "less"),
             ("App.vue", "vue"),
             ("App.svelte", "svelte"),
-            ("index.jsp", "jsp"),
-            ("WEB-INF/tags/card.tag", "jsp"),
             ("index.astro", "astro"),
             ("package.json", "json"),
             ("tsconfig.json", "jsonc"),
@@ -958,8 +928,7 @@ mod tests {
             ("notes.txt", "plaintext"),
         ];
         for (path, id) in cases {
-            let expected = if JVM_BUILTINS.contains(&id) { "plaintext" } else { id };
-            assert_eq!(detect(&reg, path), expected, "{path}");
+            assert_eq!(detect(&reg, path), id, "{path}");
         }
     }
 
@@ -1037,7 +1006,6 @@ mod tests {
         let mut ft = FileTypes::default();
         ft.associations
             .insert("python".into(), assoc(&["*.foo", "Pipfile.lock", "build_*.cfg", "*.LOG"], &[], &["mypy"]));
-        ft.associations.insert("groovy".into(), assoc(&[], &["Jenkinsfile"], &[]));
         ft.associations.insert("shellscript".into(), assoc(&["Jenkinsfile"], &[], &[]));
         ft.associations.insert("rust".into(), assoc(&[], &["*.rs"], &[]));
         assert!(reg.set_file_types(ft.clone()));

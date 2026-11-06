@@ -1,4 +1,4 @@
-//! Versioned app-owned plugin jars, shared by tool detection and language-server launches.
+//! Versioned app-owned tool assets, shared by tool detection and language-server launches.
 
 use crate::{Method, ToolSpec};
 use std::path::{Path, PathBuf};
@@ -6,8 +6,7 @@ use std::path::{Path, PathBuf};
 pub(crate) fn install(root: &Path, spec: &ToolSpec) -> std::io::Result<PathBuf> {
     let Method::Bundled { filename, bytes, .. } = spec.method else { unreachable!("bundled tool") };
     let dir = root.join(spec.name).join("bin");
-    // The agent path participates in the JDT LS workspace key: upgrades must
-    // discard incremental state compiled with the previous agent.
+    // Keep each asset version at a stable path for consumers caching tool state.
     let path = dir.join(filename);
     if std::fs::read(&path).is_ok_and(|old| old == bytes) {
         return Ok(path);

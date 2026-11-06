@@ -1,5 +1,5 @@
 use ide_core::NullSink;
-use ide_host::{Host, HostConfig, ops};
+use ide_host::{Host, HostConfig};
 use std::sync::Arc;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -22,10 +22,7 @@ async fn split_storage_keeps_user_history_and_uses_local_tools_and_caches() {
         runtime: tokio::runtime::Handle::current(),
         project_environment: false,
     });
-    assert_eq!(
-        std::path::PathBuf::from(ops::tools::jdk_download_location(&host, "main").unwrap()),
-        local.join("tools/jdks")
-    );
+    assert_eq!(ide_tools::tools_dir(&local), local.join("tools"));
     let light = host.open_light("main", &root.join("notes.txt")).unwrap();
     assert!(light.cache_dir.starts_with(&local));
     assert!(data.join("history").exists());

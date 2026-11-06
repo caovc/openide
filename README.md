@@ -6,15 +6,15 @@
 
 ## 当前能力（已验证切片）
 
-| 能力 | 状态 |
-| --- | --- |
-| R（Posit [Ark](https://github.com/posit-dev/ark)）无 UI ZMQ 执行 / LSP / DAP / stdin | 已通过集成冒烟 |
-| Python notebook（ipykernel）不回退 | 已回归 |
-| 共用 Session 变量与图表（R + Python） | runtime 已验；GUI 待验 |
-| Console（notebook 外交互） | host 已验；GUI 待验 |
-| 编辑器 Run（选区 / 当前文件 → Console） | unit/DOM 已验；原生 GUI 待验 |
-| 数据探索 `TableProvider` + Ark DataExplorer 薄切片 | U9.1 + U9.2a smoke PASS |
-| JVM / Java 相关 IDE 能力 | 默认软隐藏（诊断可开） |
+| 能力                                                                                 | 状态                                       |
+| ------------------------------------------------------------------------------------ | ------------------------------------------ |
+| R（Posit [Ark](https://github.com/posit-dev/ark)）无 UI ZMQ 执行 / LSP / DAP / stdin | 已通过集成冒烟                             |
+| Python notebook（ipykernel）不回退                                                   | 已回归                                     |
+| 共用 Session 变量与图表（R + Python）                                                | runtime 已验；GUI 待验                     |
+| Console（notebook 外交互）                                                           | host 已验；GUI 待验                        |
+| 编辑器 Run（选区 / 当前文件 → Console）                                              | unit/DOM 已验；原生 GUI 待验               |
+| 数据探索 `TableProvider` + Ark DataExplorer 薄切片                                   | U9.1 + U9.2a smoke PASS                    |
+| JVM / Java 相关 IDE 能力                                                             | U11 已移除内置工具链；旧配置保留但不可执行 |
 
 详细范围与验收谓词见 [`docs/ds/PRODUCT.md`](docs/ds/PRODUCT.md)、路线图 [`docs/ds/ROADMAP.md`](docs/ds/ROADMAP.md)、状态板 [`.agents/BOARD.md`](.agents/BOARD.md)。云端继续开发请读 [`docs/ds/HANDOFF-CLOUD-CODEX.md`](docs/ds/HANDOFF-CLOUD-CODEX.md)。
 
@@ -46,8 +46,9 @@ cargo test -p ide-notebook --test ark_explorer -- --ignored --nocapture --test-t
 
 - U9：数据探索 UI（参考 [t8y2/dbx](https://github.com/t8y2/dbx) canvas，Apache-2.0）与 Python 适配、HTML widgets
 - U10：Windows SAS（COM → .NET → Tauri，后置）
-- U11：JVM 相关能力硬删除
+- U11：JVM 工具链硬删除已实现，验收证据见 `docs/ds/evidence/u11/REPORT.md`
 - U12：Python / R 包可视化管理；R 含包文档浏览
+- DS-04A–D：Python 脚本/Notebook、R 脚本/Console/Notebook 完整调试；见 `docs/ds/FEATURE-BACKLOG.md`
 
 ## 许可与归属
 

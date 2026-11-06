@@ -252,7 +252,7 @@ impl SymbolKind {
 pub enum Visibility {
     Public,
     Protected,
-    /// Package / module / assembly scope (Java default, `internal`, `pub(crate)`, Go unexported).
+    /// Package / module / assembly scope (`internal`, `pub(crate)`, Go unexported).
     Package,
     Private,
 }

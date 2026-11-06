@@ -388,11 +388,7 @@ function PaneContent({ paneId, tab, tabsVisible }: { paneId: string; tab: Tab; t
     const host = <TextEditorHost key={tab.id} tabId={tab.id} />;
     return (
       <>
-        {virtual ? (
-          <VirtualBanner path={tab.input.path!} decompiled={virtual.decompiled} description={virtual.description} />
-        ) : (
-          <EditorBanners path={tab.input.path} />
-        )}
+        {virtual ? <VirtualBanner description={virtual.description} /> : <EditorBanners path={tab.input.path} />}
         <FindBar paneId={paneId} />
         {crumbs && <CodeBreadcrumbs path={tab.input.path!} tabId={tab.id} position="top" />}
         {wrapper ? (

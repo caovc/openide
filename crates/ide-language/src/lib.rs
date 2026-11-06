@@ -144,12 +144,8 @@ pub struct LanguageServerConfig {
     /// (`refactor` keeps `refactor.extract`); empty keeps every kind.
     #[serde(default)]
     pub code_action_kinds: Vec<String>,
-    /// Newest Java release the server runs on (kotlin-language-server: 21). A
-    /// newer `JAVA_HOME` is replaced by the newest installed JDK that fits.
-    #[serde(default)]
-    pub max_java: Option<u32>,
-    /// Set by the settings hook when the server can't run here (jdtls without
-    /// a JDK 21+); reported as the failure instead of launching it.
+    /// Set by the settings hook when the server cannot run here; reported as
+    /// the failure instead of launching it.
     #[serde(skip)]
     pub launch_error: Option<String>,
     /// Register source files with tsserver when no project configuration exists.

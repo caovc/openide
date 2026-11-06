@@ -21,21 +21,6 @@ export interface FileTarget {
   className?: string;
 }
 
-/**
- * The target of a JVM stack frame `at com.acme.Foo.bar(Foo.kt:22)`: the file
- * under its package directory, so frames resolve by fully qualified class name
- * (as in IDEA), not by a bare file name that several packages may share.
- */
-export function jvmFrameTarget(className: string | undefined, file: string, line: number | undefined): FileTarget {
-  const pkg = className?.includes(".") ? className.slice(0, className.lastIndexOf(".")).replace(/\./g, "/") : "";
-  return {
-    path: pkg ? `${pkg}/${file}` : file,
-    line,
-    resolve: "name",
-    ...(className ? { className } : {}),
-  };
-}
-
 export type OutputLink =
   | { kind: "url"; start: number; end: number; url: string }
   | { kind: "file"; start: number; end: number; target: FileTarget };
@@ -48,14 +33,6 @@ interface Pattern {
 
 const num = (s: string | undefined) => (s ? Number(s) : undefined);
 
-/** Index of capture group `g` within the line (requires the `d` flag). */
-function groupRange(m: RegExpMatchArray, g: number): [number, number] {
-  const r = (m as RegExpMatchArray & { indices?: Array<[number, number] | undefined> }).indices?.[g];
-  if (r) return r;
-  const start = m.index! + m[0].indexOf(m[g]!);
-  return [start, start + m[g]!.length];
-}
-
 const PATH = String.raw`(?:[A-Za-z]:[\\/]|~?\/|\.{1,2}\/)?(?:[\w.@+\-]+[\\/])*[\w@+\-][\w.@+\-]*\.[A-Za-z][\w]{0,9}`;
 
 const PATTERNS: Pattern[] = [
@@ -65,15 +42,6 @@ const PATTERNS: Pattern[] = [
     build: (m) => {
       const [start, end] = [m.index!, m.index! + m[0].length];
       return { kind: "file", start, end, target: { path: m[1]!, line: num(m[2]), resolve: "path" } };
-    },
-  },
-  // JVM: at com.acme.OrderController.list(OrderController.kt:22)
-  {
-    re: /(?:([\w$]+(?:\.[\w$]+)*)\.[\w$<>-]+)?\(([\w$.-]+\.(?:java|kt|kts|scala|groovy|clj)):(\d+)\)/dg,
-    build: (m) => {
-      const [start] = groupRange(m, 2);
-      const [, end] = groupRange(m, 3);
-      return { kind: "file", start, end, target: jvmFrameTarget(m[1], m[2]!, num(m[3])) };
     },
   },
   // JS / Node: at foo (src/a.ts:3:7) · at file:///abs/a.mjs:3:7 · at /abs/a.js:3:7

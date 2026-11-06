@@ -35,29 +35,6 @@ describe("findOutputLinks", () => {
     expect(link).toEqual({ path: "app/main.py", line: 3, resolve: "path", text: 'File "app/main.py", line 3' });
   });
 
-  it("java / kotlin frames resolve by fully qualified class name", () => {
-    const [link] = files("\tat com.acme.orders.OrderController.list(OrderController.kt:22)");
-    expect(link).toEqual({
-      path: "com/acme/orders/OrderController.kt",
-      line: 22,
-      resolve: "name",
-      className: "com.acme.orders.OrderController",
-      text: "OrderController.kt:22",
-    });
-    // Nested classes and lambdas live in the outer class's file; JDK module prefixes are skipped.
-    expect(files("\tat com.acme.Outer$Inner.lambda$run$0(Outer.java:7)")[0]).toMatchObject({
-      path: "com/acme/Outer.java",
-      className: "com.acme.Outer$Inner",
-    });
-    expect(files("\tat java.base/java.util.ArrayList.get(ArrayList.java:427)")[0]).toMatchObject({
-      path: "java/util/ArrayList.java",
-      className: "java.util.ArrayList",
-    });
-    // The default package, and a bare `(File.java:3)` without a frame.
-    expect(files("\tat Main.main(Main.java:3)")[0]).toMatchObject({ path: "Main.java", className: "Main" });
-    expect(files("(Main.java:3)")[0]).toEqual({ path: "Main.java", line: 3, resolve: "name", text: "Main.java:3" });
-  });
-
   it("go and generic path:line", () => {
     expect(files("    math_test.go:12: expected 1")[0]).toMatchObject({ path: "math_test.go", line: 12 });
     expect(files("./cmd/server/main.go:8:2: undefined: x")[0]).toMatchObject({

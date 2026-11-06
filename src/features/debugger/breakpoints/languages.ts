@@ -3,7 +3,7 @@
  * when off, new line breakpoints go only into files of languages that have a
  * debug adapter (`languages/*.toml` `[debugger]`).
  */
-import { classFileBreakpointReason } from "@/platform/classFiles";
+import { isVirtualUri } from "@/platform/virtualDocs";
 import { commands, isTauri } from "@/platform/ipc";
 import { workflowSettings } from "@/platform/workflowSettings";
 
@@ -24,7 +24,7 @@ function load() {
 
 /** Whether a new breakpoint may be placed in a file of `language`. */
 export function canPlaceBreakpoint(language: string, path = ""): boolean {
-  if (classFileBreakpointReason(path)) return false;
+  if (isVirtualUri(path) ? "Cannot place breakpoints in this virtual document" : null) return false;
   if (workflowSettings().debugger.breakpointsAnyFile) return true;
   load();
   // Until the language list is known, don't block anything.

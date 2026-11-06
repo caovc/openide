@@ -4,7 +4,7 @@ import type { RootFolder } from "@/platform/languageSettings";
 import { gotoTestOrSubject, testDirectoryFor, type ChooserItem, type TestNavDeps } from "./gotoTest";
 
 const root = (path: string, kind: RootFolder["kind"]): RootFolder => ({ path, kind, detectedFrom: "pom.xml" });
-const ROOTS = [root("src/main/java", "source"), root("src/test/java", "test")];
+const ROOTS = [root("src/main/csharp", "source"), root("src/test/csharp", "test")];
 
 function deps(files: string[], roots = ROOTS) {
   const chosen: { title: string; items: ChooserItem[] }[] = [];
@@ -31,49 +31,49 @@ beforeEach(() => {
 
 describe("Go to Test / Test Subject", () => {
   it("opens the only test of a class", async () => {
-    const d = deps(["/p/src/main/java/a/Foo.java", "/p/src/test/java/a/FooTest.java"]);
-    await gotoTestOrSubject("/p/src/main/java/a/Foo.java", "", d);
-    expect(d.open).toHaveBeenCalledWith("/p/src/test/java/a/FooTest.java");
+    const d = deps(["/p/src/main/csharp/a/Foo.cs", "/p/src/test/csharp/a/FooTest.cs"]);
+    await gotoTestOrSubject("/p/src/main/csharp/a/Foo.cs", "", d);
+    expect(d.open).toHaveBeenCalledWith("/p/src/test/csharp/a/FooTest.cs");
   });
 
   it("goes back from a test to its subject", async () => {
-    const d = deps(["/p/src/main/java/a/Foo.java", "/p/src/test/java/a/FooTest.java"]);
-    await gotoTestOrSubject("/p/src/test/java/a/FooTest.java", "", d);
-    expect(d.open).toHaveBeenCalledWith("/p/src/main/java/a/Foo.java");
+    const d = deps(["/p/src/main/csharp/a/Foo.cs", "/p/src/test/csharp/a/FooTest.cs"]);
+    await gotoTestOrSubject("/p/src/test/csharp/a/FooTest.cs", "", d);
+    expect(d.open).toHaveBeenCalledWith("/p/src/main/csharp/a/Foo.cs");
   });
 
   it("shows a chooser with Create New Test… for several tests, mirrored package first", async () => {
     const d = deps([
-      "/p/src/test/java/b/FooTest.java",
-      "/p/src/test/java/a/FooTests.java",
-      "/p/src/main/java/a/Foo.java",
+      "/p/src/test/csharp/b/FooTest.cs",
+      "/p/src/test/csharp/a/FooTests.cs",
+      "/p/src/main/csharp/a/Foo.cs",
     ]);
-    await gotoTestOrSubject("/p/src/main/java/a/Foo.java", "", d);
+    await gotoTestOrSubject("/p/src/main/csharp/a/Foo.cs", "", d);
     expect(d.chosen[0]!.title).toBe("Choose Test for Foo (2 found)");
-    expect(d.chosen[0]!.items.map((i) => i.label)).toEqual(["Create New Test…", "FooTests.java", "FooTest.java"]);
+    expect(d.chosen[0]!.items.map((i) => i.label)).toEqual(["Create New Test…", "FooTests.cs", "FooTest.cs"]);
   });
 
   it("offers Create New Test… in the mirrored test package when there is none", async () => {
-    const d = deps(["/p/src/main/java/a/Foo.java"]);
-    await gotoTestOrSubject("/p/src/main/java/a/Foo.java", "", d);
+    const d = deps(["/p/src/main/csharp/a/Foo.cs"]);
+    await gotoTestOrSubject("/p/src/main/csharp/a/Foo.cs", "", d);
     expect(d.chosen[0]!.items.map((i) => i.label)).toEqual(["Create New Test…"]);
     await d.chosen[0]!.items[0]!.run();
     expect(d.createTest).toHaveBeenCalledWith({
-      directory: "/p/src/test/java/a",
+      directory: "/p/src/test/csharp/a",
       name: "FooTest",
-      extension: "java",
-      subject: "Foo.java",
+      extension: "cs",
+      subject: "Foo.cs",
     });
   });
 
   it("does not take a non-test file of a test-like name as a test", async () => {
     const d = deps(
-      ["/p/src/main/java/a/Foo.java", "/p/src/main/java/a/FooTests.java"],
-      [root("src/main/java", "source")],
+      ["/p/src/main/csharp/a/Foo.cs", "/p/src/main/csharp/a/FooTests.cs"],
+      [root("src/main/csharp", "source")],
     );
-    // FooTests.java is a test by name, wherever it is.
-    await gotoTestOrSubject("/p/src/main/java/a/Foo.java", "", d);
-    expect(d.open).toHaveBeenCalledWith("/p/src/main/java/a/FooTests.java");
+    // FooTests.cs is a test by name, wherever it is.
+    await gotoTestOrSubject("/p/src/main/csharp/a/Foo.cs", "", d);
+    expect(d.open).toHaveBeenCalledWith("/p/src/main/csharp/a/FooTests.cs");
   });
 
   it("Go / Python / TS conventions, next to the file", async () => {
@@ -100,13 +100,13 @@ describe("Go to Test / Test Subject", () => {
   });
 
   it("hints when a test has no subject", async () => {
-    const d = deps(["/p/src/test/java/a/FooTest.java"]);
-    await gotoTestOrSubject("/p/src/test/java/a/FooTest.java", "", d);
+    const d = deps(["/p/src/test/csharp/a/FooTest.cs"]);
+    await gotoTestOrSubject("/p/src/test/csharp/a/FooTest.cs", "", d);
     expect(d.hint).toHaveBeenCalledWith("No test subject found");
   });
 
   it("puts new tests next to the file without source / test roots", () => {
     expect(testDirectoryFor("/p/pkg/foo.go", "/p", [])).toBe("/p/pkg");
-    expect(testDirectoryFor("/p/src/main/java/Foo.java", "/p", ROOTS)).toBe("/p/src/test/java");
+    expect(testDirectoryFor("/p/src/main/csharp/Foo.cs", "/p", ROOTS)).toBe("/p/src/test/csharp");
   });
 });

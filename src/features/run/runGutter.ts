@@ -22,7 +22,6 @@ import {
 } from "./contextRun";
 import { loadGoModules } from "./goModules";
 import { onServerSettled } from "@/editor/lsp/availability";
-import { resolveCandidates, retryNegativeInheritedMain, unresolvedCandidates } from "./inheritedMain";
 import { fileTargets, OPTIMISTIC, produceContextChoices, type ContextInput } from "./producers";
 import { loadConfigs, useRun } from "./store";
 import { targetLanguage, type RunTarget } from "./targets";
@@ -90,7 +89,7 @@ export function targetTitle(t: RunTarget): string {
 }
 
 export function label(t: RunTarget): string {
-  if (t.kind === "main") return t.className ? `${t.name}.main()` : "main";
+  if (t.kind === "main") return "main";
   return t.name;
 }
 
@@ -206,12 +205,9 @@ export function runGutter(ctx: EditorDocContext): Extension {
       timer: ReturnType<typeof setTimeout> | undefined;
       readonly unsubscribe: () => void;
       readonly offServers: () => void;
-      resolving = false;
-      destroyed = false;
       constructor(readonly view: EditorView) {
         this.schedule(0);
         this.offServers = onServerSettled(() => {
-          retryNegativeInheritedMain();
           this.schedule(0);
         });
         // Redraw the markers with the new results (the gutter recomputes them on any update).
@@ -232,25 +228,10 @@ export function runGutter(ctx: EditorDocContext): Extension {
             cur.length === found.length &&
             cur.every((t, i) => t.pos === found[i]!.pos && t.name === found[i]!.name && t.kind === found[i]!.kind);
           if (!same) view.dispatch({ effects: setTargets.of(found) });
-          this.resolveInherited(view.state.doc.toString());
         }, delay);
-      }
-      /** Classes that may inherit a `main`: ask the language server, then redraw if one does. */
-      resolveInherited(text: string) {
-        if (this.resolving || !path.endsWith(".java")) return;
-        const pending = unresolvedCandidates(path, text);
-        if (!pending.length) return;
-        this.resolving = true;
-        resolveCandidates(path, pending)
-          .then((found) => {
-            if (found && !this.destroyed) this.schedule(0);
-          })
-          .catch(() => {})
-          .finally(() => (this.resolving = false));
       }
       destroy() {
         clearTimeout(this.timer);
-        this.destroyed = true;
         this.offServers();
         this.unsubscribe();
       }

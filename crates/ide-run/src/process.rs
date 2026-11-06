@@ -151,34 +151,7 @@ pub(crate) fn invocation(config: &RunConfig, cwd: &Path) -> Invocation {
     Invocation { program, args: config.args.clone(), raw_args: false, shell: false, display }
 }
 
-/// "Shorten command line" for a `java` launch too long for the platform (see
-/// [`crate::java_cmdline`]): rewrites `inv` and returns the temporary file to delete on exit.
-fn shorten_java(inv: &mut Invocation, config: &RunConfig, cwd: &Path) -> IdeResult<TempFile> {
-    if inv.raw_args || !crate::java_cmdline::is_java_launcher(&inv.program) {
-        return Ok(TempFile(None));
-    }
-    let java = if inv.program.components().count() == 1 {
-        crate::which::find_executable(&inv.program.to_string_lossy(), &crate::wrap::search_path(config))
-            .unwrap_or_else(|| inv.program.clone())
-    } else {
-        inv.program.clone()
-    };
-    let dir = crate::java_cmdline::default_temp_dir();
-    let shortened = crate::java_cmdline::shorten(&java, &inv.args, cwd, cfg!(windows), &dir)
-        .map_err(|e| IdeError::internal(format!("cannot shorten the command line: {e}")))?;
-    let Some(s) = shortened else { return Ok(TempFile(None)) };
-    tracing::debug!(how = s.how.as_str(), file = %s.file.display(), "java command line shortened");
-    let mut display = quote(config.command.trim());
-    for a in &s.args {
-        display.push(' ');
-        display.push_str(&quote(a));
-    }
-    inv.args = s.args;
-    inv.display = display;
-    Ok(TempFile(Some(s.file)))
-}
-
-/// Tells JVM and Python processes to write the encoding the console decodes (see
+/// Tells supported processes to write the encoding the console decodes (see
 /// [`ide_core::output_encoding`]); returns the notice line to hide from the output.
 fn match_console_encoding(
     inv: &mut Invocation,
@@ -197,21 +170,9 @@ fn match_console_encoding(
         output_encoding::fix(&program, &inv.args, &env.vars, inherited, encoding, cfg!(windows))
     };
     env.vars.extend(fix.env);
-    let mut prepend = fix.java_args;
-    if fix.gradle_init_script {
-        match crate::gradle_jvm::write_script(
-            &crate::gradle_jvm::default_dir(),
-            "file-encoding",
-            output_encoding::GRADLE_FILE_ENCODING_SCRIPT,
-        ) {
-            Ok(script) => prepend.extend(["--init-script".to_owned(), script.to_string_lossy().into_owned()]),
-            Err(e) => tracing::warn!("cannot write the Gradle file.encoding init script: {e}"),
-        }
-    }
-    let changed = fix.args.is_some() || !prepend.is_empty();
+    let changed = fix.args.is_some();
     if changed && !inv.raw_args {
         inv.args = fix.args.unwrap_or_else(|| std::mem::take(&mut inv.args));
-        inv.args.splice(0..0, prepend);
         let mut display = quote(config.command.trim());
         for a in &inv.args {
             display.push(' ');
@@ -220,17 +181,6 @@ fn match_console_encoding(
         inv.display = display;
     }
     fix.notice
-}
-
-/// A launch's pathing jar / argfile, deleted when dropped (the process exited, or never started).
-struct TempFile(Option<PathBuf>);
-
-impl Drop for TempFile {
-    fn drop(&mut self) {
-        if let Some(f) = self.0.take() {
-            let _ = std::fs::remove_file(f);
-        }
-    }
 }
 
 /// `command` as one line for the platform shell: `/bin/sh -c`, or `cmd /D /S /C "…"`
@@ -328,6 +278,7 @@ impl ProcessManager {
         sink: SharedSink,
         on_output: Box<dyn Fn(OutputChunk) + Send + Sync>,
     ) -> IdeResult<RunInfo> {
+        crate::ensure_supported_config(config)?;
         if config.command.trim().is_empty() {
             return Err(IdeError::invalid("run configuration has no command"));
         }
@@ -337,6 +288,7 @@ impl ProcessManager {
             None => None,
         };
         let config = approved.as_ref().unwrap_or(config);
+        crate::ensure_supported_config(config)?;
         let plan = crate::go::plan(root, config)?;
         let followup = plan.as_ref().and_then(|p| p.run.as_ref()).map(|run| {
             let cwd = resolve_cwd(root, run.cwd.as_deref());
@@ -374,12 +326,11 @@ impl ProcessManager {
         // A terminal re-encodes output itself; pipes carry the process's bytes as they are.
         let notice =
             if extras.emulate_terminal { None } else { match_console_encoding(&mut inv, &mut env, config, options) };
-        let temp = shorten_java(&mut inv, config, &cwd)?;
         if extras.emulate_terminal && followup.is_some() {
             return Err(IdeError::invalid("Go build and run requires the output console"));
         }
         if extras.emulate_terminal {
-            return self.start_pty(root, config, &inv, &cwd, &env, stop, options, sink, on_output, temp);
+            return self.start_pty(root, config, &inv, &cwd, &env, stop, options, sink, on_output);
         }
 
         let mut cmd = Command::new(&inv.program);
@@ -474,7 +425,6 @@ impl ProcessManager {
                 {
                     status = run_followup(&run_root, &run, &cwd, &waiter_entry, &waiter_tx);
                 }
-                drop(temp);
                 let _ = waiter_tx.send(Msg::Exited(Exit::Pipes(status)));
             })
             .map_err(|e| IdeError::internal(format!("failed to start waiter thread: {e}")))?;
@@ -496,7 +446,6 @@ impl ProcessManager {
         options: &StartOptions,
         sink: SharedSink,
         on_output: OutputFn,
-        temp: TempFile,
     ) -> IdeResult<RunInfo> {
         let pair = native_pty_system()
             .openpty(pty_size(DEFAULT_PTY.0, DEFAULT_PTY.1))
@@ -565,7 +514,6 @@ impl ProcessManager {
             .name(format!("openidea-run-wait-{}", id.0))
             .spawn(move || {
                 let status = child.wait();
-                drop(temp);
                 let _ = tx.send(Msg::Exited(Exit::Pty(status)));
             })
             .map_err(|e| IdeError::internal(format!("failed to start waiter thread: {e}")))?;

@@ -3,13 +3,9 @@
 //! background with cancellation and parses the compiler output into messages
 //! for the Build tool window, the Problems view and the editor.
 
-mod fingerprint;
 mod parse;
 
-pub use fingerprint::{LaunchFingerprint, launch_fingerprint};
-
 use crate::process::{self, Stream};
-use crate::{BuildModel, maven};
 use ide_core::settings::CMakeProfile;
 use ide_core::{CancellationToken, Diagnostic, IdeError, IdeResult, Pos, Range, Severity};
 use parse::{ColUnit, Format, OutputParser, RawMessage};
@@ -36,8 +32,6 @@ pub enum BuildKind {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub enum BuildSystem {
-    Maven,
-    Gradle,
     Cargo,
     Go,
     #[serde(rename = "typescript")]
@@ -143,15 +137,8 @@ fn has(dir: &Path, names: &[&str]) -> bool {
     names.iter().any(|n| dir.join(n).is_file())
 }
 
-fn detect_dir(dir: &Path, model: &BuildModel, root: &Path) -> Option<BuildSystem> {
-    let rel = rel_str(root, dir);
-    if model.maven.as_ref().is_some_and(|m| m.projects.iter().any(|p| p.dir == rel)) || has(dir, &["pom.xml"]) {
-        Some(BuildSystem::Maven)
-    } else if model.gradle_for_module(root, dir).is_some()
-        || has(dir, &["build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts"])
-    {
-        Some(BuildSystem::Gradle)
-    } else if has(dir, &["Cargo.toml"]) {
+fn detect_dir(dir: &Path) -> Option<BuildSystem> {
+    if has(dir, &["Cargo.toml"]) {
         Some(BuildSystem::Cargo)
     } else if has(dir, &["go.mod"]) {
         Some(BuildSystem::Go)
@@ -162,11 +149,6 @@ fn detect_dir(dir: &Path, model: &BuildModel, root: &Path) -> Option<BuildSystem
     } else {
         None
     }
-}
-
-/// Resolves a workspace-relative or absolute directory with native path separators.
-fn subdir(root: &Path, rel: &str) -> PathBuf {
-    root.join(rel).components().collect()
 }
 
 fn rel_str(root: &Path, dir: &Path) -> String {
@@ -181,38 +163,20 @@ fn ancestors_within<'a>(root: &'a Path, file: &'a Path) -> impl Iterator<Item = 
 
 /// The build of `root`, or of the module containing `file` (Build Module / Recompile).
 /// `cmake`: the CMake profiles of the settings (the first one is built), if any.
-pub fn plan(
-    root: &Path,
-    model: &BuildModel,
-    kind: BuildKind,
-    file: Option<&Path>,
-    cmake: Option<&[CMakeProfile]>,
-) -> IdeResult<BuildPlan> {
+pub fn plan(root: &Path, kind: BuildKind, file: Option<&Path>, cmake: Option<&[CMakeProfile]>) -> IdeResult<BuildPlan> {
     let project_name = root.file_name().map_or_else(|| "project".to_owned(), |n| n.to_string_lossy().into_owned());
     let module_dir = match file {
         Some(f) => {
-            let scope = model
-                .gradle
-                .iter()
-                .flat_map(|g| std::iter::once(root.join(&g.dir)).chain(g.projects.iter().map(|p| root.join(&p.dir))))
-                .filter(|dir| f.starts_with(dir))
-                .max_by_key(|dir| dir.components().count())
-                .unwrap_or_else(|| root.to_path_buf());
-            let dir = ancestors_within(&scope, f)
-                .find(|d| detect_dir(d, model, root).is_some())
+            let dir = ancestors_within(root, f)
+                .find(|d| detect_dir(d).is_some())
                 .ok_or_else(|| IdeError::not_found(format!("{} is not in a module", f.display())))?;
             Some(dir.to_path_buf())
         }
         None => None,
     };
     let dir = module_dir.clone().unwrap_or_else(|| root.to_path_buf());
-    // A folder of sibling projects has no build file itself; its Maven projects are built one by one.
-    let system = detect_dir(&dir, model, root)
-        .or((!model.gradle.is_empty()).then_some(BuildSystem::Gradle))
-        .or_else(|| model.maven.as_ref().filter(|m| !m.projects.is_empty()).map(|_| BuildSystem::Maven))
-        .ok_or_else(|| {
-            IdeError::not_found("no supported build system (Maven, Gradle, Cargo, Go, TypeScript, CMake) found")
-        })?;
+    let system = detect_dir(&dir)
+        .ok_or_else(|| IdeError::not_found("no supported build system (Cargo, Go, TypeScript, CMake) found"))?;
     let module = module_dir.as_deref().filter(|d| *d != root);
     let title = match module {
         Some(d) => format!(
@@ -223,8 +187,6 @@ pub fn plan(
         None => project_name,
     };
     let steps = match system {
-        BuildSystem::Maven => maven_steps(root, model, kind, module_dir.as_deref())?,
-        BuildSystem::Gradle => gradle_steps(root, model, kind, module_dir.as_deref())?,
         BuildSystem::Cargo => cargo_steps(&dir, kind),
         // Go builds the file's package (a module holds many).
         BuildSystem::Go => go_steps(file.and_then(Path::parent).unwrap_or(&dir), kind),
@@ -232,84 +194,6 @@ pub fn plan(
         BuildSystem::CMake => cmake_steps(&dir, kind, cmake.and_then(<[_]>::first)),
     };
     Ok(BuildPlan { system, title, steps })
-}
-
-pub(super) fn maven_steps(
-    root: &Path,
-    model: &BuildModel,
-    kind: BuildKind,
-    module: Option<&Path>,
-) -> IdeResult<Vec<BuildStep>> {
-    let fallback;
-    let m = match &model.maven {
-        Some(m) => m,
-        None => {
-            fallback = maven::load(root);
-            &fallback
-        }
-    };
-    let goals: &[&str] = match kind {
-        BuildKind::Build => &["test-compile"],
-        BuildKind::Rebuild => &["clean", "test-compile"],
-        BuildKind::Artifacts => &["package", "-DskipTests"],
-    };
-    let tops: Vec<&maven::MavenProject> = m.projects.iter().filter(|p| !p.aggregated).collect();
-    if tops.is_empty() {
-        return Err(IdeError::not_found("no Maven project found"));
-    }
-    let step = |p: &maven::MavenProject, extra: &[String]| {
-        let mut s = BuildStep::new(&p.command, &["-B", "-Dstyle.color=never"], &subdir(root, &p.dir), Format::Maven);
-        s.args.extend(p.options.iter().cloned());
-        s.args.extend(extra.iter().cloned());
-        s.args.extend(goals.iter().map(|g| (*g).to_owned()));
-        s.env = p.env.clone();
-        s
-    };
-    let Some(module) = module else { return Ok(tops.iter().map(|p| step(p, &[])).collect()) };
-    // The reactor root containing the module builds it with what it depends on (`-pl … -am`).
-    let rel = rel_str(root, module);
-    if !m.projects.iter().any(|p| p.dir == rel) {
-        return Err(IdeError::not_found("no linked Maven project found for module"));
-    }
-    let top = maven_reactor(m, &rel).ok_or_else(|| IdeError::not_found("no linked Maven project found for module"))?;
-    let top_dir = subdir(root, &top.dir);
-    if module == top_dir {
-        return Ok(vec![step(top, &[])]);
-    }
-    let pl = module.strip_prefix(&top_dir).map(|r| r.to_string_lossy().replace('\\', "/")).unwrap_or(rel);
-    Ok(vec![step(top, &["-pl".into(), pl, "-am".into()])])
-}
-
-fn gradle_steps(root: &Path, model: &BuildModel, kind: BuildKind, module: Option<&Path>) -> IdeResult<Vec<BuildStep>> {
-    if module.is_none() && !model.gradle.is_empty() {
-        return Ok(model.gradle.iter().flat_map(|g| gradle_step(root, g, kind, None)).collect());
-    }
-    let g = module
-        .and_then(|m| model.gradle_for_module(root, m))
-        .ok_or_else(|| IdeError::not_found("module does not belong to a linked Gradle build"))?;
-    Ok(gradle_step(root, g, kind, module))
-}
-
-fn gradle_step(root: &Path, g: &crate::GradleModel, kind: BuildKind, module: Option<&Path>) -> Vec<BuildStep> {
-    let prefix = module
-        .and_then(|m| {
-            let rel = rel_str(root, m);
-            g.projects.iter().filter(|p| p.dir == rel).map(|p| p.path.clone()).next()
-        })
-        .filter(|p| p != ":")
-        .map(|p| format!("{p}:"))
-        .unwrap_or_default();
-    let tasks: Vec<String> = match kind {
-        BuildKind::Build => vec![format!("{prefix}classes"), format!("{prefix}testClasses")],
-        BuildKind::Rebuild => {
-            vec![format!("{prefix}clean"), format!("{prefix}classes"), format!("{prefix}testClasses")]
-        }
-        BuildKind::Artifacts => vec![format!("{prefix}assemble")],
-    };
-    let mut s = BuildStep::new(&g.command, &["--console=plain"], &subdir(root, &g.dir), Format::Gradle);
-    s.args.extend(tasks);
-    s.env = g.env.clone();
-    vec![s]
 }
 
 fn cargo_steps(dir: &Path, kind: BuildKind) -> Vec<BuildStep> {
@@ -533,12 +417,6 @@ fn resolve(raw: RawMessage, cwd: &Path, paths: &PathMap, lines: &mut Lines) -> B
 
 fn progress_of(line: &str) -> Option<(String, Option<f32>)> {
     let line = line.trim();
-    if let Some((name, i, total)) = crate::sync::maven_building(line) {
-        return Some((format!("Building {name}"), Some((i.saturating_sub(1) as f32 / total.max(1) as f32).min(1.0))));
-    }
-    if let Some(task) = line.strip_prefix("> Task ") {
-        return Some((format!("Running {}", task.split_whitespace().next().unwrap_or(task)), None));
-    }
     if let Some(krate) = line.strip_prefix("Compiling ") {
         return Some((format!("Compiling {}", krate.split_whitespace().next().unwrap_or(krate)), None));
     }
@@ -617,8 +495,8 @@ pub fn run(
         if !out.success {
             success = false;
             if !messages.iter().any(|m| m.severity == Severity::Error) {
-                let summary = crate::sync::error_summary(&out.text);
-                let text = if summary.is_empty() { last_error_line.clone() } else { summary };
+                let text =
+                    if last_error_line.is_empty() { out.text.trim().to_owned() } else { last_error_line.clone() };
                 let m = BuildMessage { severity: Severity::Error, text, path: None, range: None, code: None };
                 on_event(BuildEvent::Message { message: m.clone() });
                 messages.push(m);
@@ -657,375 +535,33 @@ pub fn diagnostics(messages: &[BuildMessage]) -> BTreeMap<PathBuf, Vec<Diagnosti
     out
 }
 
-// ---------------------------------------------------------------- JVM launches of non-Java modules
-
-/// Whether the JVM module at `module` has Kotlin, Groovy or Scala sources, which jdtls does not compile.
-pub fn has_non_java_sources(module: &Path) -> bool {
-    fn walk(dir: &Path, depth: u32) -> bool {
-        let Ok(entries) = std::fs::read_dir(dir) else { return false };
-        entries.flatten().any(|e| {
-            let p = e.path();
-            if p.is_dir() {
-                depth > 0 && walk(&p, depth - 1)
-            } else {
-                p.extension().is_some_and(|x| x == "kt" || x == "groovy" || x == "scala")
-            }
-        })
-    }
-    walk(&module.join("src"), 12)
-}
-
-fn reactor_projects<'a>(m: &'a maven::MavenModel, top: &'a maven::MavenProject) -> Vec<&'a maven::MavenProject> {
-    let mut projects = Vec::new();
-    let mut pending = vec![top];
-    let mut seen = HashSet::new();
-    while let Some(p) = pending.pop() {
-        if !seen.insert(&p.pom) {
-            continue;
-        }
-        projects.push(p);
-        pending.extend(m.projects.iter().filter(|child| p.modules.contains(&child.pom)));
-    }
-    projects
-}
-
-fn maven_reactor<'a>(m: &'a maven::MavenModel, module: &str) -> Option<&'a maven::MavenProject> {
-    m.projects.iter().filter(|p| !p.aggregated).find(|top| reactor_projects(m, top).iter().any(|p| p.dir == module))
-}
-
-/// Launch module first, followed by its upstream modules in the same Maven reactor.
-/// External artifacts and unrelated linked reactors are never rebuilt for this launch.
-fn maven_launch_projects<'a>(
-    root: &Path,
-    m: &'a maven::MavenModel,
-    module: &Path,
-    test: bool,
-) -> Vec<&'a maven::MavenProject> {
-    let rel = rel_str(root, module);
-    let Some(top) = maven_reactor(m, &rel) else { return Vec::new() };
-    let reactor = reactor_projects(m, top);
-    let Some(start) = reactor.iter().find(|p| p.dir == rel) else { return Vec::new() };
-    let mut pending = vec![*start];
-    let mut seen = HashSet::new();
-    let mut projects = Vec::new();
-    while let Some(p) = pending.pop() {
-        if !seen.insert(&p.pom) {
-            continue;
-        }
-        projects.push(p);
-        for dep in &p.dependencies {
-            if !dep.resolved() || (dep.scope == "test" && (!test || p.pom != start.pom)) {
-                continue;
-            }
-            if let Some(upstream) = reactor.iter().find(|u| {
-                u.group_id == dep.group_id
-                    && u.artifact_id == dep.artifact_id
-                    && dep.version.as_ref().is_none_or(|v| *v == u.version)
-            }) {
-                pending.push(*upstream);
-            }
-        }
-    }
-    projects
-}
-
-/// Whether a launch requires the external JVM compiler. Maven includes upstream
-/// reactor dependencies; adapter selection remains a separate, module-local decision.
-pub fn launch_has_non_java_sources(root: &Path, model: &BuildModel, module: &Path, test: bool) -> bool {
-    if let Some(m) = &model.maven {
-        let projects = maven_launch_projects(root, m, module, test);
-        if !projects.is_empty() {
-            return projects.iter().any(|p| has_non_java_sources(&subdir(root, &p.dir)));
-        }
-    }
-    has_non_java_sources(module)
-}
-
-fn launch_plan(root: &Path, model: &BuildModel, module: &Path, test: bool) -> IdeResult<BuildPlan> {
-    let kind = if model.maven.as_ref().is_some_and(|m| m.projects.iter().any(|p| subdir(root, &p.dir) == module)) {
-        // JDT may have left newer error stubs in Maven's output directories.
-        BuildKind::Rebuild
-    } else {
-        BuildKind::Build
-    };
-    let mut plan = plan(root, model, kind, Some(module), None)?;
-    if plan.system == BuildSystem::Maven && !test {
-        for step in &mut plan.steps {
-            if let Some(goal) = step.args.last_mut() {
-                *goal = "compile".into();
-            }
-        }
-    }
-    Ok(plan)
-}
-
-/// Compiles the module at `module` with its build system before a JVM launch and
-/// returns the class directories it wrote, to put ahead of the jdtls classpath.
-pub fn build_for_launch(
-    root: &Path,
-    model: &BuildModel,
-    module: &Path,
-    test: bool,
-    cancel: &CancellationToken,
-) -> IdeResult<Vec<PathBuf>> {
-    let plan = launch_plan(root, model, module, test)?;
-    let result = run(root, &plan, cancel, &|_| {})?;
-    if !result.success {
-        let errors: Vec<String> = result
-            .messages
-            .iter()
-            .filter(|m| m.severity == Severity::Error)
-            .take(5)
-            .map(|m| match (&m.path, m.range) {
-                (Some(p), Some(r)) => format!("{}:{}: {}", p.display(), r.start.line + 1, m.text),
-                _ => m.text.clone(),
-            })
-            .collect();
-        return Err(IdeError::internal(format!("Build failed:\n{}", errors.join("\n"))));
-    }
-    if plan.system == BuildSystem::Maven
-        && let Some(m) = &model.maven
-    {
-        return Ok(maven_launch_projects(root, m, module, test)
-            .iter()
-            .flat_map(|p| launch_class_dirs(plan.system, &subdir(root, &p.dir), test && subdir(root, &p.dir) == module))
-            .collect());
-    }
-    Ok(launch_class_dirs(plan.system, module, test))
-}
-
-fn launch_class_dirs(system: BuildSystem, module: &Path, test: bool) -> Vec<PathBuf> {
-    let sets: &[&str] = if test { &["test", "main"] } else { &["main"] };
-    let dirs: Vec<PathBuf> = match system {
-        BuildSystem::Gradle => sets
-            .iter()
-            .flat_map(|s| {
-                ["classes/kotlin", "classes/groovy", "classes/scala", "classes/java", "resources"]
-                    .map(|d| subdir(module, &format!("build/{d}/{s}")))
-            })
-            .collect(),
-        BuildSystem::Maven if test => vec![subdir(module, "target/test-classes"), subdir(module, "target/classes")],
-        BuildSystem::Maven => vec![subdir(module, "target/classes")],
-        _ => Vec::new(),
-    };
-    dirs.into_iter().filter(|d| d.is_dir()).collect()
-}
-
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn independent_gradle_builds_keep_their_launchers_and_task_paths() {
-        let wrapper = if cfg!(windows) { "gradlew.bat" } else { "gradlew" };
-        let temp = tempfile::tempdir().unwrap();
-        let root = temp.path();
-        for dir in ["a", "b"] {
-            std::fs::create_dir_all(root.join(dir).join("app/src/main/java")).unwrap();
-            std::fs::write(root.join(dir).join("settings.gradle"), "include 'app'").unwrap();
-            std::fs::write(root.join(dir).join("app/build.gradle"), "plugins { id 'java' }").unwrap();
-            std::fs::write(root.join(dir).join(wrapper), "").unwrap();
-        }
-        let settings = ide_core::settings::GradleSettings {
-            linked_projects: Some(vec!["a".into(), "b".into()]),
-            ..Default::default()
-        };
-        let mut model = crate::load_linked(root, &root.join("cache"), None, &Default::default(), &settings);
-        model.gradle[0].env.insert("JAVA_HOME".into(), "/jdk-a".into());
-        model.gradle[1].env.insert("JAVA_HOME".into(), "/jdk-b".into());
-        let all = super::plan(root, &model, super::BuildKind::Build, None, None).unwrap();
-        assert_eq!(all.steps.len(), 2);
-        assert_eq!(all.steps[0].cwd, root.join("a"));
-        assert_eq!(all.steps[1].cwd, root.join("b"));
-        let module = super::plan(root, &model, super::BuildKind::Rebuild, Some(&root.join("b/app")), None).unwrap();
-        assert_eq!(module.steps.len(), 1);
-        assert_eq!(module.steps[0].program, root.join("b").join(wrapper).to_string_lossy());
-        assert_eq!(module.steps[0].cwd, root.join("b"));
-        assert_eq!(module.steps[0].env["JAVA_HOME"], "/jdk-b");
-        assert_eq!(module.steps[0].args, ["--console=plain", ":app:clean", ":app:classes", ":app:testClasses"]);
-        // A directly linked build owns its module even when another composite reports it too.
-        let direct = model.gradle[1].projects[0].clone();
-        model.gradle[0].projects.push(direct);
-        assert_eq!(model.gradle_for_module(root, &root.join("b")).unwrap().dir, "b");
-        let mut nested = model.gradle[1].projects[1].clone();
-        nested.path = ":b:app".into();
-        model.gradle[0].projects.push(nested);
-        let nested = super::plan(root, &model, super::BuildKind::Build, Some(&root.join("b/app")), None).unwrap();
-        assert_eq!(nested.steps[0].program, root.join("b").join(wrapper).to_string_lossy());
-        assert_eq!(nested.steps[0].args, ["--console=plain", ":app:classes", ":app:testClasses"]);
-        model.gradle.clear();
-        assert!(super::plan(root, &model, super::BuildKind::Build, Some(&root.join("b/app")), None).is_err());
-    }
-
-    #[test]
-    fn absolute_linked_roots_build_the_project_and_external_source_module() {
-        let wrapper = if cfg!(windows) { "gradlew.bat" } else { "gradlew" };
-        let temp = tempfile::tempdir().unwrap();
-        let base = dunce::canonicalize(temp.path()).unwrap();
-        let root = base.join("workspace");
-        let external = base.join("external");
-        std::fs::create_dir(&root).unwrap();
-        std::fs::create_dir_all(external.join("app/src/main/java")).unwrap();
-        std::fs::write(external.join("settings.gradle"), "include 'app'").unwrap();
-        let source = external.join("app/src/main/java/App.java");
-        std::fs::write(&source, "class App {}").unwrap();
-        std::fs::write(external.join(wrapper), "").unwrap();
-        let settings = ide_core::settings::GradleSettings {
-            linked_projects: Some(vec![external.to_string_lossy().into_owned()]),
-            ..Default::default()
-        };
-        let mut model = crate::load_linked(&root, &base.join("cache"), None, &Default::default(), &settings);
-        model.gradle[0].env.insert("JAVA_HOME".into(), "/external-jdk".into());
-        let all = super::plan(&root, &model, super::BuildKind::Build, None, None).unwrap();
-        assert_eq!(all.steps[0].cwd, external);
-        // Linked roots are saved with forward slashes, so on Windows the program mixes separators.
-        assert_eq!(std::path::Path::new(&all.steps[0].program), external.join(wrapper));
-        let module = super::plan(&root, &model, super::BuildKind::Rebuild, Some(&source), None).unwrap();
-        assert_eq!(module.steps[0].cwd, external);
-        assert_eq!(module.steps[0].env["JAVA_HOME"], "/external-jdk");
-        assert_eq!(module.steps[0].args, ["--console=plain", ":app:clean", ":app:classes", ":app:testClasses"]);
-        let other = base.join("unlinked");
-        std::fs::create_dir(&other).unwrap();
-        std::fs::write(other.join("build.gradle"), "").unwrap();
-        assert!(super::plan(&root, &model, super::BuildKind::Build, Some(&other), None).is_err());
-    }
     use super::*;
-
-    /// Launch outputs use the platform separator throughout, so they compare equal to
-    /// the same directories as JDT LS reports them.
-    #[test]
-    fn launch_dirs_use_one_separator() {
-        let root = tempfile::tempdir().unwrap();
-        let module = subdir(root.path(), "parent/app");
-        for dir in ["target/classes", "target/test-classes", "build/classes/java/main", "build/resources/test"] {
-            std::fs::create_dir_all(subdir(&module, dir)).unwrap();
-        }
-        let foreign = if std::path::MAIN_SEPARATOR == '\\' { '/' } else { '\\' };
-        let dirs = [
-            launch_class_dirs(BuildSystem::Maven, &module, true),
-            launch_class_dirs(BuildSystem::Gradle, &module, true),
-        ]
-        .concat();
-        assert_eq!(dirs.len(), 4, "{dirs:?}");
-        for dir in &dirs {
-            let suffix = dir.strip_prefix(root.path()).unwrap().to_string_lossy().into_owned();
-            assert!(!suffix.contains(foreign), "{suffix}");
-        }
-        assert_eq!(subdir(root.path(), ""), root.path());
-        assert_eq!(subdir(root.path(), "a//b/"), root.path().join("a").join("b"));
-    }
-
     fn write(root: &Path, rel: &str, text: &str) {
-        let p = root.join(rel);
-        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
-        std::fs::write(p, text).unwrap();
+        let file = root.join(rel);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(file, text).unwrap();
     }
-
     #[test]
-    fn plans_per_build_system() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path().join("demo");
-        write(
-            &root,
-            "pom.xml",
-            "<project><artifactId>demo</artifactId><modules><module>core</module></modules></project>",
-        );
-        write(&root, "core/pom.xml", "<project><artifactId>core</artifactId></project>");
-        write(&root, "core/src/main/java/A.java", "class A {}");
-        let model = crate::load(&root, &tmp.path().join("cache"), None);
-        let p = plan(&root, &model, BuildKind::Build, None, None).unwrap();
-        assert_eq!(p.system, BuildSystem::Maven);
-        assert_eq!(p.title, "demo");
-        assert_eq!(p.steps.len(), 1);
-        assert_eq!(p.steps[0].args, ["-B", "-Dstyle.color=never", "test-compile"]);
-        let p = plan(&root, &model, BuildKind::Rebuild, Some(&root.join("core/src/main/java/A.java")), None).unwrap();
-        assert_eq!(p.steps[0].args, ["-B", "-Dstyle.color=never", "-pl", "core", "-am", "clean", "test-compile"]);
-        assert_eq!(p.steps[0].cwd, root);
-        assert_eq!(p.title, "demo: build module 'core'");
-
-        let g = tmp.path().join("g");
-        write(&g, "settings.gradle", "include 'app'");
-        write(&g, "app/build.gradle", "apply plugin: 'java'");
-        let model = crate::load(&g, &tmp.path().join("cache2"), None);
-        let p = plan(&g, &model, BuildKind::Build, Some(&g.join("app/src/A.java")), None).unwrap();
-        assert_eq!(p.system, BuildSystem::Gradle);
-        assert_eq!(p.steps[0].args, ["--console=plain", ":app:classes", ":app:testClasses"]);
-        assert_eq!(
-            plan(&g, &model, BuildKind::Artifacts, None, None).unwrap().steps[0].args,
-            ["--console=plain", "assemble"]
-        );
-
-        let c = tmp.path().join("c");
-        write(&c, "Cargo.toml", "[package]\nname='c'");
-        let p = plan(&c, &BuildModel::default(), BuildKind::Rebuild, None, None).unwrap();
-        assert_eq!(p.system, BuildSystem::Cargo);
-        assert_eq!(p.steps.len(), 2);
-        assert_eq!(p.steps[0].args[0], "clean");
-
-        let go = tmp.path().join("go");
-        write(&go, "go.mod", "module x");
-        let p = plan(&go, &BuildModel::default(), BuildKind::Build, Some(&go.join("pkg/a/a.go")), None).unwrap();
-        assert_eq!(p.steps[0].args, ["build", "./pkg/a/..."]);
-        assert_eq!(p.steps[0].cwd, go);
-
-        let ts = tmp.path().join("ts");
-        write(&ts, "package.json", r#"{"scripts":{"build":"vite build"}}"#);
-        write(&ts, "tsconfig.json", "{}");
-        write(&ts, "pnpm-lock.yaml", "");
-        let p = plan(&ts, &BuildModel::default(), BuildKind::Build, None, None).unwrap();
-        assert_eq!(p.steps[0].args, ["--noEmit", "--pretty", "false", "-p", "."]);
-        let p = plan(&ts, &BuildModel::default(), BuildKind::Artifacts, None, None).unwrap();
-        assert_eq!(
-            (p.steps[0].program.as_str(), p.steps[0].args.as_slice()),
-            ("pnpm", &["run".to_owned(), "build".to_owned()][..])
-        );
-
-        let cm = tmp.path().join("cm");
-        write(&cm, "CMakeLists.txt", "project(app)");
-        let args = |p: &BuildPlan| p.steps.iter().map(|s| s.args.join(" ")).collect::<Vec<_>>();
-        let p = plan(&cm, &BuildModel::default(), BuildKind::Build, None, None).unwrap();
-        assert_eq!(p.system, BuildSystem::CMake);
-        assert_eq!(
-            args(&p),
-            [
-                "-S . -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
-                "--build build --config Debug"
-            ],
-            "an unconfigured project is configured first"
-        );
-        write(&cm, "cmake-build-release/CMakeCache.txt", "");
-        let p = plan(&cm, &BuildModel::default(), BuildKind::Rebuild, None, None).unwrap();
-        assert_eq!(
-            args(&p),
-            ["--build cmake-build-release --config Debug --clean-first"],
-            "a configured directory is reused"
-        );
-        let profile = CMakeProfile {
-            build_type: "Release".into(),
-            generator: "Ninja".into(),
-            build_args: vec!["-j".into(), "8".into()],
-            ..CMakeProfile::default()
-        };
-        let p =
-            plan(&cm, &BuildModel::default(), BuildKind::Build, None, Some(std::slice::from_ref(&profile))).unwrap();
-        assert_eq!(args(&p), ["--build cmake-build-release --config Release -j 8"]);
-        let p = plan(&cm, &BuildModel::default(), BuildKind::Build, None, Some(&[CMakeProfile::default()])).unwrap();
-        assert_eq!(p.steps[0].args[..4], ["-S", ".", "-B", "cmake-build-debug"]);
-
-        let siblings = tmp.path().join("siblings");
-        write(&siblings, "core/pom.xml", "<project><artifactId>core</artifactId></project>");
-        write(&siblings, "system/pom.xml", "<project><artifactId>system</artifactId></project>");
-        let model = crate::load(&siblings, &tmp.path().join("cache3"), None);
-        let p = plan(&siblings, &model, BuildKind::Build, None, None).unwrap();
-        assert_eq!(p.system, BuildSystem::Maven);
-        assert_eq!(
-            p.steps.iter().map(|s| s.cwd.clone()).collect::<Vec<_>>(),
-            [siblings.join("core"), siblings.join("system")]
-        );
-
-        let none = tmp.path().join("none");
-        std::fs::create_dir_all(&none).unwrap();
-        assert!(plan(&none, &BuildModel::default(), BuildKind::Build, None, None).is_err());
+    fn supported_builds_and_jvm_rejection() {
+        for (marker, system) in [
+            ("Cargo.toml", BuildSystem::Cargo),
+            ("go.mod", BuildSystem::Go),
+            ("tsconfig.json", BuildSystem::TypeScript),
+            ("CMakeLists.txt", BuildSystem::CMake),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            write(dir.path(), marker, "");
+            let plan = plan(dir.path(), BuildKind::Build, None, None).unwrap();
+            assert_eq!(plan.system, system);
+            assert!(!plan.steps.is_empty());
+        }
+        let dir = tempfile::tempdir().unwrap();
+        write(dir.path(), "pom.xml", "<project/>");
+        write(dir.path(), "build.gradle", "plugins { id 'java' }");
+        assert!(plan(dir.path(), BuildKind::Build, None, None).is_err());
     }
-
     #[test]
     fn columns_become_utf16() {
         assert_eq!(utf16_col(Some("a😀b"), 3, ColUnit::Char), 3);
@@ -1116,164 +652,5 @@ mod tests {
                 self.0.lock().unwrap().clone()
             }
         }
-    }
-
-    fn reactor_model() -> BuildModel {
-        let project = |dir: &str, deps: &[&str]| maven::MavenProject {
-            pom: format!("{dir}/pom.xml"),
-            dir: dir.into(),
-            group_id: "probe".into(),
-            artifact_id: dir.into(),
-            version: "1".into(),
-            aggregated: true,
-            dependencies: deps
-                .iter()
-                .map(|d| maven::MavenDependency {
-                    group_id: "probe".into(),
-                    artifact_id: (*d).into(),
-                    version: Some("1".into()),
-                    scope: "compile".into(),
-                    ..Default::default()
-                })
-                .collect(),
-            ..Default::default()
-        };
-        let mut projects = vec![
-            project("app", &["middle"]),
-            project("middle", &["lib"]),
-            project("lib", &["app"]),
-            project("unrelated", &[]),
-        ];
-        projects.insert(
-            0,
-            maven::MavenProject {
-                pom: "pom.xml".into(),
-                artifact_id: "reactor".into(),
-                command: "mvnw".into(),
-                modules: projects.iter().map(|p| p.pom.clone()).collect(),
-                options: vec!["-s".into(), "settings.xml".into()],
-                env: BTreeMap::from([("JAVA_HOME".into(), "/jdk".into())]),
-                ..Default::default()
-            },
-        );
-        BuildModel { maven: Some(maven::MavenModel { projects, ..Default::default() }), ..Default::default() }
-    }
-
-    #[test]
-    fn mixed_launch_detection_follows_only_reactor_dependencies() {
-        for extension in ["kt", "groovy", "scala"] {
-            let tmp = tempfile::tempdir().unwrap();
-            let root = tmp.path();
-            let mut model = reactor_model();
-            write(root, "app/src/main/java/Application.java", "class Application {}");
-            write(root, &format!("unrelated/src/main/java/Other.{extension}"), "");
-            assert!(!launch_has_non_java_sources(root, &model, &root.join("app"), false));
-            write(root, &format!("lib/src/main/java/Channel.{extension}"), "");
-            assert!(launch_has_non_java_sources(root, &model, &root.join("app"), false));
-            assert_eq!(
-                maven_launch_projects(root, model.maven.as_ref().unwrap(), &root.join("app"), false).len(),
-                3,
-                "cycles terminate"
-            );
-            let m = model.maven.as_mut().unwrap();
-            m.projects[2].dependencies[0].scope = "test".into();
-            assert!(
-                !launch_has_non_java_sources(root, &model, &root.join("app"), true),
-                "upstream test dependencies are not transitive"
-            );
-            let m = model.maven.as_mut().unwrap();
-            m.projects[1].dependencies[0].scope = "test".into();
-            m.projects[2].dependencies[0].scope = "compile".into();
-            assert!(!launch_has_non_java_sources(root, &model, &root.join("app"), false));
-            assert!(launch_has_non_java_sources(root, &model, &root.join("app"), true));
-            model.maven.as_mut().unwrap().projects[2].dependencies[0].version = Some("external".into());
-            assert!(!launch_has_non_java_sources(root, &model, &root.join("app"), true));
-            model.maven.as_mut().unwrap().projects[2].dependencies[0].version = Some("1".into());
-            model.maven.as_mut().unwrap().projects[3].aggregated = false;
-            model.maven.as_mut().unwrap().projects[0].modules.retain(|p| p != "lib/pom.xml");
-            assert!(
-                !launch_has_non_java_sources(root, &model, &root.join("app"), true),
-                "another linked reactor is external"
-            );
-        }
-    }
-
-    #[test]
-    fn maven_launch_steps_use_reactor_settings_and_launch_scope() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path();
-        write(root, "app/pom.xml", "<project/>");
-        let model = reactor_model();
-        for (test, goal) in [(false, "compile"), (true, "test-compile")] {
-            let plan = launch_plan(root, &model, &root.join("app"), test).unwrap();
-            let step = &plan.steps[0];
-            assert_eq!(step.cwd, root);
-            assert_eq!(step.program, "mvnw");
-            assert_eq!(step.env["JAVA_HOME"], "/jdk");
-            assert_eq!(
-                step.args,
-                ["-B", "-Dstyle.color=never", "-s", "settings.xml", "-pl", "app", "-am", "clean", goal]
-            );
-        }
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn external_launch_returns_upstream_outputs_and_blocks_failure_or_cancellation() {
-        use std::os::unix::fs::PermissionsExt;
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path();
-        write(root, "app/pom.xml", "<project/>");
-        write(
-            root,
-            "mvnw",
-            "#!/bin/sh\nmkdir -p app/target/classes middle/target/classes lib/target/classes app/target/test-classes\n",
-        );
-        let wrapper = root.join("mvnw");
-        std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let mut model = reactor_model();
-        model.maven.as_mut().unwrap().projects[0].command = wrapper.to_string_lossy().into_owned();
-        let dirs = build_for_launch(root, &model, &root.join("app"), true, &CancellationToken::new()).unwrap();
-        assert_eq!(
-            dirs,
-            ["app/target/test-classes", "app/target/classes", "middle/target/classes", "lib/target/classes"]
-                .map(|p| root.join(p))
-        );
-        write(
-            root,
-            "mvnw",
-            "#!/bin/sh\necho '[ERROR] Kotlin compilation failed: unresolved reference broken' >&2\nexit 1\n",
-        );
-        let error = build_for_launch(root, &model, &root.join("app"), false, &CancellationToken::new()).unwrap_err();
-        assert!(error.message.contains("Kotlin compilation failed"), "{}", error.message);
-        let cancel = CancellationToken::new();
-        cancel.cancel();
-        assert_eq!(
-            build_for_launch(root, &model, &root.join("app"), false, &cancel).unwrap_err().kind,
-            ide_core::error::ErrorKind::Cancelled
-        );
-    }
-
-    #[test]
-    fn non_java_launch_class_dirs() {
-        let tmp = tempfile::tempdir().unwrap();
-        let m = tmp.path();
-        assert!(!has_non_java_sources(m));
-        write(m, "src/main/java/A.java", "class A {}");
-        assert!(!has_non_java_sources(m));
-        write(m, "src/main/kotlin/a/App.kt", "fun main() {}");
-        assert!(has_non_java_sources(m));
-        let g = tmp.path().join("g");
-        write(&g, "src/test/groovy/ASpec.groovy", "class ASpec {}");
-        assert!(has_non_java_sources(&g));
-        for d in ["build/classes/kotlin/main", "build/classes/kotlin/test", "build/resources/main", "target/classes"] {
-            std::fs::create_dir_all(m.join(d)).unwrap();
-        }
-        assert_eq!(
-            launch_class_dirs(BuildSystem::Gradle, m, false),
-            [m.join("build/classes/kotlin/main"), m.join("build/resources/main")]
-        );
-        assert_eq!(launch_class_dirs(BuildSystem::Gradle, m, true)[0], m.join("build/classes/kotlin/test"));
-        assert_eq!(launch_class_dirs(BuildSystem::Maven, m, true), [m.join("target/classes")]);
     }
 }

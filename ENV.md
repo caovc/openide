@@ -1,13 +1,14 @@
 # OpenIDE 本地环境
 
-> 以下主体是首次搭建快照（Asia/Shanghai），部分限制已失效；当前状态见本节。**不要 push**。
+> 以下主体是首次搭建快照（Asia/Shanghai），部分限制已失效；当前状态见本节。用户已授权协调者在重要节点提交并推送，历史“不 push”约束已被替代。
 
 ## 云端本会话快照（2026-11-06，Asia/Shanghai）
 
 - 当前 checkout：`/workspace/openide`，分支 `work`，基线 `86113f6`；origin 为 `caovc/openide`。
 - Node `v24.22.1`，pnpm `11.25.0`；Rust 使用 `source /workspace/tooling/env.sh`。
-- 旧快照中的 `/workspace/ark`、`/workspace/mamba/envs/r` 当前不存在。历史 Ark smoke PASS 不能算本环境复验；真实 runtime 验证待恢复依赖。
-- 本批次正在修复基线中已提交的 U9 Rust/TS 冲突，并开发独立 canvas 核心；结果见 `docs/ds/evidence/u9-cloud/REPORT.md`。
+- 当前真实运行时：`source /workspace/work/ds-runtime/env.sh`，Python 3.12/ipykernel、R 4.5.0、官方 Ark 0.1.252；旧快照路径不适用。
+- Tauri 原生依赖：`source /workspace/work/tauri-sysroot/env.sh`，本地提取的 Debian sysroot，无需修改系统。真实 `export_bindings` 测试已通过。
+- U9 冲突修复和独立 canvas 核心已提交推送；当前进行 U11 集成验收及 DS-04 调试。报告见 `docs/ds/evidence/u9-cloud/REPORT.md`、`docs/ds/evidence/u11/REPORT.md`。
 - 以下为原环境历史记录，工具版本、路径与通过结果不代表当前云端状态。
 
 ## 原环境增量（2026-11-06，Asia/Shanghai）

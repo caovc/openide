@@ -135,7 +135,7 @@ describe("usageRole / filterSymbols", () => {
   });
 
   it("only keeps declarations from the same language family", () => {
-    expect(fb.compatibleFiles("/a/Main.kt", "/b/Util.java")).toBe(true);
+    expect(fb.compatibleFiles("/a/Main.kt", "/b/Util.java")).toBe(false);
     expect(fb.compatibleFiles("/a/app.tsx", "/b/util.js")).toBe(true);
     expect(fb.compatibleFiles("/a/pets.rb", "/b/util.lua")).toBe(false);
     expect(fb.compatibleFiles("/a/x.lua", "/b/y.lua")).toBe(true);
@@ -304,11 +304,11 @@ describe("navigation wiring", () => {
 
   it("says why when the server only checks the file's syntax", async () => {
     const { setFileDiagnostics } = await import("./diagnostics");
-    setFileDiagnostics("/p/a.ts", "jdtls", [
+    setFileDiagnostics("/p/a.ts", "rust-analyzer", [
       {
         range: { start: { line: 0, col: 0 }, end: { line: 0, col: 1 } },
         severity: "warning",
-        message: "a.ts is not on the classpath of project app, only syntax errors are reported",
+        message: "This file is not included in any crates",
         source: "Java",
         code: "32",
       },
@@ -318,10 +318,10 @@ describe("navigation wiring", () => {
       const view = editor("const x = 1;\nx;", "typescript", 13);
       await gotoTargets(view, "definition");
       expect(document.querySelector(".cm-lsp-hint")?.textContent).toBe(
-        "Cannot find declaration to go to. This file is outside the source folders of its Java module: only syntax errors are reported, and navigation and completion don't work.",
+        "Cannot find declaration to go to. This Rust file is not included in any crate: rust-analyzer can't offer code insight for it.",
       );
     } finally {
-      setFileDiagnostics("/p/a.ts", "jdtls", []);
+      setFileDiagnostics("/p/a.ts", "rust-analyzer", []);
     }
   });
 

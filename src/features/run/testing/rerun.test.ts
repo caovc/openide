@@ -47,17 +47,9 @@ describe("tests selected in the test tree", () => {
       ["com.acme.ATest", "two()"],
       ["com.acme.BTest"],
     ]);
-    const c = testsConfig(cfg("gradle", "./gradlew", ["test"]), leafTestPaths(nodes), "3 tests")!;
+    const c = testsConfig(cfg("pytest", "pytest", []), leafTestPaths(nodes), "3 tests")!;
     expect(c.name).toBe("3 tests");
-    expect(c.args).toEqual([
-      "test",
-      "--tests",
-      "com.acme.ATest.one",
-      "--tests",
-      "com.acme.ATest.two",
-      "--tests",
-      "com.acme.BTest",
-    ]);
+    expect(c.args).toEqual(["com.acme.ATest::one()", "com.acme.ATest::two()", "com.acme.BTest"]);
   });
 });
 
@@ -143,21 +135,6 @@ describe("rerunFailedConfig", () => {
       "example.com/m/pkg",
       "example.com/m/other",
     ]);
-  });
-
-  it("gradle and maven filters", () => {
-    expect(rerunFailedConfig(cfg("gradle", "./gradlew", ["test"]), [["com.a.FooTest", "bar()"]])!.args).toEqual([
-      "test",
-      "--tests",
-      "com.a.FooTest.bar",
-    ]);
-    expect(
-      rerunFailedConfig(cfg("maven", "mvn", ["test"]), [
-        ["com.a.FooTest", "bar"],
-        ["com.a.FooTest", "baz"],
-        ["com.a.BarTest"],
-      ])!.args,
-    ).toEqual(["test", "-Dtest=com.a.FooTest#bar+baz,com.a.BarTest"]);
   });
 
   it("returns null when nothing failed or the framework is unknown", () => {

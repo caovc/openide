@@ -4,17 +4,15 @@
  */
 import { workflowSettings } from "@/platform/workflowSettings";
 import type { AttachKind, AttachableProcess, LaunchConfig } from "@/platform/ipc";
-import { javaAttachConfig } from "./java";
 
-export const KIND_LABELS: Record<AttachKind, string> = {
-  java: "Java (JDWP)",
+export const KIND_LABELS: Record<Exclude<AttachKind, "java">, string> = {
   node: "Node.js",
   python: "Python (debugpy)",
   go: "Go (Delve)",
   native: "Native (LLDB)",
 };
 
-const KIND_ORDER: AttachKind[] = ["java", "node", "python", "go", "native"];
+const KIND_ORDER: Exclude<AttachKind, "java">[] = ["node", "python", "go", "native"];
 
 export type AttachRow =
   | { kind: "group"; key: string; label: string; count: number }
@@ -63,11 +61,6 @@ function base(p: AttachableProcess, cwd: string, extra: Record<string, unknown>)
 export async function attachConfig(p: AttachableProcess, root: string): Promise<LaunchConfig> {
   const skip = workflowSettings().debugger.skipLibraryCode;
   switch (p.kind) {
-    case "java":
-      return javaAttachConfig(
-        { name: `${p.name} (${p.pid})`, module: "", hostName: p.host ?? "localhost", port: p.port! },
-        root,
-      );
     case "node":
       return base(p, root, {
         type: "pwa-node",
@@ -89,4 +82,5 @@ export async function attachConfig(p: AttachableProcess, root: string): Promise<
     case "native":
       return base(p, root, { pid: p.pid });
   }
+  throw new Error("Unsupported attach target");
 }

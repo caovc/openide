@@ -42,7 +42,7 @@ id_type!(
     TaskId,
 );
 
-/// Language identifier, e.g. `rust`, `typescript`, `kotlin`. Matches LSP `languageId`.
+/// Language identifier, e.g. `rust`, `typescript`, `python`. Matches LSP `languageId`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, Type)]
 #[serde(transparent)]
 pub struct LanguageId(pub String);

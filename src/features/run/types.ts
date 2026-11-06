@@ -1,26 +1,8 @@
-/**
- * Built-in run configuration types (Shell Script, Program, npm, Gradle, Maven,
- * Application, Spring Boot, Compound) and the helpers that turn a type's params into the launched
- * command line. Other features contribute types with `registerRunConfigType`.
- */
-import { isJvmApplication, parseJavaArgs } from "@/platform/javaLaunch";
 import type { RunConfig } from "@/platform/ipc";
 import { registerRunConfigType, useRunConfigTypes, type RunConfigTypeContribution } from "@/workbench/contributions";
 import { formatArgs, parseArgs, uid, uniqueName } from "./configs";
 import { commandName } from "./commandName";
-import {
-  applicationType,
-  gradleForkedJvm,
-  isWindows,
-  mavenForkedJvm,
-  ROOT_MODULE,
-  springBootType,
-  type ForkedJvm,
-} from "./jvmTypes";
-import { tx } from "@/platform/i18n";
-import { useProject } from "@/platform/project";
 
-import { tomcatType } from "./tomcat";
 import { goBuildType, goTestType } from "./goTypes";
 
 import { dotnetProjectType, dotnetTestType } from "./dotnetTypes";
@@ -29,8 +11,6 @@ import { djangoTestType } from "./djangoTypes";
 import { phpunitType } from "./phpunitTypes";
 
 export const COMPOUND = "compound";
-
-const on = (v: string | undefined) => v === "true";
 const dirOf = (cwd: string | null | undefined) => cwd ?? "";
 
 /** Values of `args[index]` across detected configurations of `kind`. */
@@ -93,7 +73,7 @@ const shell: RunConfigTypeContribution = {
       label: "Command",
       mono: true,
       required: true,
-      placeholder: "e.g. ./gradlew or cargo",
+      placeholder: "e.g. cargo or python",
       visible: (p) => p.mode === "command",
     },
     {
@@ -264,93 +244,6 @@ const npm: RunConfigTypeContribution = {
   },
 };
 
-function wrapperCommand(unix: string, windows: string, plain: string, wrapper: boolean): string {
-  if (!wrapper) return plain;
-  return isWindows() ? windows : `./${unix}`;
-}
-
-function buildToolType(
-  id: string,
-  label: string,
-  icon: string,
-  tasks: { label: string; description: string },
-  wrapper: { unix: string; windows: string; plain: string; label: string; byDefault: boolean },
-  jvm: ForkedJvm,
-): RunConfigTypeContribution {
-  return {
-    id,
-    label,
-    icon,
-    description: tasks.description,
-    defaults: wrapper.byDefault ? { wrapper: "true" } : {},
-    ownsWorkingDirectory: true,
-    fields: [
-      { key: "projectDir", label: tx`${label} project`, mono: true, browse: "directory", placeholder: "Project root" },
-      {
-        key: "tasks",
-        label: tasks.label,
-        mono: true,
-        required: true,
-        suggestions: (configs) => argsOf(configs, id, 0),
-      },
-      { key: "arguments", label: "Arguments", mono: true },
-      ...jvm.fields,
-      { key: "wrapper", label: wrapper.label, control: "checkbox" },
-    ],
-    commandLine: (p) => ({
-      command:
-        p.executable && commandName(p.executable) === (on(p.wrapper) ? wrapper.unix : wrapper.plain)
-          ? p.executable
-          : wrapperCommand(wrapper.unix, wrapper.windows, wrapper.plain, on(p.wrapper)),
-      args: [...parseArgs(p.tasks ?? ""), ...parseArgs(p.arguments ?? ""), ...jvm.args(p)],
-      cwd: p.projectDir?.trim() || null,
-    }),
-    ...(jvm.prepareLaunch ? { prepareLaunch: jvm.prepareLaunch } : {}),
-    paramsFrom(c) {
-      const name = commandName(c.command);
-      const usesWrapper = name === wrapper.unix;
-      if (!usesWrapper && name !== wrapper.plain) return null;
-      return {
-        executable: c.command,
-        projectDir: dirOf(c.cwd),
-        tasks: formatArgs(c.args),
-        arguments: "",
-        ...(usesWrapper ? { wrapper: "true" } : {}),
-      };
-    },
-  };
-}
-
-const gradle = buildToolType(
-  "gradle",
-  "Gradle",
-  "file-gradle",
-  { label: "Tasks", description: "Run Gradle tasks" },
-  {
-    unix: "gradlew",
-    windows: "gradlew.bat",
-    plain: "gradle",
-    label: "Use the Gradle wrapper",
-    byDefault: true,
-  },
-  gradleForkedJvm,
-);
-
-const maven = buildToolType(
-  "maven",
-  "Maven",
-  "file-maven",
-  { label: "Goals", description: "Run Maven goals" },
-  {
-    unix: "mvnw",
-    windows: "mvnw.cmd",
-    plain: "mvn",
-    label: "Use the Maven wrapper",
-    byDefault: false,
-  },
-  mavenForkedJvm,
-);
-
 const compound: RunConfigTypeContribution = {
   id: COMPOUND,
   label: "Compound",
@@ -433,8 +326,6 @@ export const BUILTIN_TYPES: readonly RunConfigTypeContribution[] = [
   shell,
   program,
   npm,
-  gradle,
-  maven,
   godot,
   pytest,
   rubyScriptType,
@@ -446,9 +337,6 @@ export const BUILTIN_TYPES: readonly RunConfigTypeContribution[] = [
   dotnetTestType,
   goBuildType,
   goTestType,
-  applicationType,
-  springBootType,
-  tomcatType,
   compound,
 ];
 
@@ -508,12 +396,6 @@ export function withParams(config: RunConfig, params: Record<string, string>, ty
     ...(params.goKind ? { isTest: params.goKind === "test" } : {}),
     command: line.command,
     args: line.args,
-    // "Use classpath of module": the chosen module; else it is found again for another main class.
-    ...(isJvmApplication(config) && params.module
-      ? { module: params.module === ROOT_MODULE ? "" : params.module }
-      : isJvmApplication(config) && parseJavaArgs(config.args).mainClass !== parseJavaArgs(line.args).mainClass
-        ? { module: undefined }
-        : {}),
     ...(type?.ownsWorkingDirectory ? { cwd: line.cwd ?? null } : {}),
     ...(line.stop ? { stopCommand: line.stop } : {}),
   };
@@ -585,9 +467,7 @@ export function blankTemplate(type: RunConfigTypeContribution): RunConfig {
 
 function newConfigDefaults(type: RunConfigTypeContribution): Record<string, string> {
   const defaults = { ...type.defaults };
-  if (type.id === "gradle" && useProject.getState().settings?.languages?.java?.gradle?.distribution === "local") {
-    defaults.wrapper = "false";
-  }
+
   return defaults;
 }
 

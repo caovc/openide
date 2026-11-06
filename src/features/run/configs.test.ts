@@ -86,7 +86,7 @@ describe("config merge / override", () => {
       cfg({ id: "maven:spring-boot:run", kind: "maven" }),
       cfg({ id: "application:demo.App", kind: "spring-boot" }),
     ];
-    expect(defaultSelection(spring)?.id).toBe("application:demo.App");
+    expect(defaultSelection(spring)).toBeUndefined();
   });
 });
 
@@ -163,7 +163,6 @@ describe("context configuration", () => {
     // Django's default test module (pattern `test*.py`); a script outside Django projects.
     expect(fileRole("polls/tests.py", undefined, false, true)).toBe("test");
     expect(fileRole("polls/tests.py")).toBe("script");
-    expect(fileRole("src/test/kotlin/OrderControllerTest.kt")).toBe("test");
     expect(fileRole("tests/integration.rs")).toBe("test");
     expect(fileRole("spec/models/user_spec.rb")).toBe("test");
     expect(fileRole("test/user_test.rb")).toBe("test");
@@ -227,11 +226,6 @@ describe("context configuration", () => {
       "manage.py",
       "test",
       "polls.tests",
-    ]);
-    expect(contextConfig("src/test/kotlin/OrderControllerTest.kt", configs)!.args).toEqual([
-      "test",
-      "--tests",
-      "*OrderControllerTest",
     ]);
   });
 

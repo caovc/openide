@@ -236,7 +236,7 @@ fn suppression_round_trip_and_resaving() {
 }
 
 #[test]
-fn java_module_is_optional_and_independent_of_working_directory() {
+fn python_module_is_optional_and_independent_of_working_directory() {
     let dir = tempfile::tempdir().unwrap();
     let path = user_configs_path(dir.path());
     fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -245,9 +245,9 @@ fn java_module_is_optional_and_independent_of_working_directory() {
         r#"[[configurations]]
 id = "user:main"
 name = "Main"
-kind = "application"
-command = "java"
-args = ["-cp", "${classpath}", "a.Main"]
+kind = "python"
+command = "python"
+args = ["-m", "app.main"]
 cwd = "sibling"
 "#,
     )
@@ -261,4 +261,66 @@ cwd = "sibling"
         assert_eq!(loaded, configs);
         assert_eq!(loaded[0].cwd.as_deref(), Some(std::path::Path::new("sibling")));
     }
+}
+
+#[test]
+fn saving_visible_configs_preserves_removed_jvm_records_and_templates() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = user_configs_path(dir.path());
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        &path,
+        r#"
+[[configurations]]
+id = "legacy-jvm"
+name = "Old server"
+kind = "application"
+command = "java"
+custom-option = "preserved"
+[configurations.params]
+mainClass = "old.Main"
+
+[[templates]]
+kind = "gradle"
+custom-template = true
+"#,
+    )
+    .unwrap();
+    save_user_configs(dir.path(), &sample()).unwrap();
+    ide_run::save_templates(dir.path(), &[]).unwrap();
+    let text = fs::read_to_string(&path).unwrap();
+    assert!(text.contains("custom-option = \"preserved\""));
+    assert!(text.contains("mainClass = \"old.Main\""));
+    assert!(text.contains("custom-template = true"));
+    let configs = load_user_configs(dir.path()).unwrap();
+    let legacy = configs.iter().find(|c| c.id == "legacy-jvm").unwrap();
+    assert!(ide_run::ensure_supported_config(legacy).is_err());
+    assert_eq!(configs.len(), sample().len() + 1);
+    save_user_configs(dir.path(), &configs).unwrap();
+    assert_eq!(load_user_configs(dir.path()).unwrap().len(), configs.len());
+    assert!(fs::read_to_string(&path).unwrap().contains("custom-option = \"preserved\""));
+}
+
+#[test]
+fn malformed_run_file_is_not_overwritten_during_migration() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = user_configs_path(dir.path());
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, "[[configurations]\nkind = 'application'").unwrap();
+    let before = fs::read(&path).unwrap();
+    assert!(save_user_configs(dir.path(), &sample()).is_err());
+    assert_eq!(fs::read(&path).unwrap(), before);
+}
+
+#[test]
+fn legacy_entries_without_explicit_ids_are_not_duplicated_on_save() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = user_configs_path(dir.path());
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, "[[configurations]]\nname='Old server'\nkind='application'\ncommand='java'\ncustom='keep'\n")
+        .unwrap();
+    let configs = load_user_configs(dir.path()).unwrap();
+    save_user_configs(dir.path(), &configs).unwrap();
+    assert_eq!(load_user_configs(dir.path()).unwrap(), configs);
+    assert!(fs::read_to_string(&path).unwrap().contains("custom='keep'"));
 }

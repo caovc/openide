@@ -1,6 +1,6 @@
 //! Code plugins of a remote project run on the
 //! server. The desktop's plugin host syncs its live
-//! code plugins over the remote protocol; Checkstyle then checks the file on
+//! code plugins over the remote protocol; License Header then checks the file on
 //! the server's disk when it is saved, and secrets come from the desktop.
 
 #![cfg(unix)]
@@ -72,20 +72,6 @@ fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../ide-plugin/tests/fixtures").join(name)
 }
 
-/// A `checkstyle` that reports a tab on line 2 of the file it is given.
-fn fake_checkstyle(bin: &Path) {
-    std::fs::create_dir_all(bin).unwrap();
-    std::fs::write(
-        bin.join("checkstyle"),
-        "#!/bin/sh\nfor a; do file=\"$a\"; done\ngrep -q '\t' \"$file\" || { echo '<checkstyle/>'; exit 0; }\n\
-         echo '<?xml version=\"1.0\"?><checkstyle><file name=\"'\"$file\"'\">'\n\
-         echo '<error line=\"2\" column=\"1\" severity=\"warning\" message=\"Line contains a tab character.\" source=\"com.puppycrawl.tools.checkstyle.checks.whitespace.FileTabCharacterCheck\"/>'\n\
-         echo '</file></checkstyle>'\nexit 1\n",
-    )
-    .unwrap();
-    std::fs::set_permissions(bin.join("checkstyle"), std::fs::Permissions::from_mode(0o755)).unwrap();
-}
-
 async fn until(what: &str, secs: u64, mut done: impl FnMut() -> bool) {
     for _ in 0..secs * 50 {
         if done() {
@@ -99,19 +85,11 @@ async fn until(what: &str, secs: u64, mut done: impl FnMut() -> bool) {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn remote_projects_run_the_desktops_code_plugins_on_the_server() {
     let tmp = tempfile::tempdir().unwrap();
-    let bin = tmp.path().join("bin");
-    fake_checkstyle(&bin);
-    let path_var = {
-        let bin = bin.clone();
-        Arc::new(move || Some(bin.clone().into_os_string()))
-    };
-
-    // The desktop: Checkstyle and AI Completion installed and granted.
+    // The desktop: License Header and AI Completion installed and granted.
     let desktop =
         PluginHost::new(tmp.path().join("desktop/plugins"), Arc::new(|_: Option<&str>, _| {}), Limits::default())
             .unwrap();
-    desktop.set_program_path(path_var.clone());
-    for name in ["checkstyle", "ai-completion"] {
+    for name in ["license-header", "ai-completion"] {
         let info = desktop.install_from_dir(&official(name), &Consent::all()).unwrap();
         assert_eq!(info.status, PluginStatus::Inactive, "{:?}", info.error);
     }
@@ -136,7 +114,6 @@ async fn remote_projects_run_the_desktops_code_plugins_on_the_server() {
         project_environment: false,
     }));
     let plugins = RemotePlugins::start(&base.join("data"), &host, peer_slot.clone()).unwrap();
-    plugins.host().set_program_path(path_var);
     let mut dispatcher = Dispatcher::standard();
     plugins.register(&mut dispatcher);
     let (client_io, server_io) = tokio::io::duplex(1 << 20);
@@ -151,36 +128,37 @@ async fn remote_projects_run_the_desktops_code_plugins_on_the_server() {
 
     // Digests first; then the files of what the server lacks; then nothing to do.
     let first = sync(&peer, &desktop, &[]).await;
-    assert_eq!(first.missing, ["openidea.ai-completion", "openidea.checkstyle"], "{first:?}");
-    let second = sync(&peer, &desktop, &["openidea.ai-completion", "openidea.checkstyle"]).await;
+    assert_eq!(first.missing, ["openidea.ai-completion", "openidea.license-header"], "{first:?}");
+    let second = sync(&peer, &desktop, &["openidea.ai-completion", "openidea.license-header"]).await;
     assert_eq!(second.installed.len(), 2, "{second:?}");
     assert!(second.failed.is_empty(), "{second:?}");
     assert_eq!(sync(&peer, &desktop, &[]).await, PackageSyncReport::default());
-    let remote = plugins.host().info_of("openidea.checkstyle").unwrap();
+    let remote = plugins.host().info_of("openidea.license-header").unwrap();
     assert_eq!(remote.status, PluginStatus::Inactive, "{:?}", remote.error);
-    assert!(remote.capabilities.iter().any(|c| c.id == "process:checkstyle" && c.granted));
+    assert!(remote.capabilities.iter().any(|c| c.id == "project.read" && c.granted));
 
     // The remote window's UI routes the run-time commands to the server.
     let kinds = invoke(&peer, "plugin_event_kinds", json!({})).await.unwrap();
     assert!(kinds.as_array().unwrap().contains(&json!("file-saved")), "{kinds}");
 
-    // Saving a file that exists only on the server: Checkstyle reads that file.
-    let java = project.join("src/A.java");
-    std::fs::write(&java, "class A {\n\tint x;\n}\n").unwrap();
-    let saved = WorkbenchEvent::FileSaved(java.to_string_lossy().into_owned());
+    // Saving a file that exists only on the server: License Header reads that file.
+    let python = project.join("src/a.py");
+    std::fs::write(&python, "print('hello')\n").unwrap();
+    let saved = WorkbenchEvent::FileSaved(python.to_string_lossy().into_owned());
     invoke(&peer, "plugin_post_events", json!({ "events": [saved] })).await.unwrap();
     let published = || {
         client.events.lock().iter().find_map(|m| match &m.event {
-            IdeEvent::Diagnostics { path, source, items } if source == "plugin:openidea.checkstyle" => {
+            IdeEvent::Diagnostics { path, source, items } if source == "plugin:openidea.license-header" => {
                 Some((path.0.clone(), items.clone()))
             }
             _ => None,
         })
     };
-    until("remote checkstyle diagnostics", 20, || published().is_some()).await;
+    until("remote license-header diagnostics", 20, || published().is_some()).await;
     let (path, items) = published().unwrap();
-    assert_eq!(path, java);
-    assert_eq!((items.len(), items[0].range.start.line), (1, 1));
+    assert_eq!(path, python);
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].code.as_deref(), Some("missing-license-header"));
 
     // Secrets stay on the desktop: the server asks for them when used.
     let secrets = plugins.host().secrets("openidea.ai-completion").unwrap();
@@ -205,10 +183,10 @@ async fn remote_projects_run_the_desktops_code_plugins_on_the_server() {
     .await;
 
     // Disabled on the desktop: gone from the server.
-    desktop.set_enabled("openidea.checkstyle", false).unwrap();
+    desktop.set_enabled("openidea.license-header", false).unwrap();
     let removed = sync(&peer, &desktop, &[]).await;
-    assert_eq!(removed.removed, ["openidea.checkstyle"]);
-    assert!(plugins.host().info_of("openidea.checkstyle").is_err());
+    assert_eq!(removed.removed, ["openidea.license-header"]);
+    assert!(plugins.host().info_of("openidea.license-header").is_err());
     plugins.host().shutdown();
 }
 

@@ -26,8 +26,6 @@ import { activate as debuggerFeature } from "./debugger";
 import { activate as coverage } from "./coverage";
 import { activate as colorPreview } from "./color-preview";
 import { activate as profiler } from "./profiler";
-import { activate as logcat } from "./logcat";
-import { activate as buildTools } from "./build-tools";
 import { activate as build } from "./build";
 import { activate as templates, activateSettingsPages as templatesPages } from "./templates";
 import { activate as todo, activateSettingsPages as todoPages } from "./todo";
@@ -77,8 +75,6 @@ const features: Array<[string, Activate]> = [
   ["coverage", coverage],
   ["color-preview", colorPreview],
   ["profiler", profiler],
-  ["logcat", logcat],
-  ["build-tools", buildTools],
   ["build", build],
   ["templates", templates],
   ["todo", todo],

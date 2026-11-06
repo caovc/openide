@@ -57,7 +57,7 @@ describe("lazy loading", () => {
     await loadDir("/p/src");
     await vi.waitFor(() => expect(childLabels(ROOT)).toContain("src/main/kotlin"));
     const node = currentModel().byKey.get("/p/src")!;
-    expect(node.path).toBe("/p/src/main/kotlin");
+    expect(node.path).toBe("/p/src/main/kotlin/com");
   });
 
   it("restores the persisted expansion state per project", async () => {

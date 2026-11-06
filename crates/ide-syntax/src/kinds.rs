@@ -131,41 +131,6 @@ static TABLES: &[LangKinds] = &[
         ..DEFAULT
     },
     LangKinds {
-        grammars: &["java"],
-        blocks: &["block", "constructor_body", "switch_block_statement_group"],
-        members: &["class_body", "interface_body", "enum_body", "enum_body_declarations", "annotation_type_body"],
-        expressions: &[
-            "method_invocation",
-            "field_access",
-            "array_access",
-            "object_creation_expression",
-            "array_creation_expression",
-            "method_reference",
-            "string_literal",
-            "this",
-            "super",
-            "true",
-            "false",
-            "null_literal",
-            "class_literal",
-        ],
-        member_fields: &[("method_invocation", "name")],
-        implicit_members: true,
-        locals: locals!("java"),
-        ..DEFAULT
-    },
-    LangKinds {
-        grammars: &["kotlin"],
-        blocks: &["block", "statements", "control_structure_body"],
-        members: &["class_body", "enum_class_body"],
-        expressions: &["this_expression", "super_expression", "string_literal", "lambda_literal", "object_literal"],
-        labels: &[("value_argument", "=")],
-        functions: &["lambda_literal", "anonymous_function"],
-        implicit_members: true,
-        locals: locals!("kotlin"),
-        ..DEFAULT
-    },
-    LangKinds {
         grammars: &["go"],
         blocks: &["statement_list", "block", "expression_case", "default_case", "type_case", "communication_case"],
         members: &["field_declaration_list"],
@@ -272,15 +237,6 @@ static TABLES: &[LangKinds] = &[
         functions: &["lambda_literal"],
         implicit_members: true,
         locals: locals!("swift"),
-        ..DEFAULT
-    },
-    LangKinds {
-        grammars: &["scala"],
-        blocks: &["block", "indented_block", "case_block"],
-        members: &["template_body"],
-        expressions: &["string", "interpolated_string_expression", "boolean_literal", "unit"],
-        implicit_members: true,
-        locals: locals!("scala"),
         ..DEFAULT
     },
     LangKinds {
@@ -574,7 +530,7 @@ impl Kinds {
         !self.is_qualified(node)
     }
 
-    /// Member / label position: `obj.name`, `Foo::name`, `f(name = 1)`, Java `name()`…
+    /// Member / label position: `obj.name`, `Foo::name`, `f(name = 1)`, method call names…
     pub(crate) fn is_qualified(&self, node: &Node) -> bool {
         let parent = node.parent();
         let grandparent = parent.and_then(|p| p.parent());

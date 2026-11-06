@@ -135,7 +135,7 @@ fn copy_dir(from: &Path, to: &Path) {
     for entry in std::fs::read_dir(from).unwrap() {
         let entry = entry.unwrap();
         let name = entry.file_name();
-        if matches!(name.to_str(), Some("node_modules" | "target" | "build" | ".gradle" | ".venv")) {
+        if matches!(name.to_str(), Some("node_modules" | "target" | "build" | ".venv")) {
             continue;
         }
         let target = to.join(&name);
@@ -166,7 +166,7 @@ fn find_word(line: &str, word: &str) -> Option<usize> {
     line.match_indices(word).map(|(i, _)| i).find(|&i| {
         let before = line[..i].chars().next_back();
         let after = line[i + word.len()..].chars().next();
-        !(word.starts_with(ident) && before.is_some_and(ident)) && !(word.ends_with(ident) && after.is_some_and(ident))
+        !(word.starts_with(ident) && before.is_some_and(ident) || word.ends_with(ident) && after.is_some_and(ident))
     })
 }
 
@@ -516,7 +516,7 @@ impl Smoke {
                 if document.apply_edits(&item.additional_edits).is_ok() && document.text().contains(a.result) {
                     return Ok(());
                 }
-                // Or accepting it runs a server command that edits the file (kotlin-lsp).
+                // Or accepting it runs a server command that edits the file.
                 if let Some(command) = item.command.clone() {
                     let ran = ops::lsp::lsp_execute_command(&self.host, WINDOW, doc, command).await;
                     let text = self.doc(a.typed.file).await.1;
@@ -832,163 +832,4 @@ const GO: Checks = Checks {
 #[ignore = "language smoke: needs gopls"]
 async fn go() {
     smoke("go", GO).await;
-}
-
-const JAVA: Checks = Checks {
-    fixture: "java-app",
-    files: &[],
-    warm_up: Duration::from_secs(300),
-    definition: (
-        at("src/main/java/com/example/orders/App.java", "book.place(\"alice\", \"Mechanical", "place"),
-        at("src/main/java/com/example/orders/OrderBook.java", "public Order place(", "place"),
-    ),
-    references: (
-        at("src/main/java/com/example/orders/OrderBook.java", "public Order place(", "place"),
-        &["src/main/java/com/example/orders/App.java", "src/test/java/com/example/orders/OrderBookTest.java"],
-    ),
-    hover: (
-        at("src/main/java/com/example/orders/App.java", "long revenue = book.revenueCents()", "revenueCents"),
-        "long com.example.orders.OrderBook.revenueCents()",
-    ),
-    completion: (
-        typed("src/main/java/com/example/orders/App.java", "long revenue = book.revenueCents();", "        book."),
-        "largest",
-    ),
-    quick_fix: QuickFix {
-        typed: typed(
-            "src/main/java/com/example/orders/App.java",
-            "long revenue = book.revenueCents();",
-            "        List<Order> all = book.byCustomer(\"alice\");",
-        ),
-        diagnostic: "List cannot be resolved to a type",
-        title: "Import 'List' (java.util)",
-        result: "import java.util.List;",
-    },
-    intention: (
-        at("src/main/java/com/example/orders/App.java", "long revenue = book.revenueCents();", "book.revenueCents()"),
-        "Extract to local variable",
-    ),
-    format: (
-        typed(
-            "src/main/java/com/example/orders/App.java",
-            "long revenue = book.revenueCents();",
-            "        long  doubled=revenue*2;",
-        ),
-        "        long doubled = revenue * 2;",
-    ),
-    indent: Indent::Spaces(4),
-    rename: (
-        at("src/main/java/com/example/orders/OrderBook.java", "public Order place(", "place"),
-        "submit",
-        &["src/main/java/com/example/orders/App.java", "src/main/java/com/example/orders/OrderBook.java"],
-    ),
-    signature: (
-        typed(
-            "src/main/java/com/example/orders/App.java",
-            "long revenue = book.revenueCents();",
-            "        book.place(",
-        ),
-        "customer",
-    ),
-    outline: (
-        "src/main/java/com/example/orders/OrderBook.java",
-        &["OrderBook", "place(String, String, int, long)", "revenueCents()"],
-    ),
-    auto_import: AutoImport {
-        typed: typed(
-            "src/main/java/com/example/orders/App.java",
-            "long revenue = book.revenueCents();",
-            "        ArrayLis",
-        ),
-        label: "ArrayList",
-        result: "import java.util.ArrayList;",
-    },
-    organize_imports: Some((
-        typed("src/main/java/com/example/orders/OrderBook.java", "import java.util.Optional;", "import java.util.Map;"),
-        Imports::Removed,
-    )),
-    file_move: Some((
-        "src/main/java/com/example/orders/OrderBook.java",
-        "src/main/java/com/example/orders/Ledger.java",
-        "src/main/java/com/example/orders/App.java",
-        "Ledger book",
-    )),
-};
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[ignore = "language smoke: needs jdtls and JDK 21"]
-async fn java() {
-    smoke("java", JAVA).await;
-}
-
-const KOTLIN: Checks = Checks {
-    fixture: "kotlin-gradle",
-    files: &[],
-    warm_up: Duration::from_secs(420),
-    definition: (
-        at("src/main/kotlin/com/example/library/App.kt", "val library = Library()", "Library"),
-        at("src/main/kotlin/com/example/library/Library.kt", "class Library(", "Library"),
-    ),
-    references: (
-        at("src/main/kotlin/com/example/library/Library.kt", "fun search(query: String)", "search"),
-        &["src/main/kotlin/com/example/library/App.kt", "src/main/kotlin/com/example/library/Library.kt"],
-    ),
-    hover: (
-        at("src/main/kotlin/com/example/library/App.kt", "library.search(\"java\")", "search"),
-        "fun search(query: String): List<Book>",
-    ),
-    completion: (
-        typed("src/main/kotlin/com/example/library/App.kt", "val library = Library()", "    library."),
-        "lend",
-    ),
-    quick_fix: QuickFix {
-        typed: typed(
-            "src/main/kotlin/com/example/library/App.kt",
-            "val library = Library()",
-            "    val stamp = LocalDateTime.now()",
-        ),
-        diagnostic: "Unresolved reference",
-        title: "Import",
-        result: "import java.time.LocalDateTime",
-    },
-    intention: (
-        at("src/main/kotlin/com/example/library/Library.kt", "fun giveBack(isbn: String): Boolean", "giveBack"),
-        "block body",
-    ),
-    format: (
-        typed("src/main/kotlin/com/example/library/App.kt", "val library = Library()", "    val  pair=listOf(1,2)"),
-        "    val pair = listOf(1, 2)",
-    ),
-    indent: Indent::Spaces(4),
-    rename: (
-        at("src/main/kotlin/com/example/library/Library.kt", "fun search(query: String)", "search"),
-        "find",
-        &["src/main/kotlin/com/example/library/App.kt", "src/main/kotlin/com/example/library/Library.kt"],
-    ),
-    signature: (
-        typed("src/main/kotlin/com/example/library/App.kt", "val library = Library()", "    library.lend("),
-        "isbn",
-    ),
-    outline: ("src/main/kotlin/com/example/library/Library.kt", &["Library", "lend", "search"]),
-    auto_import: AutoImport {
-        typed: typed(
-            "src/main/kotlin/com/example/library/App.kt",
-            "val library = Library()",
-            "    val stamp = LocalDateTi",
-        ),
-        label: "LocalDateTime",
-        result: "import java.time.LocalDateTime",
-    },
-    organize_imports: Some((
-        typed("src/main/kotlin/com/example/library/App.kt", "import java.time.LocalDate", "import java.util.UUID"),
-        Imports::Removed,
-    )),
-    // kotlin-lsp has no `workspace/willRenameFiles`.
-    file_move: None,
-};
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[ignore = "language smoke: needs kotlin-lsp, a JDK and Gradle"]
-async fn kotlin() {
-    smoke("kotlin", KOTLIN).await;
 }

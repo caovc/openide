@@ -10,7 +10,7 @@ use specta::Type;
 pub enum ToolKind {
     LanguageServer,
     Debugger,
-    /// Loaded into another tool's process, e.g. a jdtls agent.
+    /// Loaded into another tool's process, e.g. a language-server extension.
     Plugin,
     Formatter,
 }
@@ -22,12 +22,8 @@ pub enum ReleaseSource {
     GitHub { repo: &'static str },
     /// `api.releases.hashicorp.com` product.
     HashiCorp { product: &'static str },
-    /// Latest Eclipse JDT LS milestone tarball from download.eclipse.org.
-    EclipseJdtls,
     /// Latest version of a VS Code extension (`.vsix`) on open-vsx.org.
     OpenVsx { namespace: &'static str, extension: &'static str },
-    /// Latest release of a Maven Central artifact (the `.jar` itself).
-    MavenCentral { group: &'static str, artifact: &'static str },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -75,9 +71,7 @@ impl Method {
             Method::PipUser { .. } => "pip --user",
             Method::PipTarget { .. } => "pip (private copy)",
             Method::Release { source: ReleaseSource::HashiCorp { .. }, .. } => "HashiCorp release",
-            Method::Release { source: ReleaseSource::EclipseJdtls, .. } => "Eclipse download",
             Method::Release { source: ReleaseSource::OpenVsx { .. }, .. } => "Open VSX",
-            Method::Release { source: ReleaseSource::MavenCentral { .. }, .. } => "Maven Central",
             Method::Release { .. } => "GitHub release",
         }
     }
@@ -112,10 +106,9 @@ impl ToolSpec {
 
 use Arch::{Arm64, X64};
 use Os::{Linux, Mac, Windows};
-use ToolKind::{Debugger, Formatter, LanguageServer, Plugin};
+use ToolKind::{Debugger, Formatter, LanguageServer};
 
 const V: Option<(&str, &[&str])> = None;
-const JAVA: &[(&str, &str)] = &[("java", "Java is required (https://adoptium.net)")];
 const NODE: &[(&str, &str)] = &[("node", "Node.js is required (https://nodejs.org)")];
 const ELIXIR: &[(&str, &str)] = &[("elixir", "Elixir is required (https://elixir-lang.org/install.html)")];
 const ELIXIR_LS_ASSETS: &[AssetRule] =
@@ -599,103 +592,6 @@ pub static TOOLS: &[ToolSpec] = &[
         homepage: "https://github.com/microsoft/vscode-js-debug",
         needs: &[],
     },
-    ToolSpec {
-        name: "jdtls",
-        display: "Eclipse JDT Language Server",
-        kind: LanguageServer,
-        commands: &["jdtls"],
-        method: Method::Release {
-            source: ReleaseSource::EclipseJdtls,
-            assets: &[
-                any_arch(Mac, "jdt-language-server-*.tar.gz"),
-                any_arch(Linux, "jdt-language-server-*.tar.gz"),
-                any_arch(Windows, "jdt-language-server-*.tar.gz"),
-            ],
-            locate: &["jdtls", "jdtls.bat"],
-        },
-        fallback: None,
-        version: V,
-        homepage: "https://github.com/eclipse-jdtls/eclipse.jdt.ls",
-        needs: &[],
-    },
-    ToolSpec {
-        name: "java-debug",
-        display: "Java Debugger (Microsoft java-debug)",
-        kind: Debugger,
-        commands: &["com.microsoft.java.debug.plugin.jar"],
-        // The jdtls bundle from vscode-java-debug (java-debug itself is EPL-1.0).
-        method: Method::Release {
-            source: ReleaseSource::OpenVsx { namespace: "vscjava", extension: "vscode-java-debug" },
-            assets: &[
-                any_arch(Mac, "vscjava.vscode-java-debug-*.vsix"),
-                any_arch(Linux, "vscjava.vscode-java-debug-*.vsix"),
-                any_arch(Windows, "vscjava.vscode-java-debug-*.vsix"),
-            ],
-            locate: &["com.microsoft.java.debug.plugin-*.jar"],
-        },
-        fallback: None,
-        version: V,
-        homepage: "https://github.com/microsoft/java-debug",
-        needs: &[],
-    },
-    ToolSpec {
-        name: "lombok",
-        display: "Lombok (jdtls agent)",
-        kind: Plugin,
-        commands: &["lombok.jar"],
-        // Equinox removed getModuleClassLoader(boolean), breaking lombok.config lookup (lombok#4059);
-        // ECJ 3.46.200 keeps the constructor call in a constructor's statements, which
-        // @SneakyThrows / @NonNull must not wrap or precede (lombok#4089).
-        // Builders on compact record constructors need the patch in java/lombok/patches.
-        // Return to Maven Central once an official release includes all of these fixes.
-        // Source commit, build instructions and checksum: java/lombok/README.md.
-        method: Method::Bundled {
-            filename: "lombok-1.18.48-openidea.3.jar",
-            version: "1.18.48-openidea.3",
-            bytes: include_bytes!("../../../java/lombok/lombok-1.18.48-openidea.3.jar"),
-        },
-        fallback: None,
-        version: V,
-        homepage: "https://projectlombok.org",
-        needs: &[],
-    },
-    ToolSpec {
-        name: "kotlin-lsp",
-        display: "Kotlin LSP (JetBrains)",
-        kind: LanguageServer,
-        commands: &["kotlin-lsp"],
-        method: Method::Release {
-            source: ReleaseSource::GitHub { repo: "Kotlin/kotlin-lsp" },
-            assets: &[
-                // Current releases (kotlin-server-*): the CLI distribution is a
-                // .sit on macOS, .tar.gz on Linux and .win.zip on Windows. x64 ships as the
-                // un-suffixed archive, aarch64 as `-aarch64`; the un-suffixed one
-                // comes first in the release notes, which is what the x64 pattern
-                // matches first. Without a matching rule the installer used to fall
-                // through to a loose `kotlin-*.zip` pattern and POSIX picked the
-                // Windows archive (#723).
-                rule(Mac, Arm64, "kotlin-server-*-aarch64.sit"),
-                rule(Mac, X64, "kotlin-server-*.sit"),
-                rule(Linux, Arm64, "kotlin-server-*-aarch64.tar.gz"),
-                rule(Linux, X64, "kotlin-server-*.tar.gz"),
-                rule(Windows, X64, "kotlin-server-*.win.zip"),
-                rule(Windows, Arm64, "kotlin-server-*-aarch64.win.zip"),
-                // Old releases named the archives kotlin-lsp-*.
-                rule(Mac, Arm64, "kotlin-lsp-*-mac-aarch64.zip"),
-                rule(Mac, X64, "kotlin-lsp-*-mac-x64.zip"),
-                rule(Linux, X64, "kotlin-lsp-*-linux-x64.zip"),
-                rule(Linux, Arm64, "kotlin-lsp-*-linux-aarch64.zip"),
-                rule(Windows, X64, "kotlin-lsp-*-win-x64.zip"),
-            ],
-            // `bin/intellij-server` is the launcher; current releases still ship the
-            // `kotlin-lsp.sh` / `kotlin-lsp.cmd` wrappers around it, deprecated, and old ones only those.
-            locate: &["intellij-server", "kotlin-lsp", "kotlin-lsp.sh", "kotlin-lsp.cmd"],
-        },
-        fallback: None,
-        version: V,
-        homepage: "https://github.com/Kotlin/kotlin-lsp",
-        needs: &[],
-    },
     // ElixirLS ships launcher scripts only: on first start they build the server
     // with the Elixir / OTP found for the project (Mix.install, needs network).
     ToolSpec {
@@ -748,27 +644,6 @@ pub static TOOLS: &[ToolSpec] = &[
         fallback: None,
         version: ver("buf"),
         homepage: "https://buf.build",
-        needs: &[],
-    },
-    ToolSpec {
-        name: "clojure-lsp",
-        display: "clojure-lsp",
-        kind: LanguageServer,
-        commands: &["clojure-lsp"],
-        method: Method::Release {
-            source: ReleaseSource::GitHub { repo: "clojure-lsp/clojure-lsp" },
-            assets: &[
-                rule(Mac, Arm64, "clojure-lsp-native-macos-aarch64.zip"),
-                rule(Mac, X64, "clojure-lsp-native-macos-amd64.zip"),
-                rule(Linux, X64, "clojure-lsp-native-linux-amd64.zip"),
-                rule(Linux, Arm64, "clojure-lsp-native-linux-aarch64.zip"),
-                rule(Windows, X64, "clojure-lsp-native-windows-amd64.zip"),
-            ],
-            locate: &["clojure-lsp"],
-        },
-        fallback: None,
-        version: V,
-        homepage: "https://clojure-lsp.io",
         needs: &[],
     },
     ToolSpec {
@@ -853,36 +728,6 @@ pub static TOOLS: &[ToolSpec] = &[
         version: V,
         homepage: "https://github.com/bscan/PerlNavigator",
         needs: &[("perl", "Perl is required (https://www.perl.org/get.html)")],
-    },
-    ToolSpec {
-        name: "kotlin-language-server",
-        display: "Kotlin Language Server (fwcd)",
-        kind: LanguageServer,
-        commands: &["kotlin-language-server"],
-        method: Method::Release {
-            source: ReleaseSource::GitHub { repo: "fwcd/kotlin-language-server" },
-            assets: &[any_arch(Mac, "server.zip"), any_arch(Linux, "server.zip"), any_arch(Windows, "server.zip")],
-            locate: &["kotlin-language-server"],
-        },
-        fallback: None,
-        version: V,
-        homepage: "https://github.com/fwcd/kotlin-language-server",
-        needs: JAVA,
-    },
-    ToolSpec {
-        name: "kotlin-debug-adapter",
-        display: "Kotlin Debug Adapter",
-        kind: Debugger,
-        commands: &["kotlin-debug-adapter"],
-        method: Method::Release {
-            source: ReleaseSource::GitHub { repo: "fwcd/kotlin-debug-adapter" },
-            assets: &[any_arch(Mac, "adapter.zip"), any_arch(Linux, "adapter.zip"), any_arch(Windows, "adapter.zip")],
-            locate: &["kotlin-debug-adapter"],
-        },
-        fallback: None,
-        version: V,
-        homepage: "https://github.com/fwcd/kotlin-debug-adapter",
-        needs: JAVA,
     },
     ToolSpec {
         name: "netcoredbg",
@@ -989,7 +834,7 @@ pub static TOOLS: &[ToolSpec] = &[
 ];
 
 /// Plugin tools and the tool that loads them.
-pub const PLUGIN_HOSTS: &[(&str, &str)] = &[("lombok", "jdtls")];
+pub const PLUGIN_HOSTS: &[(&str, &str)] = &[];
 
 pub fn find(name: &str) -> Option<&'static ToolSpec> {
     TOOLS.iter().find(|t| t.name == name)
@@ -1021,7 +866,7 @@ mod tests {
             }
         }
         // The host selects the formatter of each file (Prettier or oxfmt).
-        for t in TOOLS.iter().filter(|t| !matches!(t.kind, Plugin | Formatter)) {
+        for t in TOOLS.iter().filter(|t| !matches!(t.kind, ToolKind::Plugin | Formatter)) {
             assert!(
                 known.contains(&(t.name.to_string(), t.commands[0].to_string())),
                 "{} / {} is not referenced by languages/*.toml",
@@ -1033,7 +878,7 @@ mod tests {
 
     #[test]
     fn plugins_have_a_known_host() {
-        for t in TOOLS.iter().filter(|t| t.kind == Plugin) {
+        for t in TOOLS.iter().filter(|t| t.kind == ToolKind::Plugin) {
             let host = PLUGIN_HOSTS.iter().find(|(p, _)| *p == t.name).map(|(_, h)| *h);
             assert!(host.and_then(find).is_some(), "{} has no known host", t.name);
         }
@@ -1049,70 +894,29 @@ mod tests {
             }
         }
     }
+}
 
-    /// The v263 kotlin-server-* release notes: the CLI distribution archives plus
-    /// the VS Code extension and checksums; each platform must pick its native
-    /// distribution and the aarch64 archive must never be picked on x64.
-    #[test]
-    fn kotlin_lsp_runs_its_launcher_rather_than_the_deprecated_wrapper() {
-        let Method::Release { locate, .. } = &find("kotlin-lsp").unwrap().method else { unreachable!() };
-        let names: Vec<String> = locate.iter().map(|n| n.to_string()).collect();
-        let tmp = tempfile::tempdir().unwrap();
-        // Current releases: `kotlin-lsp.sh` warns that it will go and execs `bin/intellij-server`.
-        let current = tmp.path().join("current");
-        let dist = current.join("kotlin-server-263.7084.0");
-        std::fs::create_dir_all(dist.join("bin")).unwrap();
-        std::fs::write(dist.join("kotlin-lsp.sh"), "").unwrap();
-        std::fs::write(dist.join("bin/intellij-server"), "").unwrap();
-        assert_eq!(crate::archive::locate(&current, &names), Some(dist.join("bin/intellij-server")));
-        // Older releases have only the script.
-        let old = tmp.path().join("old");
-        std::fs::create_dir_all(&old).unwrap();
-        std::fs::write(old.join("kotlin-lsp.sh"), "").unwrap();
-        assert_eq!(crate::archive::locate(&old, &names), Some(old.join("kotlin-lsp.sh")));
-    }
+#[cfg(test)]
+mod product_tests {
+    use super::*;
 
     #[test]
-    fn kotlin_lsp_picks_the_native_archive_for_each_platform() {
-        use crate::platform::{Platform, select_asset};
-        let names = [
-            "kotlin-server-0.0.27-mac-amd64.vsix",
-            "kotlin-server-0.0.27-mac-amd64.vsix.sha256",
-            "kotlin-server-0.0.27-mac-aarch64.vsix",
-            "kotlin-server-0.0.27-mac-aarch64.vsix.sha256",
-            "kotlin-server-0.0.27-linux-amd64.vsix",
-            "kotlin-server-0.0.27-linux-amd64.vsix.sha256",
-            "kotlin-server-0.0.27-linux-aarch64.vsix",
-            "kotlin-server-0.0.27-linux-aarch64.vsix.sha256",
-            "kotlin-server-0.0.27-win-amd64.vsix",
-            "kotlin-server-0.0.27-win-amd64.vsix.sha256",
-            "kotlin-server-0.0.27-win-aarch64.vsix",
-            "kotlin-server-0.0.27-win-aarch64.vsix.sha256",
-            "kotlin-server-263.7084.0.sit",
-            "kotlin-server-263.7084.0.sit.sha256",
-            "kotlin-server-263.7084.0-aarch64.sit",
-            "kotlin-server-263.7084.0-aarch64.sit.sha256",
-            "kotlin-server-263.7084.0.tar.gz",
-            "kotlin-server-263.7084.0.tar.gz.sha256",
-            "kotlin-server-263.7084.0-aarch64.tar.gz",
-            "kotlin-server-263.7084.0-aarch64.tar.gz.sha256",
-            "kotlin-server-263.7084.0.win.zip",
-            "kotlin-server-263.7084.0.win.zip.sha256",
-            "kotlin-server-263.7084.0-aarch64.win.zip",
-            "kotlin-server-263.7084.0-aarch64.win.zip.sha256",
-        ];
-        let rules = find("kotlin-lsp").unwrap().asset_rules();
-        let mac_arm = Platform { os: Mac, arch: Arm64 };
-        assert_eq!(select_asset(&names, rules, mac_arm), Some("kotlin-server-263.7084.0-aarch64.sit"));
-        let mac_x64 = Platform { os: Mac, arch: X64 };
-        assert_eq!(select_asset(&names, rules, mac_x64), Some("kotlin-server-263.7084.0.sit"));
-        let linux_x64 = Platform { os: Linux, arch: X64 };
-        assert_eq!(select_asset(&names, rules, linux_x64), Some("kotlin-server-263.7084.0.tar.gz"));
-        let linux_arm = Platform { os: Linux, arch: Arm64 };
-        assert_eq!(select_asset(&names, rules, linux_arm), Some("kotlin-server-263.7084.0-aarch64.tar.gz"));
-        let win_x64 = Platform { os: Windows, arch: X64 };
-        assert_eq!(select_asset(&names, rules, win_x64), Some("kotlin-server-263.7084.0.win.zip"));
-        let win_arm = Platform { os: Windows, arch: Arm64 };
-        assert_eq!(select_asset(&names, rules, win_arm), Some("kotlin-server-263.7084.0-aarch64.win.zip"));
+    fn jvm_tools_are_not_installable_but_shared_toolchains_remain() {
+        for name in [
+            "jdtls",
+            "java-debug",
+            "lombok",
+            "kotlin-lsp",
+            "kotlin-language-server",
+            "kotlin-debug-adapter",
+            "clojure-lsp",
+        ] {
+            assert!(find(name).is_none(), "removed JVM tool: {name}");
+        }
+        for name in
+            ["basedpyright", "debugpy", "rust-analyzer", "gopls", "delve", "js-debug", "php-debug", "bash-debug"]
+        {
+            assert!(find(name).is_some(), "preserved tool: {name}");
+        }
     }
 }

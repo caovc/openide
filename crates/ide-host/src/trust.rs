@@ -106,9 +106,6 @@ impl crate::Host {
             if previous == trusted {
                 continue;
             }
-            if let Some(bridge) = &project.kotlin_bridge {
-                bridge.schedule();
-            }
             if let Some(phpstan) = &project.phpstan {
                 phpstan.interrupt();
             }
@@ -121,7 +118,6 @@ impl crate::Host {
                     self.environment.spawn_post_start(cmd, project.root.clone(), project.sink.clone());
                 }
                 project.lsp.set_execution_allowed(true);
-                project.lsp.prewarm_java_configuration();
             } else {
                 self.environment.project_closed();
                 project.agents.shutdown();
@@ -190,12 +186,7 @@ pub fn restricted_command_allowed(cmd: &str) -> bool {
             | "clipboard_file_list"
             | "clipboard_has_files"
             | "clipboard_set_file_list"
-            | "jdk_download_vendors"
-            | "jdk_download_releases"
-            | "jdk_download_location"
-            | "jdk_download"
             | "run_system_env"
-            | "run_gradle_jvm_args_script"
             | "proxy_check_connection"
             | "docker_settings"
             | "docker_save_settings"

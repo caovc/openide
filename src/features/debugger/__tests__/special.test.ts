@@ -16,7 +16,6 @@ import {
   useSpecialBreakpoints,
 } from "../breakpoints/special";
 import { consumeTemporary, breakpointsOf, loadBreakpoints, toggleTemporaryBreakpoint } from "../breakpoints/store";
-import { toggleBreakpointSmart } from "../breakpoints/toggle";
 
 beforeEach(() => {
   localStorage.clear();
@@ -63,22 +62,6 @@ describe("method breakpoints and field watchpoints", () => {
       methods: [expect.objectContaining({ name: "ok", line: 2, enabled: true, kind: "method" })],
       fields: [],
     });
-  });
-
-  it("toggles like IDEA: Java declarations get method / field breakpoints, other lines line breakpoints", () => {
-    const src = "package a;\nclass A {\n  int count;\n  void run() {\n    count++;\n  }\n}";
-    toggleBreakpointSmart("/p/A.java", 3, "java", src);
-    toggleBreakpointSmart("/p/A.java", 2, "java", src);
-    toggleBreakpointSmart("/p/A.java", 4, "java", src);
-    expect(useSpecialBreakpoints.getState().methods.map((m) => m.name)).toEqual(["a.A#run"]);
-    expect(useSpecialBreakpoints.getState().fields.map((f) => f.dataId)).toEqual(["a.A#count"]);
-    expect(breakpointsOf("/p/A.java").map((b) => b.line)).toEqual([4]);
-    // Again on the declaration: removed.
-    toggleBreakpointSmart("/p/A.java", 3, "java", src);
-    expect(useSpecialBreakpoints.getState().methods).toEqual([]);
-    // Python `def` lines stay line breakpoints.
-    toggleBreakpointSmart("/p/a.py", 0, "python", "def run():\n  pass");
-    expect(breakpointsOf("/p/a.py").map((b) => b.line)).toEqual([0]);
   });
 });
 

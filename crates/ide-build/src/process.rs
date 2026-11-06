@@ -1,6 +1,4 @@
-//! Line-oriented child processes for syncs and builds: output is fed line by
-//! line to a callback, and cancellation kills the whole process group (the
-//! `mvnw` / `gradlew` wrapper scripts start the JVM as a child).
+//! Line-oriented build processes with output streaming and process-group cancellation.
 
 use ide_core::process::kill_tree;
 use ide_core::{CancellationToken, IdeError, IdeResult};
@@ -23,9 +21,9 @@ pub(crate) struct Output {
     pub text: String,
 }
 
-/// `program` as spawnable: a bare name (`mvn`, `mvn.cmd`) resolves on the IDE's
+/// `program` as spawnable: a bare name (`npm`, `npm.cmd`) resolves on the IDE's
 /// search path — the login shell's `PATH` plus version-manager shims — since the
-/// app's own `PATH` can be minimal and `Command` would not see `mvn` there.
+/// app's own `PATH` can be minimal and `Command` would not see `npm` there.
 pub(crate) fn program_path(program: &str, env: &BTreeMap<String, String>) -> std::path::PathBuf {
     let path = std::path::Path::new(program);
     if !path.is_relative() || path.components().count() > 1 {
@@ -62,14 +60,14 @@ pub(crate) fn run_with_env(
     mut on_line: impl FnMut(Stream, &str),
 ) -> IdeResult<Output> {
     tracing::info!("build: {program} {} (in {})", args.join(" "), cwd.display());
-    // Output is read as UTF-8: JVMs on Windows are told to write it (see `ide_core::output_encoding`).
+    // Align supported child-process encodings with the console decoder.
     let encoding =
         ide_core::output_encoding::fix(program, args, env, |k| std::env::var(k).ok(), "UTF-8", cfg!(windows));
     let program = program_path(program, env);
     let mut command = Command::new(&program);
     command.args(args).current_dir(cwd).envs(env).envs(encoding.env.iter().map(|(k, v)| (k, v))).stdin(Stdio::null());
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
-    // Its own group: `mvnw` / `gradlew` start the JVM as a child, and cancelling kills both.
+    // Cancel the entire build process tree, including compiler children.
     ide_core::process::prepare(ide_core::process::own_group(&mut command));
     if clear_env {
         command.env_clear().envs(env).envs(encoding.env);

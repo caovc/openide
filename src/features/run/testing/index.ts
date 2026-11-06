@@ -3,7 +3,6 @@ import type { RunConfig } from "@/platform/ipc";
 import { cargoParser } from "./cargo";
 import { goParser } from "./go";
 import { jsParser } from "./js";
-import { jvmParser } from "./jvm";
 import { phpunitParser, withTeamcity } from "./phpunit";
 import { pytestParser } from "./pytest";
 import { rubyParser } from "./ruby";
@@ -13,7 +12,7 @@ import type { TestEvent, TestOutputParser } from "./types";
 export type { TestEvent, TestOutputParser, TestStatus } from "./types";
 export { parseDuration } from "./types";
 export { TestResults, nodeStatus, type TestNode } from "./results";
-export { cargoParser, goParser, jsParser, jvmParser, phpunitParser, pytestParser, rubyParser, unittestParser };
+export { cargoParser, goParser, jsParser, phpunitParser, pytestParser, rubyParser, unittestParser };
 
 /** Runs several parsers side by side (unknown tool: e.g. `make test`). */
 export function combinedParser(parsers: TestOutputParser[]): TestOutputParser {
@@ -23,7 +22,7 @@ export function combinedParser(parsers: TestOutputParser[]): TestOutputParser {
   };
 }
 
-export type Framework = "cargo" | "js" | "pytest" | "unittest" | "phpunit" | "go" | "jvm" | "ruby" | "auto";
+export type Framework = "cargo" | "js" | "pytest" | "unittest" | "phpunit" | "go" | "ruby" | "auto";
 
 export function frameworkFor(config: Pick<RunConfig, "kind" | "command" | "args">): Framework {
   const cmd = [config.command, ...config.args].join(" ");
@@ -45,9 +44,6 @@ export function frameworkFor(config: Pick<RunConfig, "kind" | "command" | "args"
       return "phpunit";
     case "go":
       return "go";
-    case "gradle":
-    case "maven":
-      return "jvm";
     case "ruby":
     case "rake":
     case "rspec":
@@ -59,7 +55,6 @@ export function frameworkFor(config: Pick<RunConfig, "kind" | "command" | "args"
   if (/\bmanage\.py test\b/.test(cmd)) return "unittest";
   if (/(^|[/\\\s])phpunit(\.phar|\.bat)?(\s|$)/.test(cmd)) return "phpunit";
   if (/\bgo\s+test\b/.test(cmd)) return "go";
-  if (/\b(gradlew?|mvnw?)\b/.test(cmd)) return "jvm";
   return "auto";
 }
 
@@ -122,8 +117,6 @@ export function createTestParser(config: Pick<RunConfig, "kind" | "command" | "a
       return phpunitParser();
     case "go":
       return goParser();
-    case "jvm":
-      return jvmParser();
     case "ruby":
       return rubyParser();
     default:
@@ -134,7 +127,6 @@ export function createTestParser(config: Pick<RunConfig, "kind" | "command" | "a
         unittestParser(),
         phpunitParser(),
         goParser(),
-        jvmParser(),
         rubyParser(),
       ]);
   }

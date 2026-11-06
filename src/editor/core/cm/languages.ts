@@ -99,16 +99,13 @@ const OWN_MODES = [
       return new LanguageSupport(StreamLanguage.define(shellInterpolation(shell)));
     },
   }),
-  ...(["Kotlin", "Scala", "Dart", "Groovy", "C#"] as const).map((name) =>
+  ...(["Dart", "C#"] as const).map((name) =>
     LanguageDescription.of({
       name,
       load: async () => {
         const { interpolationParser } = await import("./interpolation");
         const modes = await import("@codemirror/legacy-modes/mode/clike");
-        const base =
-          name === "Groovy"
-            ? (await import("@codemirror/legacy-modes/mode/groovy")).groovy
-            : modes[name === "C#" ? "csharp" : (name.toLowerCase() as "kotlin" | "scala" | "dart")];
+        const base = modes[name === "C#" ? "csharp" : "dart"];
         return new LanguageSupport(StreamLanguage.define(interpolationParser(base, name)));
       },
     }),
@@ -120,7 +117,6 @@ const OWN_MODES = [
     extensions: ["erb", "rhtml"],
     load: () => import("./erb").then((m) => m.erb()),
   }),
-  LanguageDescription.of({ name: "JSP", load: () => import("./jsp").then((m) => m.jsp()) }),
   LanguageDescription.of({
     name: "Astro",
     extensions: ["astro"],
@@ -213,7 +209,10 @@ const batchLanguageDescription = LanguageDescription.of({
   support: new LanguageSupport(batchLanguage),
 });
 
-const BUILTIN_MODES: readonly LanguageDescription[] = [...languageData, batchLanguageDescription];
+const BUILTIN_MODES: readonly LanguageDescription[] = [
+  ...languageData.filter((mode) => !/^(Java|Kotlin|Scala|Groovy|Clojure)$/.test(mode.name)),
+  batchLanguageDescription,
+];
 
 export function findLanguageDescription(uiMode: string | null, path: string): LanguageDescription | null {
   if (uiMode) {
@@ -258,18 +257,12 @@ const CSS_TAGS: Parameters<typeof styleTags>[0] = {
   "ClassName IdName PseudoClassName ColorLiteral CallTag": t.tagName,
 };
 
-// @lezer/java tags annotations as plain identifiers.
-export const JAVA_TAGS: Parameters<typeof styleTags>[0] = {
-  "MarkerAnnotation/Identifier Annotation/Identifier MarkerAnnotation Annotation": t.annotation,
-};
-
 /** Highlighting the stock grammars lack or colour unlike IntelliJ. */
 const EXTRA_TAGS: Record<string, Parameters<typeof styleTags>[0]> = {
   JavaScript: JS_TAGS,
   TypeScript: JS_TAGS,
   JSX: JS_TAGS,
   TSX: JS_TAGS,
-  Java: JAVA_TAGS,
   PHP: {
     "; ,": t.separator,
     "ClassDeclaration/Name BaseClause/Name InterfaceClause/Name": t.className,

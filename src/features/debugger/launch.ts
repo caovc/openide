@@ -1,3 +1,4 @@
+import { showRunConfig } from "@/platform/productProfile";
 import { parseArgs, formatArgs } from "@/platform/commandLine";
 /** Run configuration → DAP launch configuration, per adapter. */
 import { workflowSettings } from "@/platform/workflowSettings";
@@ -140,12 +141,9 @@ function commandName(cmd: string) {
 /**
  * Why `rc` can't be debugged even though it names a debugger, or null when it can.
  * Bun's inspector speaks the WebKit Inspector protocol, which js-debug can't attach to.
- * Java configurations reach this only when the Run feature found no JVM to attach to.
  */
 export function debugUnsupportedReason(rc: RunConfig): string | null {
-  // java-debug runs inside jdtls: it launches Application configurations or attaches to a JDWP agent.
-  if (rc.debugAdapter === "java-debug")
-    return "The Java debugger can't start this command itself. Debug an Application, Spring Boot, Maven or Gradle configuration, or start the JVM with a JDWP agent and attach with a Remote JVM Debug configuration.";
+  if (!showRunConfig(rc)) return "This run configuration uses a removed JVM toolchain.";
   const name = commandName(rc.command);
   if (rc.kind === "bun" || (name === "bun" && rc.kind !== "npm"))
     return (

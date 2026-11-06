@@ -152,3 +152,18 @@ describe("language modes", () => {
     }
   });
 });
+
+it("does not resolve removed JVM modes by name or extension", () => {
+  for (const [name, path] of [
+    ["Java", "a.java"],
+    ["Kotlin", "a.kt"],
+    ["Scala", "a.scala"],
+    ["Groovy", "a.groovy"],
+    ["Clojure", "a.clj"],
+    ["JSP", "a.jsp"],
+  ] as const) {
+    expect(findLanguageDescription(name, path)).toBeNull();
+  }
+  expect(findLanguageDescription("Python", "analysis.py")).toBeTruthy();
+  expect(findLanguageDescription("R", "analysis.R")).toBeTruthy();
+});

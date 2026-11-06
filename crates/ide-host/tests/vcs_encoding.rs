@@ -18,13 +18,13 @@ async fn gbk_document_gutter_diff_stage_and_rollback_share_encoding() {
     git(&root, &["config", "user.email", "test@example.com"]);
     git(&root, &["config", "commit.gpgsign", "false"]);
     git(&root, &["config", "core.autocrlf", "false"]);
-    let path = root.join("Example.java");
-    let old = "// 中文注释\nclass Example {\n    // 保持不变\n    int value = 1;\n}\n";
+    let path = root.join("Example.cpp");
+    let old = "// 中文注释\nclass Example {\n    // 保持不变\n    int value = 1;\n};\n";
     let original = ide_vfs::encode(old, "gbk", false).unwrap();
     std::fs::write(&path, &original).unwrap();
-    std::fs::write(root.join("Utf8.java"), old).unwrap();
+    std::fs::write(root.join("Utf8.cpp"), old).unwrap();
     git(&root, &["add", "."]);
-    git(&root, &["commit", "-m", "GBK Java"]);
+    git(&root, &["commit", "-m", "GBK C++"]);
     let host = Host::new(HostConfig {
         config_dir: base.join("config"),
         data_dir: base.join("data"),
@@ -106,7 +106,7 @@ async fn gbk_document_gutter_diff_stage_and_rollback_share_encoding() {
     project.documents.set_file_defaults(defaults);
     std::fs::remove_file(&path).unwrap();
     assert_eq!(vcs::vcs_file_at(&host, "main", path, None).await.unwrap().as_deref(), Some(old));
-    let utf8 = root.join("Utf8.java");
+    let utf8 = root.join("Utf8.cpp");
     std::fs::remove_file(&utf8).unwrap();
     assert_eq!(vcs::vcs_file_at(&host, "main", utf8, None).await.unwrap().as_deref(), Some(old));
     host.close_project("main");

@@ -86,7 +86,6 @@ const box: RunTargetValid = {
   syncBeforeRun: true,
   python: "",
   node: "",
-  java: "",
 };
 
 const ok = { status: "ok" as const, data: { id: 3, configId: "app", name: "app", pid: 1, running: true, pty: false } };

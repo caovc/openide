@@ -57,7 +57,7 @@ export function activate(): () => void {
         category: "Build",
         icon: "build-project",
         when: WHEN,
-        keywords: ["compile", "make", "mvn", "gradle", "cargo", "tsc", "go build"],
+        keywords: ["compile", "make", "cargo", "tsc", "go build"],
         // Awaitable: Run's "Build" before launch task waits for the result.
         run: async ({ arg }) => {
           const activate = !(typeof arg === "object" && arg !== null && "activate" in arg && arg.activate === false);
@@ -89,7 +89,7 @@ export function activate(): () => void {
       {
         id: "build.buildArtifacts",
         title: "Build Artifacts",
-        description: "Packages the project (mvn package, gradle assemble, cargo build --release, npm run build)",
+        description: "Packages the project (cargo build --release, npm run build)",
         category: "Build",
         when: WHEN,
         keywords: ["package", "assemble", "jar", "release"],

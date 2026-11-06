@@ -3,7 +3,6 @@ import { Icon, T } from "@/ui";
 import { useEditorBanners, type EditorBannerContribution } from "@/workbench/contributions";
 import { useDocMeta } from "../model/document";
 import styles from "./EditorArea.module.css";
-import { classFileBreakpointReason } from "@/platform/classFiles";
 import { tx } from "@/platform/i18n";
 
 const TEXT = {
@@ -29,23 +28,11 @@ export const documentBanner: EditorBannerContribution = {
  * Notice above a library class opened from a language server (IDEA's
  * "Decompiled .class file" / library source bar): read-only, with its origin.
  */
-export function VirtualBanner({
-  decompiled,
-  description,
-  path,
-}: {
-  decompiled: boolean;
-  description: string | null;
-  path: string;
-}) {
-  const reason = classFileBreakpointReason(path);
+export function VirtualBanner({ description }: { description: string | null }) {
   return (
     <div className={`${styles.banner} ${styles.libraryBanner}`} role="status">
-      <Icon name={decompiled ? "info" : "lock"} size={14} className={styles.bannerIcon} />
-      <span className={styles.virtualBannerText}>
-        {decompiled ? tx("Decompiled .class file: sources are not available.") : tx("Library source (read-only).")}
-        {reason && ` ${tx(reason)}`}
-      </span>
+      <Icon name="lock" size={14} className={styles.bannerIcon} />
+      <span className={styles.virtualBannerText}>{tx("Library source (read-only).")}</span>
       {description && (
         <span className={styles.bannerDetail} title={description}>
           {description}

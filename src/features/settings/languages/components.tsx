@@ -1,10 +1,9 @@
 /** Shared controls of the interpreter / toolchain settings pages. */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { IconButton, Select, Spinner, type SelectOption } from "@/ui";
 import { useProject } from "@/platform/project";
 import { useSetting } from "../components/context";
 import { choosePath, detectSdks, useSdks, type Sdk, type SdkKind } from "./api";
-import { DownloadJdkDialog } from "./DownloadJdkDialog";
 import styles from "./Sdk.module.css";
 
 /**
@@ -49,9 +48,6 @@ export interface SdkFieldProps {
   extra?: SelectOption[];
 }
 
-/** The "Download JDK…" entry of JDK combos (not a value). */
-const DOWNLOAD_JDK = "\u0000download-jdk";
-
 /** IDEA's SDK combo: detected installations, the current custom path, and a browse button; JDK combos also offer Download JDK…. */
 export function SdkField({
   kind,
@@ -71,10 +67,8 @@ export function SdkField({
     out.push(...(extra ?? []));
     for (const sdk of list) out.push({ value: sdk.path, label: sdk.name, detail: tildify(sdk.path) });
     if (value && !out.some((o) => o.value === value)) out.push({ value, label: tildify(value), detail: "custom" });
-    if (kind === "jdk") out.push({ value: DOWNLOAD_JDK, label: "Download JDK…", icon: "plus" });
     return out;
-  }, [list, value, emptyLabel, emptyDetail, extra, kind]);
-  const [downloading, setDownloading] = useState(false);
+  }, [list, value, emptyLabel, emptyDetail, extra]);
   const browse = async () => {
     const picked = await choosePath({ directory: !!directory, title: browseTitle, defaultPath: value || undefined });
     if (picked) onChange(picked);
@@ -85,7 +79,7 @@ export function SdkField({
         className={styles.sdkSelect}
         value={value}
         options={options}
-        onChange={(v) => (v === DOWNLOAD_JDK ? setDownloading(true) : onChange(v))}
+        onChange={onChange}
         aria-label={aria["aria-label"]}
         placeholder={loading ? "Detecting…" : "<No interpreter>"}
       />
@@ -95,15 +89,6 @@ export function SdkField({
         <IconButton icon="refresh" size="small" title="Detect again" onClick={refresh} />
       )}
       <IconButton icon="folder-open" size="small" title="Browse…" onClick={() => void browse()} />
-      {downloading && (
-        <DownloadJdkDialog
-          onClose={() => setDownloading(false)}
-          onDownloaded={(sdk) => {
-            setDownloading(false);
-            onChange(sdk.path);
-          }}
-        />
-      )}
     </span>
   );
 }

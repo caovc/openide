@@ -45,18 +45,11 @@ const ICONS = {
   "folder-generated-source": "nodes/generatedSource",
   "folder-generated-test": "nodes/generatedTestRoot",
   "folder-compiled": "nodes/compiledClassesFolder",
-  "folder-javadoc": "nodes/javaDocFolder",
   "class-abstract": "nodes/classAbstract",
   record: "nodes/record",
   annotation: "nodes/annotation",
   exception: "nodes/exception",
-  "jvm-test": "nodes/test",
   "runnable-mark": "nodes/runnableMark",
-  "kotlin-object": "kotlin/objectKotlin",
-  "spring-config": "openidea/runConfigurations/springBoot",
-  "gradle-project": "gradle/gradle",
-  "gradle-module": "gradle/gradleSubproject",
-  "spring-boot": "openidea/runConfigurations/springBoot",
   file: "fileTypes/text",
   "file-unknown": "fileTypes/unknown",
   "file-code": "fileTypes/anyType",
@@ -77,7 +70,6 @@ const ICONS = {
   "file-npm": "openidea/fileTypes/npm",
   "file-vue": "fileTypes/vue",
   "file-svelte": "openidea/fileTypes/svelte",
-  "file-jsp": "openidea/fileTypes/jsp",
   "file-astro": "fileTypes/astro",
   "file-yaml": "fileTypes/yaml",
   "file-toml": "fileTypes/toml",
@@ -103,14 +95,6 @@ const ICONS = {
   "file-binary": "fileTypes/binaryData",
   "file-font": "fileTypes/font",
   "file-patch": "fileTypes/patch",
-  "file-java": "fileTypes/java",
-  "file-kotlin": "fileTypes/kotlin",
-  "file-kotlin-script": "fileTypes/kotlinScript",
-  "file-groovy": "fileTypes/groovy",
-  "file-gradle": "fileTypes/gradle",
-  "file-gradle-kts": "fileTypes/kotlinGradleScript",
-  "file-maven": "fileTypes/maven",
-  "file-scala": "language/scala",
   "file-php": "language/php",
   "file-perl": "fileTypes/perl",
   "file-c": "fileTypes/c",
@@ -140,7 +124,6 @@ const ICONS = {
   "file-erlang": "openidea/fileTypes/erlang",
   "file-haskell": "openidea/fileTypes/haskell",
   "file-ocaml": "openidea/fileTypes/ocaml",
-  "file-clojure": "openidea/fileTypes/clojure",
   "file-julia": "openidea/fileTypes/julia",
   "file-r": "openidea/fileTypes/r",
   "file-nix": "openidea/fileTypes/nix",
@@ -163,6 +146,9 @@ const ICONS = {
   "file-manifest": "fileTypes/manifest",
   "file-idl": "fileTypes/idl",
   // Tool windows (each one distinct)
+  "toolwindow-ds-variables": "openidea/toolwindows/dsVariables",
+  "toolwindow-ds-plots": "openidea/toolwindows/dsPlots",
+  "toolwindow-ds-console": "openidea/toolwindows/dsConsole",
   "toolwindow-project": "toolwindows/project",
   "toolwindow-structure": "toolwindows/structure",
   "toolwindow-hierarchy": "toolwindows/hierarchy",
@@ -198,8 +184,6 @@ const ICONS = {
   "agent-auggie": "openidea/agents/auggie",
   "agent-kiro": "openidea/agents/kiro",
   "agent-vibe": "openidea/agents/vibe",
-  "toolwindow-maven": "toolwindows/maven",
-  "toolwindow-gradle": "toolwindows/gradle",
   "toolwindow-build": "toolwindows/build",
   // General UI
   "chevron-right": "general/chevronRight",
@@ -391,22 +375,11 @@ const ICONS = {
   "breakpoint-exception": "breakpoints/breakpointException",
   "mute-breakpoint": "run/muteBreakpoints",
   "view-breakpoints": "run/viewBreakpoints",
-  // Build tools (Maven / Gradle tool windows)
-  "maven-project": "maven/mavenProject",
-  "maven-module": "maven/mavenModule",
-  "maven-goal": "maven/mavenGoal",
-  "maven-plugin": "maven/mavenPlugin",
-  "maven-plugin-goal": "maven/mavenPluginGoal",
-  "maven-profiles": "maven/mavenProfiles",
-  "maven-load-changes": "maven/mavenLoadChanges",
-  "gradle-load-changes": "build/gradleLoadChanges",
+  // Build actions
   "build-task": "externalSystem/task",
-  "build-task-group": "build/taskGroup",
-  "build-offline": "build/toggleOfflineMode",
-  "build-dependencies": "build/dependencyAnalyzer",
   // Build menu (Build Project / Rebuild Project)
-  "build-project": "build/build",
-  "build-rebuild": "build/rebuild",
+  "build-project": "toolwindows/build",
+  "build-rebuild": "general/refresh",
   "skip-tests": "run/showIgnored",
   "run-anything": "general/runAnything",
   library: "nodes/library",
@@ -865,7 +838,7 @@ export function SymbolBadge({
 // ---------------------------------------------------------------------------
 // File type icons — the one place that maps file names to icons (project tree,
 // editor tabs, Search Everywhere, recent files, VCS trees…). Lookup order: exact
-// file name, name patterns, two-part extension (`gradle.kts`), extension.
+// file name, name patterns, two-part extension (`blade.php`), extension.
 
 /** `icon: "a b c"` → `{ a: icon, b: icon, c: icon }`. */
 function table(groups: Partial<Record<IconName, string>>): Record<string, IconName> {
@@ -907,12 +880,9 @@ const FILE_NAMES = table({
     ".bashrc .bash_profile .bash_login .bash_logout .bash_aliases .profile .zshrc .zshenv .zprofile .zlogin " +
     ".zlogout .kshrc pkgbuild apkbuild .envrc",
   "file-dotenv": ".flaskenv",
-  "file-gradle": "gradlew",
-  "file-maven": "pom.xml mvnw",
   "file-jenkins": "jenkinsfile",
   "file-bazel": "build workspace .bazelrc .bazelversion",
   "file-terraform": ".terraformrc terraform.rc",
-  "file-clojure": "deps.edn project.clj bb.edn",
   "file-erlang": "rebar.config sys.config",
   "file-r": ".rprofile",
   "file-lua": ".luacheckrc",
@@ -934,7 +904,7 @@ const NAME_PATTERNS: readonly (readonly [RegExp, IconName])[] = [
   [/^\.(eslintrc|prettierrc|stylelintrc|babelrc|swcrc|lintstagedrc|commitlintrc|markdownlintrc)(\.|$)/, "file-config"],
 ];
 
-/** Lower-case extensions, including two-part ones (`gradle.kts`). */
+/** Lower-case extensions, including two-part ones (`blade.php`). */
 const EXT_ICONS = table({
   "file-python": "py pyi pyw pyx pxd",
   "file-jupyter": "ipynb",
@@ -944,7 +914,6 @@ const EXT_ICONS = table({
   "file-tsx": "tsx",
   "file-vue": "vue",
   "file-svelte": "svelte",
-  "file-jsp": "jsp jspx jspf jsph tag tagf tagx",
   "file-astro": "astro",
   "file-json": "json jsonc json5 jsonl ndjson geojson topojson webmanifest har avsc code-workspace code-snippets map",
   "file-md": "md mdx markdown mdown mkd mkdn mdwn ronn workbook",
@@ -979,13 +948,6 @@ const EXT_ICONS = table({
   "file-properties": "properties prefs",
   "file-font": "ttf otf woff woff2",
   "file-patch": "patch diff rej",
-  "file-java": "java",
-  "file-kotlin": "kt",
-  "file-kotlin-script": "kts",
-  "file-groovy": "groovy gvy gy gsh",
-  "file-gradle": "gradle",
-  "file-gradle-kts": "gradle.kts",
-  "file-scala": "scala sc sbt mill",
   "file-php": "php phtml php3 php4 php5 phps phpt",
   "file-perl": "pl pm pod psgi cgi",
   "file-c": "c",
@@ -1011,7 +973,6 @@ const EXT_ICONS = table({
   "file-erlang": "erl hrl escript app.src",
   "file-haskell": "hs lhs hs-boot hsig",
   "file-ocaml": "ml mli mll mly",
-  "file-clojure": "clj cljs cljc cljd edn bb",
   "file-julia": "jl",
   "file-r": "r rprofile",
   "file-nix": "nix",
@@ -1088,8 +1049,7 @@ export type FolderKind =
   | "package"
   | "generatedSource"
   | "generatedTest"
-  | "compiled"
-  | "javadoc";
+  | "compiled";
 
 /** Folder icon by role (expui has no separate "open" folder glyph). */
 export function folderIconName(kind: FolderKind = "plain"): IconName {
@@ -1118,8 +1078,6 @@ export function folderIconName(kind: FolderKind = "plain"): IconName {
       return "folder-generated-test";
     case "compiled":
       return "folder-compiled";
-    case "javadoc":
-      return "folder-javadoc";
     default:
       return "folder";
   }

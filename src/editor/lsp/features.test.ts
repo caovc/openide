@@ -32,7 +32,7 @@ describe("semanticRanges", () => {
     expect(semanticRanges(doc, input, false, "python")[0]?.className).toBe(
       "cm-sem-property cm-sem-static cm-sem-python-static",
     );
-    expect(semanticRanges(doc, input, false, "java")[0]?.className).toBe("cm-sem-property cm-sem-static");
+    expect(semanticRanges(doc, input, false, "typescript")[0]?.className).toBe("cm-sem-property cm-sem-static");
   });
 
   it("routes Python library symbols through its built-in name colour", () => {
@@ -40,7 +40,7 @@ describe("semanticRanges", () => {
     expect(semanticRanges(doc, input, false, "python")[0]?.className).toBe(
       "cm-sem-function cm-sem-builtin cm-sem-python-builtin",
     );
-    expect(semanticRanges(doc, input, false, "java")[0]?.className).toBe("cm-sem-function cm-sem-builtin");
+    expect(semanticRanges(doc, input, false, "typescript")[0]?.className).toBe("cm-sem-function cm-sem-builtin");
   });
 
   it("ignores type and modifier names that only exist on Object.prototype", () => {
@@ -62,11 +62,6 @@ describe("semanticRanges", () => {
       { from: 0, to: 3, className: "cm-sem-global" },
       { from: 4, to: 7, className: "cm-sem-function cm-sem-global" },
     ]);
-  });
-
-  it("colours a constructor (jdtls: class + `constructor`) as a function", () => {
-    const input = { tokenTypes: ["class"], tokenModifiers: ["constructor", "declaration"], data: [0, 0, 3, 0, 0b11] };
-    expect(semanticRanges(doc, input)[0]?.className).toBe("cm-sem-function cm-sem-declaration");
   });
 });
 

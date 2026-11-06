@@ -156,7 +156,7 @@ pub fn split(text: &str, driver: DbDriver) -> Vec<SqlStatement> {
                     declarations = false;
                     has_code = true;
                 }
-                _ if plsql && word_at(&chars, i, "CASE") || plsql && word_at(&chars, i, "LOOP") => {
+                _ if plsql && (word_at(&chars, i, "CASE") || word_at(&chars, i, "LOOP")) => {
                     depth += 1;
                     has_code = true;
                 }

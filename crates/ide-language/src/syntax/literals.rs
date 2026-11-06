@@ -89,7 +89,7 @@ const USE_PARENTS: &[&str] =
 fn declares(cursor: &TreeCursor<'_>, node: &Node<'_>) -> bool {
     let parent = node.parent().map(|p| p.kind()).unwrap_or_default();
     match cursor.field_name() {
-        // Uses name their target with a `name` field too: Java `s.substring()`,
+        // Uses name their target with a `name` field too: TypeScript `s.substring()`,
         // C# `a.Name`, Rust `use a::b::name`.
         Some("name") => !USE_PARENTS.iter().any(|p| parent.contains(p)),
         Some("pattern" | "declarator") => true,

@@ -19,7 +19,6 @@
 //!    the query loops honour the [`CancellationToken`].
 
 mod identifiers;
-mod jvm;
 mod kinds;
 mod lines;
 mod locals;
@@ -29,7 +28,6 @@ mod types;
 #[cfg(test)]
 mod tests;
 
-pub use jvm::{JvmPresentation, JvmTypeKind, jvm_type_header};
 pub use types::*;
 
 use ide_core::{CancellationToken, DocId, IdeError, LanguageId, Pos, Range};

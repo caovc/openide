@@ -3,7 +3,7 @@
  * Languages & Frameworks › Go / Java / Markdown / Node.js / PHP / Rust / TypeScript. Pages live in
  * `../languages/`; settings are `languages.*` / `projectStructure.*`.
  */
-import { GoPage, JavaPage, NodePage, PhpPage, RubyPage, RustPage, TypeScriptPage } from "../languages/LanguagePages";
+import { GoPage, NodePage, PhpPage, RubyPage, RustPage, TypeScriptPage } from "../languages/LanguagePages";
 import { MarkdownPage } from "../languages/MarkdownPage";
 import { OxfmtPage, PrettierPage, RuffPage } from "../languages/FormatterPage";
 import { ProjectStructurePage } from "../languages/ProjectStructurePage";
@@ -76,28 +76,6 @@ export const LANGUAGE_PAGES: PageSpec[] = [
     ownScopeSwitch: true,
     sections: GO_MODULE_SECTIONS,
     component: GoModulesPage,
-  },
-  {
-    id: "languages.java",
-    projectScope: true,
-    defaultScope: "project",
-    title: "Java",
-    group: LANGUAGES_GROUP,
-    order: 395,
-    keywords: [
-      "jdk",
-      "project sdk",
-      "java home",
-      "jdtls",
-      "language server jdk",
-      "jdk for importer",
-      "jvm options",
-      "vmargs",
-      "lombok",
-      "javaagent",
-      "eclipse jdt",
-    ],
-    component: JavaPage,
   },
   {
     id: "languages.node",

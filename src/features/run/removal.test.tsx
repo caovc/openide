@@ -19,8 +19,18 @@ import type { RunConfig } from "@/platform/ipc";
 import { useProject } from "@/platform/project";
 import { EditConfigsOverlay } from "./EditConfigsDialog";
 import { ConfigChooserOverlay } from "./ConfigChooser";
-import { adoptTemporary, canDeleteConfig, deleteConfig, loadConfigs, resetRuns, useRun } from "./store";
+import {
+  adoptTemporary,
+  canDeleteConfig,
+  deleteConfig,
+  loadConfigs,
+  resetRuns,
+  saveEditedConfigs,
+  startRun,
+  useRun,
+} from "./store";
 import { registerBuiltinTypes } from "./types";
+import { provideNotificationService } from "@/workbench/contributions";
 
 const config = (kind = "npm"): RunConfig => ({
   id: `${kind}:app`,
@@ -92,7 +102,7 @@ it("keeps the override label and removes overrides without suppression", async (
   await waitFor(() => expect(ipc.runSaveConfigs).toHaveBeenCalledWith([], []));
 });
 
-it.each(["spring-boot", "application", "maven", "gradle", "npm", "pytest", "cargo", "go"])(
+it.each(["python", "program", "npm", "cargo", "npm", "pytest", "cargo", "go"])(
   "chooser deletion suppresses detected %s configurations",
   async (kind) => {
     const c = config(kind);
@@ -149,9 +159,9 @@ it("removes a temporary configuration from Edit Configurations for good", async 
 });
 
 it("keeps unedited temporary configurations temporary and saves edited ones", async () => {
-  const goal: RunConfig = { ...config("maven"), id: "maven:goal:pom.xml:test", name: "app [test]", detected: false };
+  const goal: RunConfig = { ...config("npm"), id: "maven:goal:pom.xml:test", name: "app [test]", detected: false };
   const other: RunConfig = {
-    ...config("maven"),
+    ...config("npm"),
     id: "maven:goal:pom.xml:verify",
     name: "app [verify]",
     detected: false,
@@ -166,4 +176,35 @@ it("keeps unedited temporary configurations temporary and saves edited ones", as
   expect(ipc.runSaveConfigs).toHaveBeenCalledWith([expect.objectContaining({ id: other.id, name: "verify app" })], []);
   expect(useRun.getState().temporary).toEqual([goal.id]);
   expect(temporaryOf().map((c) => c.id)).toEqual([goal.id]);
+});
+
+it("preserves hidden legacy user and temporary configurations while saving a visible draft", async () => {
+  const legacy = { ...config("application"), detected: false, debugAdapter: "java-debug" };
+  const temporary = { ...config("maven"), detected: false };
+  const python = { ...config("python"), detected: false };
+  backend = [legacy, python];
+  useRun.setState({ configs: [legacy, python] });
+  adoptTemporary(temporary);
+  await saveEditedConfigs([{ ...python, name: "Changed" }]);
+  expect(ipc.runSaveConfigs).toHaveBeenCalledWith(
+    [expect.objectContaining({ id: python.id, name: "Changed" }), legacy],
+    [],
+  );
+  expect(useRun.getState().temporary).toEqual([temporary.id]);
+  expect(temporaryOf()).toEqual([temporary]);
+});
+
+it("rejects direct and compound legacy launches before creating sessions or running tasks", async () => {
+  const notify = vi.fn();
+  provideNotificationService({ notify });
+  const legacy = config("application");
+  const python = config("python");
+  const compound = { ...config("compound"), compound: [python.id, legacy.id] };
+  useRun.setState({ configs: [legacy, python, compound], sessions: [] });
+  {
+    expect(await startRun(legacy)).toBeNull();
+    expect(await startRun(compound)).toBeNull();
+    expect(useRun.getState().sessions).toEqual([]);
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({ body: expect.stringContaining("removed JVM") }));
+  }
 });

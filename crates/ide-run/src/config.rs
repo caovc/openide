@@ -304,15 +304,57 @@ fn write_array(path: &Path, key: &str, configs: &[&RunConfig], suppressed: Optio
     if existing.is_none() && configs.is_empty() && suppressed.is_none_or(|ids| ids.is_empty()) {
         return Ok(());
     }
-    // A file we cannot parse is replaced.
-    let mut doc = existing.as_deref().and_then(|t| t.parse::<DocumentMut>().ok()).unwrap_or_default();
-    if configs.is_empty() {
+    // Refuse malformed files rather than losing user data while migrating.
+    let mut doc = match existing.as_deref() {
+        Some(text) => text.parse::<DocumentMut>().map_err(|e| IdeError::invalid(format!("{}: {e}", path.display())))?,
+        None => DocumentMut::new(),
+    };
+    if doc.get(key).is_some_and(|item| !item.is_array_of_tables() && !item.as_array().is_some_and(Array::is_empty)) {
+        return Err(IdeError::invalid(format!("{}: {key} must be an array of tables", path.display())));
+    }
+    let legacy: Vec<(String, Table)> = doc
+        .get(key)
+        .and_then(Item::as_array_of_tables)
+        .into_iter()
+        .flat_map(|a| a.iter())
+        .enumerate()
+        .filter(|(_, t)| {
+            let kind = t.get("kind").and_then(Item::as_str).unwrap_or("");
+            let adapter =
+                ["debug-adapter", "debugAdapter", "debug_adapter"].iter().find_map(|k| t.get(k).and_then(Item::as_str));
+            crate::is_removed_jvm_kind(kind, adapter)
+        })
+        .map(|(index, table)| {
+            let get = |key| table.get(key).and_then(Item::as_str).filter(|s| !s.is_empty());
+            let key = if key == TEMPLATES {
+                get("kind").unwrap_or("").to_owned()
+            } else {
+                get("id").map(str::to_owned).unwrap_or_else(|| {
+                    let name = get("name")
+                        .or_else(|| get("command"))
+                        .map(str::to_owned)
+                        .unwrap_or_else(|| format!("Configuration {}", index + 1));
+                    format!("user:{}", slug(&name))
+                })
+            };
+            (key, table.clone())
+        })
+        .collect();
+    let mut array = ArrayOfTables::new();
+    for c in configs {
+        if crate::is_removed_jvm_config(c)
+            && legacy.iter().any(|(id, _)| id == if key == TEMPLATES { &c.kind } else { &c.id })
+        {
+            continue;
+        }
+        array.push(to_table(c));
+    }
+    for (_, table) in legacy {
+        array.push(table);
+    }
+    if array.is_empty() {
         doc.remove(key);
     } else {
-        let mut array = ArrayOfTables::new();
-        for c in configs {
-            array.push(to_table(c));
-        }
         doc.insert(key, Item::ArrayOfTables(array));
     }
     if let Some(ids) = suppressed {

@@ -14,7 +14,6 @@ import type { RunConfig } from "@/platform/ipc";
 import { ipcPath, isSameOrInside } from "@/platform/paths";
 import { isTestPath } from "@/platform/languageSettings";
 import { currentRoots } from "@/platform/projectRoots";
-import { applicationConfig, jvmModuleDir } from "./application";
 import { formatArgs } from "./configs";
 import { goGenerateConfig } from "./goGenerate";
 import { goTestParts } from "./goArguments";
@@ -28,9 +27,7 @@ import {
   relToCwd as relativeToCwd,
 } from "./context";
 import { djangoLabel, djangoTestsOf, hasDjangoTests } from "./djangoTypes";
-import { firstTopLevelType, scanJvmTargets, simpleClassName } from "./jvmTargets";
-import { isWindows } from "./jvmTypes";
-import { inheritedRunTargets } from "./inheritedMain";
+import { isWindows } from "./platform";
 import { detectRunTargets, targetConfig, targetLanguage, type RunTarget } from "./targets";
 import { tx } from "@/platform/i18n";
 
@@ -209,15 +206,11 @@ export type ScriptLanguage =
   | "r"
   | "go"
   | "rust"
-  | "java"
-  | "kotlin"
-  | "kotlin-script"
   | "swift"
   | "c"
   | "cpp"
   | "dart"
   | "elixir"
-  | "scala"
   | "shebang";
 
 /** `#!/usr/bin/env -S deno run` → `["deno", "run"]`; `#!/bin/zsh -f` → `["/bin/zsh", "-f"]`. */
@@ -248,15 +241,11 @@ export function scriptLanguage(path: string, content?: string): ScriptLanguage |
   if (/\.[rR]$/.test(name)) return "r";
   if (/\.go$/.test(name)) return "go";
   if (/\.rs$/.test(name)) return "rust";
-  if (/\.java$/.test(name)) return "java";
-  if (/\.kt$/.test(name)) return "kotlin";
-  if (/\.kts$/.test(name) && !/\.gradle\.kts$/.test(name)) return "kotlin-script";
   if (/\.swift$/.test(name)) return "swift";
   if (/\.c$/.test(name)) return "c";
   if (/\.(cpp|cc|cxx|c\+\+)$/.test(name)) return "cpp";
   if (/\.dart$/.test(name)) return "dart";
   if (/\.exs$/.test(name)) return "elixir";
-  if (/\.(scala|sc)$/.test(name)) return "scala";
   if (!name.includes(".") && shebang(content)) return "shebang";
   return null;
 }
@@ -294,12 +283,6 @@ export function toolsFor(lang: ScriptLanguage, content?: string): string[] {
       return ["go"];
     case "rust":
       return ["rustc"];
-    case "java":
-      return ["java"];
-    case "kotlin":
-      return ["kotlinc"];
-    case "kotlin-script":
-      return ["kotlin", "kotlinc"];
     case "swift":
       return ["swift"];
     case "c":
@@ -310,8 +293,6 @@ export function toolsFor(lang: ScriptLanguage, content?: string): string[] {
       return ["dart"];
     case "elixir":
       return ["elixir"];
-    case "scala":
-      return ["scala-cli"];
   }
 }
 
@@ -326,16 +307,11 @@ const INSTALL: Record<string, string> = {
   r: "Install R (`brew install r`) so that `Rscript` is on the PATH.",
   go: "Install Go from https://go.dev/dl (or `brew install go`).",
   rust: "Install Rust with rustup: https://rustup.rs",
-  java: "Install a JDK 11+ (`brew install openjdk`), or download one in Settings › Languages & Frameworks › Java (Project JDK › Download JDK…).",
-  kotlin:
-    "Install the Kotlin compiler (`brew install kotlin`, or https://kotlinlang.org/docs/command-line.html) so that `kotlinc` is on the PATH.",
-  "kotlin-script": "Install Kotlin (`brew install kotlin`).",
   swift: "Install the Xcode command line tools (`xcode-select --install`).",
   c: "Install a C compiler: `xcode-select --install` (clang) or `brew install gcc`.",
   cpp: "Install a C++ compiler: `xcode-select --install` (clang++) or `brew install gcc`.",
   dart: "Install the Dart SDK (`brew install dart-sdk`).",
   elixir: "Install Elixir (`brew install elixir`).",
-  scala: "Install Scala CLI (`brew install Virtuslab/scala-cli/scala-cli`).",
   shell: "Install the shell named in the script's #! line.",
   shebang: "Install the interpreter named in the script's #! line.",
 };
@@ -347,12 +323,8 @@ const LANGUAGE_NAMES: Partial<Record<ScriptLanguage, string>> = {
   r: "R",
   go: "Go",
   rust: "rustc",
-  java: "Java",
-  kotlin: "The Kotlin compiler",
-  "kotlin-script": "Kotlin",
   c: "A C compiler",
   cpp: "A C++ compiler",
-  scala: "Scala CLI",
 };
 
 function missing(lang: ScriptLanguage, file: string, tools: string[]): Missing {
@@ -553,7 +525,7 @@ function compiled(
   input: ContextInput,
   env: ToolEnv,
   s: FileSite,
-  lang: "rust" | "c" | "cpp" | "kotlin",
+  lang: "rust" | "c" | "cpp",
   test?: { filter?: string[]; name: string },
 ): Produced {
   const win = !!env.windows;
@@ -562,24 +534,19 @@ function compiled(
   const name = test?.name ?? s.file;
   const scope = test ? "element" : "file";
   if (!compiler) return { name, scope, missing: missing(lang, s.file, tools) };
-  const java = lang === "kotlin" ? pick(env, ["java"]) : null;
-  if (lang === "kotlin" && !java) return { name, scope, missing: missing("java", s.file, ["java"]) };
   const dir = env.compileDir.replace(/\\/g, "/").replace(/(.)\/+$/, "$1");
-  const ext = lang === "kotlin" ? ".jar" : win ? ".exe" : "";
+  const ext = win ? ".exe" : "";
   const out = nativePath(`${dir}/${stemOf(s.file)}-${hash(input.path)}${test ? "-test" : ""}${ext}`, win);
   const flags =
     lang === "rust"
       ? ["-g", "--edition", "2021", ...(test ? ["--test"] : []), "-o", out, s.arg]
-      : lang === "kotlin"
-        ? // The jar's manifest names the file's main class (`HiKt`, `pkg.HiKt`).
-          ["-include-runtime", "-d", out, s.arg]
-        : ["-g", ...(lang === "cpp" ? ["-std=c++17"] : []), "-o", out, s.arg];
+      : ["-g", ...(lang === "cpp" ? ["-std=c++17"] : []), "-o", out, s.arg];
   const build = `${mkdirLine(dir, win)} && ${shellLine([compiler.command, ...flags], win)}`;
   const runArgs = test?.filter ?? [];
-  const run = lang === "kotlin" ? [java!.command, "-jar", out] : [out, ...runArgs];
-  const kind = lang === "rust" ? "rustc" : lang === "kotlin" ? "kotlinc" : "cc";
+  const run = [out, ...runArgs];
+  const kind = lang === "rust" ? "rustc" : "cc";
   const idPath = test ? `${s.idPath}#${test.name}` : s.idPath;
-  const debugAdapter = lang === "kotlin" ? null : lang === "rust" ? "codelldb" : "lldb-dap";
+  const debugAdapter = lang === "rust" ? "codelldb" : "lldb-dap";
   const config: RunConfig = {
     ...fileConfig(s, kind, `${build} && ${shellLine(run, win)}`, [], debugAdapter),
     id: `context:file:${idPath}`,
@@ -597,44 +564,6 @@ function compiled(
   };
   const binary: RunConfig = { ...config, kind: "native", command: out, args: runArgs, isTest: false };
   return { name, scope, config, debug: { build: buildConfig, config: binary } };
-}
-
-/**
- * A single Java file. The source launcher (`java Hi.java`, JEP 330) runs the file's first
- * top-level type, so another main class (declared after it, nested, or picked in the gutter)
- * is compiled with the JDK's `javac` into a class directory and run with `java -cp`.
- */
-function javaFile(input: ContextInput, env: ToolEnv, s: FileSite, mainClass?: string): Produced {
-  const tools = toolsFor("java");
-  const java = pick(env, tools);
-  if (!java) return { name: s.file, scope: "file", missing: missing("java", s.file, tools) };
-  const source: Produced = {
-    name: s.file,
-    scope: "file",
-    config: fileConfig(s, "java-file", java.command, [s.arg], "java-debug"),
-  };
-  if (input.content === undefined) return source;
-  const first = firstTopLevelType(input.content);
-  const mains = scanJvmTargets(input.content, s.idPath, false)
-    .filter((t) => t.kind === "main")
-    .map((t) => t.className);
-  const stem = stemOf(s.file);
-  const fileMain =
-    mains.find((c) => c === first) ?? mains.find((c) => c.slice(c.lastIndexOf(".") + 1) === stem) ?? mains[0];
-  const launch = mainClass ?? fileMain;
-  if (!launch || launch === first) return source;
-  const win = !!env.windows;
-  const dir = env.compileDir.replace(/\\/g, "/").replace(/(.)\/+$/, "$1");
-  const out = nativePath(`${dir}/${stem}-${hash(input.path)}-classes`, win);
-  // The `javac` of the JDK that runs the class, so their class file versions match.
-  const javac = java.command.replace(/(^|[\\/])java(\.exe)?$/i, "$1javac$2");
-  const build = `${mkdirLine(out, win)} && ${shellLine([javac, "-g", "-d", out, s.arg], win)}`;
-  const run = shellLine([java.command, "-cp", out, launch], win);
-  const config: RunConfig = {
-    ...fileConfig(s, "java-file", `${build} && ${run}`, [], "java-debug"),
-    ...(launch === fileMain ? {} : { id: `context:file:${s.idPath}#${launch}`, name: simpleClassName(launch) }),
-  };
-  return { name: config.name, scope: "file", config };
 }
 
 function simple(
@@ -671,8 +600,6 @@ const hasGoMain = (content?: string) => content === undefined || /^\s*package\s+
 const hasRustMain = (content?: string) =>
   content === undefined || /^(?:pub\s+)?(?:async\s+)?fn\s+main\s*\(/m.test(content);
 const hasCMain = (content?: string) => content === undefined || /^\s*(?:int|void)\s+main\s*\(/m.test(content);
-/** A top-level `fun main` (with or without `args`, `suspend` allowed). */
-const hasKotlinMain = (content?: string) => content === undefined || /^(?:suspend\s+)?fun\s+main\s*\(/m.test(content);
 
 /**
  * The configs of the given build tools whose build contains the file (working
@@ -688,7 +615,6 @@ function buildOwners(rel: string, configs: readonly RunConfig[], kinds: readonly
 const cargoOwner = (rel: string, configs: readonly RunConfig[]) => buildOwners(rel, configs, ["cargo"]);
 const hasBuildTool = (rel: string, configs: readonly RunConfig[], kinds: readonly string[]) =>
   buildOwners(rel, configs, kinds).length > 0;
-const JVM_BUILDS = ["maven", "gradle"];
 
 /**
  * A Godot scene: `godot --path <project> res://<scene>` in the Godot project holding it
@@ -783,16 +709,6 @@ export function produceFile(input: ContextInput, env: ToolEnv): Produced | null 
       if (!hasGoMain(input.content)) return null;
       const main = contextConfig(rel, configs, input.content ?? "package main");
       if (main) return { name: main.name, scope: "file", config: main };
-    }
-    if (/\.(java|kt)$/.test(rel) && hasBuildTool(rel, configs, JVM_BUILDS)) {
-      if (input.content === undefined) return null;
-      const targets = [
-        ...detectRunTargets(input.content, rel),
-        ...inheritedRunTargets(input.path, input.content),
-      ].filter((t) => t.className);
-      const target = targets.find((t) => t.kind === "main") ?? targets.find((t) => t.kind === "suite");
-      const config = target ? targetConfig(target, rel, configs, input.content) : null;
-      return config ? { name: config.name, scope: "file", config } : null;
     }
   }
   if (!lang) return null;
@@ -904,19 +820,9 @@ export function produceFile(input: ContextInput, env: ToolEnv): Produced | null 
       return simple(lang, s, env, "r", () => [s.arg]);
     case "dart":
       return simple(lang, s, env, "dart", () => ["run", s.arg], "dart");
-    case "scala":
-      return simple(lang, s, env, "scala-cli", () => ["run", s.arg]);
-    case "kotlin":
-      // `kotlinc` into a runnable jar, then `java -jar`.
-      return hasKotlinMain(input.content) ? compiled(input, env, s, "kotlin") : null;
-    case "kotlin-script":
-      return simple(lang, s, env, "kotlin", (_, tool) => (tool === "kotlinc" ? ["-script", s.arg] : [s.arg]));
     case "go":
       if (!hasGoMain(input.content) || /_test\.go$/.test(s.file)) return null;
       return simple(lang, s, env, "go", () => ["run", s.arg], "delve");
-    case "java":
-      if (input.content !== undefined && !/\bvoid\s+main\s*\(/.test(input.content)) return null;
-      return javaFile(input, env, s);
     case "rust":
       if (!hasRustMain(input.content)) {
         // A standalone file with tests only: run them all.
@@ -1019,11 +925,11 @@ export function fileTargets(
     // Scratches: mains only (tests need the project's runner).
     const isGo = /\.go$/.test(input.path);
     return detectRunTargets(content, isGo || /\.py$/.test(input.path) ? input.path : s.rel).filter(
-      (t) => t.kind === "main" && (!t.className || /\.(java|kt)$/.test(input.path)),
+      (t) => t.kind === "main",
     );
   }
   const targets = detectRunTargets(content, s.rel, hasDjangoTests(input.configs));
-  return /\.java$/.test(input.path) ? [...targets, ...inheritedRunTargets(input.path, content)] : targets;
+  return targets;
 }
 
 function elementProduction(input: ContextInput, env: ToolEnv, target: RunTarget): Produced | null {
@@ -1034,13 +940,6 @@ function elementProduction(input: ContextInput, env: ToolEnv, target: RunTarget)
     return config ? { name: config.name, scope: "element", config } : null;
   }
   if (target.kind === "main") {
-    // Java / Kotlin main classes in a Maven / Gradle project: an Application configuration.
-    if (target.className && s.inProject && hasBuildTool(rel, input.configs, JVM_BUILDS)) {
-      const config = applicationConfig({ className: target.className, spring: target.spring }, rel, input.configs);
-      return { name: config.name, scope: "element", config };
-    }
-    if (target.className && /\.java$/.test(input.path))
-      return { ...javaFile(input, env, s, target.className), scope: "element" };
     const file = produceFile(input, env);
     return file ? { ...file, scope: "element" } : null;
   }
@@ -1156,11 +1055,9 @@ export function produceDirectory(input: ContextInput): Produced | null {
   if (!root || !isProjectPath(input) || input.path === root) return null;
   const rel = relTo(input.path, root);
   const name = baseName(rel);
-  const jvmRoot = /^(?:(.*)\/)?src\/test(?:\/(java|kotlin|scala|groovy))?$/.exec(rel);
-  const jvmPackage = /^(?:(.*)\/)?src\/test\/(?:java|kotlin|scala|groovy)\/(.+)$/.exec(rel);
   const marked = isTestPath(currentRoots(), rel);
   const tests = input.configs.filter((c) => c.isTest);
-  if (!TEST_DIR.test(rel) && !jvmRoot && !jvmPackage && !marked && !/(^|\/)src\/test(\/|$)/.test(rel)) return null;
+  if (!TEST_DIR.test(rel) && !marked && !/(^|\/)src\/test(\/|$)/.test(rel)) return null;
   const closest = (kinds: string[]) =>
     allClosest(
       tests.filter((c) => kinds.includes(c.kind)),
@@ -1180,23 +1077,6 @@ export function produceDirectory(input: ContextInput): Produced | null {
     },
   });
   const testsIn = `Tests in '${name}'`;
-
-  if (jvmRoot || jvmPackage || /(^|\/)src\/test(\/|$)/.test(rel)) {
-    const base = closest(["gradle", "maven"]);
-    if (base) {
-      const module = jvmModuleDir(rel + "/x.java", input.configs);
-      const moduleBase = { ...base, cwd: module || base.cwd };
-      if (!jvmPackage) return make(moduleBase, "All Tests", [...base.args]);
-      const pkg = jvmPackage[2]!.replace(/\//g, ".");
-      return base.kind === "gradle"
-        ? make(moduleBase, `Tests in '${pkg}'`, [...base.args, "--tests", `${pkg}.*`])
-        : make(moduleBase, `Tests in '${pkg}'`, [
-            ...base.args,
-            `-Dtest=${pkg}.**.*`,
-            "-Dsurefire.failIfNoSpecifiedTests=false",
-          ]);
-    }
-  }
   const js = closest(["npm", "bun", "deno"]);
   const ruby = marked && !js && rubyDirectory(closest, relToCwd, make, testsIn, root);
   if (ruby) return ruby;
@@ -1236,5 +1116,5 @@ export function produceDirectory(input: ContextInput): Produced | null {
 export function neededTools(input: ContextInput): string[] {
   const lang = scriptLanguage(input.path, input.content);
   if (!lang) return [];
-  return lang === "kotlin" ? ["kotlinc", "java"] : toolsFor(lang, input.content);
+  return toolsFor(lang, input.content);
 }

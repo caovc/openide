@@ -18,7 +18,6 @@
 pub mod archive;
 mod bundled;
 pub mod formatter;
-pub mod jdk;
 pub mod platform;
 mod process;
 pub mod registry;
@@ -214,7 +213,7 @@ impl InstallSlot {
 
 static INSTALLING: Mutex<Option<HashMap<String, Arc<InstallSlot>>>> = Mutex::new(None);
 
-/// Mutual exclusion for work that cannot be joined (JDK downloads, uninstalls):
+/// Mutual exclusion for work that cannot be joined (downloads, uninstalls):
 /// a second caller while the name is busy fails fast.
 static EXCLUSIVE: Mutex<Option<HashSet<String>>> = Mutex::new(None);
 
@@ -404,7 +403,7 @@ fn is_app_execution_alias(path: &Path) -> bool {
     path.parent().and_then(Path::file_name).is_some_and(|d| d.eq_ignore_ascii_case("WindowsApps"))
 }
 
-/// A tool whose "command" is a plugin jar (e.g. a jdtls bundle) rather than an executable.
+/// A tool whose "command" is a plugin jar (a language-server extension) rather than an executable.
 fn is_bundle(command: &str) -> bool {
     command.ends_with(".jar")
 }
@@ -1245,13 +1244,7 @@ impl Tools {
                 let json = http.get_text(&sources::hashicorp_latest_url(product), cancel)?;
                 sources::hashicorp_pick(&json, assets, self.platform)
             }
-            ReleaseSource::EclipseJdtls => {
-                let index = http.get_text(sources::JDTLS_MILESTONES, cancel)?;
-                let version = sources::jdtls_latest_milestone(&index)
-                    .ok_or_else(|| IdeError::new(ErrorKind::Protocol, "no JDT LS milestone found"))?;
-                let latest = http.get_text(&format!("{}{version}/latest.txt", sources::JDTLS_MILESTONES), cancel)?;
-                sources::jdtls_download(&version, &latest)
-            }
+
             ReleaseSource::OpenVsx { namespace, extension } => {
                 let json = http.get_text(&sources::openvsx_latest_url(namespace, extension), cancel)?;
                 let json = match sources::openvsx_platform_url(&json, assets, self.platform)? {
@@ -1260,10 +1253,7 @@ impl Tools {
                 };
                 sources::openvsx_pick(&json, assets, self.platform)
             }
-            ReleaseSource::MavenCentral { group, artifact } => {
-                let xml = http.get_text(&sources::maven_metadata_url(group, artifact), cancel)?;
-                sources::maven_pick(group, artifact, &xml)
-            }
+
         }
     }
 

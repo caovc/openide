@@ -3,7 +3,6 @@ import { useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import { getAction, executeAction } from "@/platform/actions";
 import { BarButton, Button, IconButton, Popup, T } from "@/ui";
-import { downloadJdkActions } from "@/platform/jdk";
 import { relativePath, useProject } from "@/platform/project";
 import { STATUS_LABEL, restartServer, servedByOther, serversSummary, useServers } from "./servers";
 import styles from "./ServerStatus.module.css";
@@ -44,8 +43,6 @@ export function ServerStatus() {
             <T>Language Servers</T>
           </div>
           {servers.map((s) => {
-            // jdtls without a JDK new enough to run it: "Download JDK 25".
-            const [jdkFix] = s.status === "misconfigured" ? downloadJdkActions(s.message) : [];
             return (
               <div key={s.id} className={styles.server}>
                 <div className={styles.line}>
@@ -59,17 +56,7 @@ export function ServerStatus() {
                   <span className={styles.name}>{s.name}</span>
                   <span className={styles.status}>{STATUS_LABEL[s.status]}</span>
                   <span className={styles.spacer} />
-                  {jdkFix ? (
-                    <Button
-                      size="small"
-                      onClick={() => {
-                        setOpen(false);
-                        jdkFix.run();
-                      }}
-                    >
-                      {jdkFix.label}
-                    </Button>
-                  ) : s.status === "missing" && canInstall ? (
+                  {s.status === "missing" && canInstall ? (
                     <Button
                       size="small"
                       aria-label={tx`Install ${s.name}`}

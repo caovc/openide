@@ -107,29 +107,6 @@ export interface LanguagesValid {
   prettier: ExternalFormatterValid;
   oxfmt: ExternalFormatterValid;
   ruff: ExternalFormatterValid;
-  java: {
-    jdk: string;
-    jdtlsJdk: string;
-    jdtlsVmArgs: string;
-    gradle: {
-      linkedProjects: string[] | null;
-      jvm: string;
-      distribution: "wrapper" | "local";
-      home: string;
-      userHome: string;
-      /** IDEA's "Build and run using": Gradle (`JavaExec`) or the IDE (the language server's classpath). */
-      runUsing: "gradle" | "ide";
-    };
-    maven: {
-      home: string;
-      userSettings: string;
-      localRepository: string;
-      unlinkedProjects: string[];
-      linkedProjects: string[];
-      daemon: boolean;
-      mvndHome: string;
-    };
-  };
   /** Preview font size in px; `null` follows the editor font size. */
   markdown: { previewFontSize: number | null };
 }
@@ -168,21 +145,6 @@ export const DEFAULT_LANGUAGES: LanguagesValid = {
   prettier: DEFAULT_FORMATTER,
   oxfmt: DEFAULT_FORMATTER,
   ruff: DEFAULT_RUFF_FORMATTER,
-  java: {
-    jdk: "",
-    jdtlsJdk: "",
-    jdtlsVmArgs: "",
-    gradle: { linkedProjects: null, jvm: "", distribution: "wrapper", home: "", userHome: "", runUsing: "gradle" },
-    maven: {
-      home: "",
-      userSettings: "",
-      localRepository: "",
-      unlinkedProjects: [],
-      linkedProjects: [],
-      daemon: false,
-      mvndHome: "",
-    },
-  },
   markdown: { previewFontSize: null },
 };
 
@@ -262,9 +224,6 @@ export function validateLanguages(raw: unknown): LanguagesValid {
   const tags = obj(go.buildTags);
   const modules = obj(go.modules);
   const ts = obj(l.typescript);
-  const java = obj(l.java);
-  const maven = obj(java.maven);
-  const gradle = obj(java.gradle);
   const markdown = obj(l.markdown);
   return {
     python: {
@@ -309,30 +268,6 @@ export function validateLanguages(raw: unknown): LanguagesValid {
     prettier: validateFormatter(l.prettier),
     oxfmt: validateFormatter(l.oxfmt),
     ruff: validateFormatter(l.ruff, DEFAULT_RUFF_FORMATTER),
-    java: {
-      jdk: text(java.jdk, d.java.jdk),
-      jdtlsJdk: text(java.jdtlsJdk, d.java.jdtlsJdk),
-      jdtlsVmArgs: text(java.jdtlsVmArgs, d.java.jdtlsVmArgs),
-      gradle: {
-        linkedProjects: Array.isArray(gradle.linkedProjects)
-          ? gradle.linkedProjects.filter((p): p is string => typeof p === "string")
-          : null,
-        jvm: text(gradle.jvm, d.java.gradle.jvm),
-        distribution: oneOf(gradle.distribution, ["wrapper", "local"] as const, d.java.gradle.distribution),
-        home: text(gradle.home, d.java.gradle.home),
-        userHome: text(gradle.userHome, d.java.gradle.userHome),
-        runUsing: oneOf(gradle.runUsing, ["gradle", "ide"] as const, d.java.gradle.runUsing),
-      },
-      maven: {
-        home: text(maven.home, d.java.maven.home),
-        userSettings: text(maven.userSettings, d.java.maven.userSettings),
-        localRepository: text(maven.localRepository, d.java.maven.localRepository),
-        unlinkedProjects: folders(maven.unlinkedProjects),
-        linkedProjects: folders(maven.linkedProjects),
-        daemon: bool(maven.daemon, d.java.maven.daemon),
-        mvndHome: text(maven.mvndHome, d.java.maven.mvndHome),
-      },
-    },
     markdown: { previewFontSize: previewSize(markdown.previewFontSize) },
   };
 }

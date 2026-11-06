@@ -117,16 +117,8 @@ export function validateName(raw: string, opts: ValidateOptions): NameCheck {
 }
 
 /** Package flavour of New › Package (JVM, dotted) / New › Python Package (`__init__.py`). */
-export type PackageKind = "jvm" | "python";
+export type PackageKind = "python";
 
-const JAVA_KEYWORDS = new Set(
-  (
-    "abstract assert boolean break byte case catch char class const continue default do double else enum extends " +
-    "false final finally float for goto if implements import instanceof int interface long native new null package " +
-    "private protected public return short static strictfp super switch synchronized this throw throws transient " +
-    "true try void volatile while"
-  ).split(" "),
-);
 const PY_KEYWORDS = new Set(
   (
     "False None True and as assert async await break class continue def del elif else except finally for from " +
@@ -138,12 +130,12 @@ const PY_KEYWORDS = new Set(
  * Folder segments of a dotted package name (`com.acme.util` → `com/acme/util`),
  * or an error as IDEA reports it ("Not a valid package name").
  */
-export function packageSegments(raw: string, kind: PackageKind): { segments: string[] | null; error: string | null } {
+export function packageSegments(raw: string, _kind: PackageKind): { segments: string[] | null; error: string | null } {
   const name = raw.trim();
   if (!name) return { segments: null, error: "Name cannot be empty" };
   const segments = name.split(".");
-  const ident = kind === "jvm" ? /^[A-Za-z_$][\w$]*$/ : /^[A-Za-z_]\w*$/;
-  const keywords = kind === "jvm" ? JAVA_KEYWORDS : PY_KEYWORDS;
+  const ident = /^[A-Za-z_]\w*$/;
+  const keywords = PY_KEYWORDS;
   for (const seg of segments)
     if (!ident.test(seg) || keywords.has(seg)) return { segments: null, error: `Not a valid package name: '${name}'` };
   return { segments, error: null };

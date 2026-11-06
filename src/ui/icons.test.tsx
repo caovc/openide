@@ -43,6 +43,13 @@ describe("tool window icons", () => {
     ]) {
       expect(ids).toContain(id);
     }
+    for (const [id, icon] of [
+      ["ds-variables", "toolwindow-ds-variables"],
+      ["ds-plots", "toolwindow-ds-plots"],
+      ["ds-console", "toolwindow-ds-console"],
+    ]) {
+      expect(windows.find((window) => window.id === id)?.icon, id).toBe(icon);
+    }
     const icons = windows.map((w) => w.icon);
     for (const icon of icons) expect(hasIcon(icon), icon).toBe(true);
     expect(new Set(icons).size).toBe(icons.length);
@@ -50,8 +57,61 @@ describe("tool window icons", () => {
 });
 
 describe("Icon", () => {
+  it("does not expose removed JVM tooling aliases", () => {
+    for (const name of [
+      "folder-javadoc",
+      "jvm-test",
+      "kotlin-object",
+      "spring-config",
+      "spring-boot",
+      "gradle-project",
+      "gradle-module",
+      "file-jsp",
+      "file-java",
+      "file-kotlin",
+      "file-kotlin-script",
+      "file-groovy",
+      "file-gradle",
+      "file-gradle-kts",
+      "file-maven",
+      "file-scala",
+      "file-clojure",
+      "toolwindow-maven",
+      "toolwindow-gradle",
+      "maven-project",
+      "maven-module",
+      "maven-goal",
+      "maven-plugin",
+      "maven-plugin-goal",
+      "maven-profiles",
+      "maven-load-changes",
+    ]) {
+      expect(hasIcon(name), name).toBe(false);
+      expect(iconMarkup(name), name).toBeNull();
+    }
+    for (const name of ["symbol-class", "symbol-method", "annotation", "file-js", "file-ts", "file-python", "file-r"]) {
+      expect(iconMarkup(name), name).toMatch(/^<svg/);
+    }
+  });
+
+  it("gives DS panels distinct monochrome glyphs at toolbar and stripe sizes", () => {
+    for (const size of [16, 20]) {
+      const markup = ["toolwindow-ds-variables", "toolwindow-ds-plots", "toolwindow-ds-console"].map((name) => {
+        const value = iconMarkup(name, size)!;
+        expect(value).toContain("currentColor");
+        expect(value).not.toMatch(/#[0-9a-f]{6}/i);
+        return value.replace(/<svg[^>]*>/, "<svg>");
+      });
+      expect(new Set(markup).size).toBe(3);
+    }
+  });
+
   it("resolves every name to an SVG asset", () => {
-    for (const name of ICON_NAMES) expect(iconMarkup(name), name).toMatch(/^<svg/);
+    for (const name of ICON_NAMES) {
+      const markup = iconMarkup(name);
+      expect(markup, `Missing SVG asset for ${name}`).toBeTypeOf("string");
+      expect(markup, name).toMatch(/^<svg/);
+    }
   });
 
   it("falls back like <Icon> for unknown names, without React", () => {
@@ -194,11 +254,18 @@ describe("fileIconName", () => {
     ["main.cc", "file-cpp"],
     ["Program.cs", "file-csharp"],
     ["lib.rs", "file-rust"],
-    ["Main.kt", "file-kotlin"],
-    ["script.kts", "file-kotlin-script"],
-    ["build.gradle", "file-gradle"],
-    ["build.gradle.kts", "file-gradle-kts"],
-    ["pom.xml", "file-maven"],
+    ["Main.java", "file-unknown"],
+    ["Main.kt", "file-unknown"],
+    ["Main.scala", "file-unknown"],
+    ["script.groovy", "file-unknown"],
+    ["core.clj", "file-unknown"],
+    ["deps.edn", "file-unknown"],
+    ["gradlew", "file-text"],
+    ["mvnw", "file-text"],
+    ["script.kts", "file-unknown"],
+    ["build.gradle", "file-unknown"],
+    ["build.gradle.kts", "file-unknown"],
+    ["pom.xml", "file-xml"],
     ["App.swift", "file-swift"],
     ["app.rb", "file-ruby"],
     ["init.lua", "file-lua"],
@@ -206,9 +273,9 @@ describe("fileIconName", () => {
     ["main.dart", "file-dart"],
     ["App.vue", "file-vue"],
     ["App.svelte", "file-svelte"],
-    ["index.jsp", "file-jsp"],
-    ["footer.jspf", "file-jsp"],
-    ["card.tag", "file-jsp"],
+    ["index.jsp", "file-unknown"],
+    ["footer.jspf", "file-unknown"],
+    ["card.tag", "file-unknown"],
     ["styles.scss", "file-scss"],
     ["styles.sass", "file-sass"],
     ["styles.less", "file-less"],

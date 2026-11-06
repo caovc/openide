@@ -187,24 +187,6 @@ describe("Refactor This", () => {
     expect(lspCodeActionQuery.mock.calls[0]![3]).toEqual(["refactor"]);
   });
 
-  it("offers Pull Members Up / Push Members Down in Java files, after IDEA's other refactorings", async () => {
-    query = answer([action("Convert to switch expression", "refactor.rewrite")]);
-    const v = editor("class Dog extends Animal { int price; }", "java");
-    await refactorThis(v, vi.fn());
-    expect(labels()).toEqual(["Pull Members Up…", "Push Members Down…", "Convert to switch expression"]);
-    const items = (useLspPopup.getState().popup as { items: { label: string; run: () => void }[] }).items;
-    items.find((i) => i.label === "Push Members Down…")!.run();
-    expect(startHierarchyRefactoring).toHaveBeenCalledWith(v, "pushDown");
-    closePopup();
-    v.destroy();
-    // Other languages have no server for them; nor does Java while its server is down.
-    await refactorThis(editor(), vi.fn());
-    expect(labels()).not.toContain("Pull Members Up…");
-    query = async () => unavailable;
-    await refactorThis(editor("class Dog {}", "java"), vi.fn());
-    expect(labels()).toEqual(["Nothing here"]);
-  });
-
   it("runs the mapped server action, Rename and Safe Delete", async () => {
     prepare = ok({ start: { line: 0, col: 0 }, end: { line: 0, col: 1 } });
     query = answer([action("Inline variable", "refactor.inline")]);

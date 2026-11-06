@@ -17,17 +17,15 @@ import { offsetsToRange, rangeToOffsets } from "@/editor/lsp/positions";
 import { showHint } from "@/editor/lsp/hint";
 import { caretAnchor, openPopup } from "@/editor/lsp/popupStore";
 import { clearTemporaryHighlight, highlightRanges } from "@/editor/lsp/tempHighlight";
-import { call, commands, isCancelled, nextRequestId } from "@/platform/ipc";
+import { isCancelled } from "@/platform/ipc";
 import { useProject } from "@/platform/project";
 import { expressionWords, findTextOccurrences, normalizeExpression } from "./occurrences";
 import { isIdentifier, isKeyword, suggestNames, uniqueNames } from "./names";
-import { cIsC23, javaLanguageLevel } from "./projectLevel";
+import { cIsC23 } from "./projectLevel";
 import {
   constantDeclaration,
   isLiteral,
   isTsJs,
-  javaConstructedType,
-  javaTypeFromHover,
   literalType,
   replacesBareStatement,
   variableDeclaration,
@@ -356,13 +354,6 @@ async function variableContext(
 ): Promise<DeclContext> {
   const { ctx, doc } = p;
   const root = useProject.getState().project?.root ?? null;
-  if (ctx.language === "java") {
-    const level = await javaLanguageLevel(ctx.path, root).catch(() => null);
-    if (level !== null && level >= 10) return { javaVar: true };
-    const type =
-      literalType("java", expr.kind, text) ?? javaConstructedType(text) ?? (await javaHoverType(p, expr, text));
-    return { type };
-  }
   if (ctx.language === "c") {
     if (await cIsC23(ctx.path, root).catch(() => false)) return { cAuto: true };
     return { type: literalType("c", expr.kind, text) };
@@ -374,24 +365,6 @@ async function variableContext(
 function usesSemicolons(doc: Text, statement: SyntaxNode): boolean {
   if (nodeText(doc, statement).trimEnd().endsWith(";")) return true;
   return /;[ \t]*$/m.test(doc.toString());
-}
-
-/** Return / declared type of a Java call or name from the server's hover, if it answers. */
-async function javaHoverType(p: Prepared, expr: SyntaxNode, text: string): Promise<string | null> {
-  const m = /([A-Za-z_$][\w$]*)\s*(\([\s\S]*\))?\s*$/.exec(text);
-  if (!m || !/method_invocation|identifier|field_access/.test(expr.kind)) return null;
-  const { from } = rangeToOffsets(p.doc, expr.range);
-  const pos = p.doc.lineAt(from + m.index);
-  const at = { line: pos.number - 1, col: from + m.index - pos.from };
-  try {
-    const hover = await Promise.race([
-      call(commands.lspHover(nextRequestId(), p.ctx.doc, at)),
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), 1500)),
-    ]);
-    return hover ? javaTypeFromHover(hover.contents.value, m[1]!) : null;
-  } catch {
-    return null;
-  }
 }
 
 /** Memoised `locals` lookups: local definition / not-local reason of the identifier at an offset. */
@@ -447,7 +420,7 @@ async function introduceConstant(p: Prepared, expr: SyntaxNode, chain: SyntaxNod
   if (!constantPosition(ctx.language, chain, self))
     return void refuse(p, "the literal is not in an expression position");
 
-  const declCx: DeclContext = { type: ctx.language === "java" ? literalType("java", expr.kind, text) : null };
+  const declCx: DeclContext = { type: null };
   if (isTsJs(ctx.language)) declCx.semicolons = /;[ \t]*$/m.test(doc.toString());
   const probe = constantDeclaration(ctx.language, "X", text, declCx);
   if (!probe.ok) return void refuse(p, probe.reason);
@@ -504,28 +477,8 @@ interface Placement {
   scopeTo: number;
 }
 
-async function constantPlacement(p: Prepared, expr: SyntaxNode, chain: SyntaxNode[]): Promise<Placement | string> {
-  const { doc, ctx } = p;
-  if (ctx.language === "java") {
-    const exprFrom = rangeToOffsets(doc, expr.range).from;
-    const line = doc.lineAt(exprFrom);
-    const ranges = await structure.structuralRanges(ctx.doc, { line: line.number - 1, col: exprFrom - line.from });
-    const member = ranges.declaration;
-    if (!member) return "no class member contains the expression";
-    const i = chain.findIndex((n) => sameRange(n.range, member.range));
-    const body = chain[i + 1];
-    const owner = chain[i + 2];
-    if (i < 0 || !body || body.kind !== "class_body" || !owner || !/^(class|record)_declaration$/.test(owner.kind)) {
-      return "constants can only be added to a class or record without the language server";
-    }
-    const memberFrom = rangeToOffsets(doc, member.range).from;
-    return {
-      insertAt: declarationStart(doc, memberFrom),
-      indent: indentOf(doc, memberFrom),
-      after: "\n",
-      scopeTo: rangeToOffsets(doc, body.range).to,
-    };
-  }
+async function constantPlacement(p: Prepared, _expr: SyntaxNode, chain: SyntaxNode[]): Promise<Placement | string> {
+  const { doc } = p;
   // Module level: before the top-level statement containing the expression.
   const top = chain[chain.length - 2];
   if (!top) return "the expression is not inside a top-level declaration";

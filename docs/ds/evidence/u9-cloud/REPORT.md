@@ -50,3 +50,5 @@ The standalone canvas core uses exact string/BigInt row addresses, preserves typ
 ## Full-suite follow-up
 
 The full `pnpm test` run reports failures outside the targeted slice, including legacy JVM settings/run/tool expectations, missing icon assets and the source-text catalog. It is not a green full-suite baseline. These are tracked separately during the newly authorized U11 removal; the passing counts above refer only to the named targeted checks.
+
+Full-suite completed: **649 files passed / 9 failed; 7,239 tests passed / 30 failed / 6 skipped**. Detailed failures are being addressed in U11 where applicable; the initial milestone is not full-suite green.

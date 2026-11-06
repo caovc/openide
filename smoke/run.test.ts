@@ -101,27 +101,6 @@ const CASES: Record<string, Case> = {
       file: "store_test.go",
     },
   },
-  java: {
-    fixture: "java-app",
-    tests: {
-      config: "maven:test",
-      failing: (c) => args(c, ["-DopenideaFail=true"]),
-      passed: 2,
-      failed: "intentionallyFails",
-      file: "OrderBookTest.java",
-    },
-  },
-  kotlin: {
-    fixture: "kotlin-gradle",
-    run: { config: "gradle:run", prints: "Lent 'Kotlin in Action' until 2024-01-15" },
-    tests: {
-      config: "gradle:test",
-      failing: (c) => args(c, ["-PopenideaFail"]),
-      passed: 3,
-      failed: "intentionally failing",
-      file: "LibraryTest.kt",
-    },
-  },
 };
 
 let server: Server | null = null;

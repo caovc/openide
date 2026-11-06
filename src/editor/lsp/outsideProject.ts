@@ -5,9 +5,6 @@
  * diagnostic; navigation, completion and usages then fail without saying why.
  */
 import { useSyncExternalStore } from "react";
-import { executeAction, getAction, isActionEnabled } from "@/platform/actions";
-import { isSameOrInside } from "@/platform/paths";
-import { useProject } from "@/platform/project";
 import type { EditorBannerContribution } from "@/workbench/contributions";
 import { diagnosticsFor, subscribeDiagnostics } from "./diagnostics";
 
@@ -16,19 +13,6 @@ import { diagnosticsFor, subscribeDiagnostics } from "./diagnostics";
  * only for files inside the open project.
  */
 const NOTICES: readonly { test: RegExp; text: string; reload?: boolean }[] = [
-  // jdtls: "Foo.java is not on the classpath of project app, only syntax errors are reported"
-  {
-    test: /is not on the classpath of project .*only syntax errors are reported/,
-    text: "This file is outside the source folders of its Java module: only syntax errors are reported, and navigation and completion don't work.",
-    reload: true,
-  },
-  // jdtls: "Foo.java is a non-project file, only syntax errors are reported". jdtls still completes
-  // and navigates JDK classes in such a file (a scratch, a file opened from outside the project).
-  {
-    test: /is a non-project file, only syntax errors are reported/,
-    text: "This file does not belong to an imported Java project: only syntax errors are reported, and only JDK classes resolve.",
-    reload: true,
-  },
   // gopls, before its generic "No packages found" below.
   {
     test: /excluded[^\n]*(?:build|GOOS\/GOARCH)/i,
@@ -65,11 +49,6 @@ export function outsideProjectReason(path: string): string | null {
   return noticeFor(path)?.text ?? null;
 }
 
-const RELOADS = [
-  { id: "maven.reload", label: "Reload Maven Projects" },
-  { id: "gradle.reload", label: "Reload Gradle Project" },
-];
-
 /** The notice above an editor whose file a language server treats as outside its projects. */
 export const outsideProjectBanner: EditorBannerContribution = {
   id: "lsp.outsideProject",
@@ -79,17 +58,7 @@ export const outsideProjectBanner: EditorBannerContribution = {
       (l) => subscribeDiagnostics(path, l),
       () => noticeFor(path),
     );
-    const inProject = useProject(({ project }) =>
-      [project?.root, ...(project?.workspace?.projects ?? [])].some((root) => !!root && isSameOrInside(path, root)),
-    );
     if (!notice) return null;
-    const actions =
-      notice.reload && inProject
-        ? RELOADS.filter(({ id }) => {
-            const action = getAction(id);
-            return action && isActionEnabled(action);
-          }).map(({ id, label }) => ({ label, run: () => void executeAction(id) }))
-        : [];
-    return { text: notice.text, level: "warning", actions };
+    return { text: notice.text, level: "warning", actions: [] };
   },
 };

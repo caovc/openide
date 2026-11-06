@@ -127,12 +127,6 @@ export function sampleTools(): ToolInfo[] {
       installMethod: "GitHub release",
     }),
     tool({
-      name: "kotlin-lsp",
-      displayName: "Kotlin LSP (JetBrains)",
-      languages: ["Kotlin"],
-      installMethod: "GitHub release",
-    }),
-    tool({
       name: "zls",
       displayName: "ZLS (Zig)",
       languages: ["Zig"],

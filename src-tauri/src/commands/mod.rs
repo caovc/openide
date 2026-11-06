@@ -8,7 +8,6 @@
 
 pub mod agent;
 pub mod analysis;
-pub mod android;
 pub mod app;
 pub mod build;
 pub mod bytes;
@@ -28,7 +27,6 @@ pub mod fs;
 pub mod github;
 pub mod history;
 pub mod http;
-pub mod java;
 pub mod lsp;
 pub mod nav;
 pub mod notebook;
@@ -66,8 +64,6 @@ pub(crate) fn sender<T: tauri::ipc::IpcResponse + Send + Sync + 'static>(
 pub fn builder() -> tauri_specta::Builder<tauri::Wry> {
     tauri_specta::Builder::<tauri::Wry>::new().commands(collect_commands![
         app::app_info,
-        android::android_devices,
-        android::android_logcat,
         app::recent_projects,
         app::remove_recent_project,
         app::recent_project_groups,
@@ -180,7 +176,6 @@ pub fn builder() -> tauri_specta::Builder<tauri::Wry> {
         doc::doc_folding,
         doc::doc_highlights,
         doc::doc_selection_ranges,
-        syntax::jvm_file_presentations,
         syntax::syntax_support,
         syntax::syntax_node_at,
         syntax::syntax_expression_at,
@@ -203,7 +198,6 @@ pub fn builder() -> tauri_specta::Builder<tauri::Wry> {
         caches::app_restart,
         nav::index_status,
         nav::index_file_extensions,
-        nav::spring_route_sources,
         nav::find_files,
         nav::find_dirs,
         nav::find_symbols,
@@ -230,7 +224,6 @@ pub fn builder() -> tauri_specta::Builder<tauri::Wry> {
         lsp::lsp_implementations,
         lsp::lsp_goto_implementation,
         lsp::lsp_virtual_document,
-        lsp::lsp_resolve_class_file,
         lsp::lsp_references,
         lsp::lsp_document_highlights,
         lsp::lsp_workspace_symbols,
@@ -240,8 +233,6 @@ pub fn builder() -> tauri_specta::Builder<tauri::Wry> {
         lsp::lsp_apply_code_action,
         lsp::lsp_prepare_rename,
         lsp::lsp_rename,
-        lsp::lsp_hierarchy_members,
-        lsp::lsp_hierarchy_refactor,
         lsp::lsp_format,
         lsp::lsp_inlay_hints,
         lsp::lsp_semantic_tokens,
@@ -364,28 +355,7 @@ pub fn builder() -> tauri_specta::Builder<tauri::Wry> {
         run::run_list,
         run::run_close_stdin,
         run::run_resize,
-        run::run_gradle_jvm_args_script,
-        run::run_gradle_init_script,
-        run::run_tomcat_home,
-        run::run_tomcat_artifacts,
-        run::run_tomcat_build,
-        run::run_application_build,
-        run::run_application_publish,
-        run::run_tomcat_sync,
-        run::run_tomcat_update,
-        run::run_test_reports,
-        build::build_model,
-        build::gradle_link_projects,
-        build::gradle_unlink_projects,
-        build::build_sync,
-        build::gradle_dependencies,
-        build::gradle_published_catalog,
-        build::maven_dependency_declaration,
-        build::maven_exclude_dependency,
         build::build_run,
-        java::java_resolve_launch,
-        java::java_debug_server,
-        java::java_build_workspace,
         debug::debug_start,
         debug::debug_set_breakpoints,
         debug::debug_threads,
@@ -408,10 +378,6 @@ pub fn builder() -> tauri_specta::Builder<tauri::Wry> {
         tools::tools_list,
         tools::tools_install,
         tools::tools_uninstall,
-        tools::jdk_download_vendors,
-        tools::jdk_download_releases,
-        tools::jdk_download_location,
-        tools::jdk_download,
         sdk::sdk_detect,
         sdk::sdk_python_effective,
         sdk::sdk_php_effective,
@@ -460,8 +426,6 @@ pub fn builder() -> tauri_specta::Builder<tauri::Wry> {
         debug::debug_set_data_breakpoints,
         debug::debug_data_breakpoint_info,
         debug::debug_attachable_processes,
-        debug::debug_listen_for_jvm,
-        debug::debug_redefine_classes,
         coverage::coverage_prepare,
         coverage::coverage_collect,
         coverage::coverage_import,

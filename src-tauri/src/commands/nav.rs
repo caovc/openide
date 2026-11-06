@@ -35,16 +35,6 @@ pub fn find_dirs(window: Window, state: State<'_, AppState>, query: String, limi
     ide_host::ops::nav::find_dirs(&state.host, window.label(), query, limit)
 }
 
-/// Spring Web mapping sources for the request-path index of Search Everywhere.
-#[tauri::command]
-#[specta::specta]
-pub fn spring_route_sources(
-    window: Window,
-    state: State<'_, AppState>,
-) -> IdeResult<Vec<ide_host::ops::routes::RouteSource>> {
-    ide_host::ops::routes::spring_route_sources(&state.host, window.label())
-}
-
 #[tauri::command]
 #[specta::specta]
 pub fn find_symbols(

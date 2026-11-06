@@ -32,7 +32,6 @@ import {
   runContextAction,
 } from "./contextRun";
 import { runWithExecutor } from "./executors";
-import { debugWithAgent, jdwpLaunch } from "./javaDebug";
 import { RunDialogsOverlay } from "./dialogs";
 import { registerExternalTools } from "./externalTools";
 import { EditConfigsOverlay } from "./EditConfigsDialog";
@@ -49,10 +48,8 @@ import { runBeforeLaunch } from "./beforeLaunch";
 import { compoundChildren } from "./configs";
 import { remoteDebugBlocked } from "./remote";
 import { isDebugOnly, registerBuiltinTypes } from "./types";
-import { listenForApplicationDeactivation, showApplicationUpdate, updatableSessions } from "./applicationUpdate";
 import { npmGutter } from "./npmGutter";
 import { runGutter } from "./runGutter";
-import { gradleDelegation } from "./gradleRun";
 import { activateStackTrace, useStackTraces } from "./stackTrace";
 import { clearRuntimeCache } from "./runtimes";
 import {
@@ -124,17 +121,6 @@ async function debugConfig(config: RunConfig, chain: readonly string[] = []) {
   const compiled = await compiledDebugPlan(config);
   if (compiled?.debug) {
     await launchProduced(compiled, true);
-    return;
-  }
-  // "Build and run using: Gradle": the JavaExec JVM gets the agent, the debugger attaches to it.
-  const delegated = getAction("debug.attach") ? await gradleDelegation(config) : null;
-  if (delegated) {
-    await debugWithAgent(delegated);
-    return;
-  }
-  // Maven / Gradle: the build tool starts the JVM with a debug agent, the debugger attaches.
-  if (jdwpLaunch(config) && getAction("debug.attach")) {
-    await debugWithAgent(config);
     return;
   }
   if (getAction("debug.startConfig")) {
@@ -268,7 +254,7 @@ function useRunningCount(): number | null {
 }
 
 const CONFIG_FILES =
-  /(?:^|\/)(?:\.openidea\/run\.toml|package\.json|deno\.jsonc?|Cargo\.toml|build\.gradle(?:\.kts)?|pom\.xml|go\.(?:mod|work)|pyproject\.toml|setup\.cfg|pytest\.ini|manage\.py|Makefile|justfile|CMakeLists\.txt|CMakeCache\.txt|index-[^/]+\.json)$/;
+  /(?:^|\/)(?:\.openidea\/run\.toml|package\.json|deno\.jsonc?|Cargo\.toml|go\.(?:mod|work)|pyproject\.toml|setup\.cfg|pytest\.ini|manage\.py|Makefile|justfile|CMakeLists\.txt|CMakeCache\.txt|index-[^/]+\.json)$/;
 
 let reloadTimer: ReturnType<typeof setTimeout> | undefined;
 function scheduleReload() {
@@ -308,9 +294,7 @@ export function activate(): () => void {
     onWorkflowSettingsChange((w) => w.console, applyConsoleSettings),
     registerExternalTools(),
     activateStackTrace(),
-    listenForApplicationDeactivation(),
     trackRecentConfigurations(),
-    useDebugRunSessions.subscribe(() => setContext("run.updatableRunning", updatableSessions().length > 0)),
     // A removed workspace member (or a closed project) takes its sessions,
     // temporary configurations and Services groups with it.
     // Only while the same project stays open: closing it tears its runs down separately.
@@ -329,14 +313,6 @@ export function activate(): () => void {
       prepare: prepareMenu,
     }),
     registerActions([
-      {
-        id: "run.updateApplication",
-        title: "Update Application",
-        category: "Run",
-        icon: "refresh",
-        when: "run.updatableRunning",
-        run: () => showApplicationUpdate(),
-      },
       {
         id: "run.run",
         title: "Run",
@@ -567,7 +543,6 @@ export function activate(): () => void {
     // Lets other title items follow the selected configuration (e.g. Build shows only for compiled ones).
     useRun.subscribe((s) => {
       setContext("run.selectedKind", s.configs.find((c) => c.id === s.selectedId)?.kind ?? "");
-      setContext("run.updatableRunning", updatableSessions().length > 0);
     }),
     useProject.subscribe((s, prev) => {
       if (s.project?.root === prev.project?.root && s.project?.trusted === prev.project?.trusted) return;

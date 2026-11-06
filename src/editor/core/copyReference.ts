@@ -83,19 +83,6 @@ export function qualifiedReference(r: ReferenceInput): string {
   const chain = r.chain.filter(Boolean);
   if (!chain.length) return fallback;
   switch (r.language) {
-    case "java":
-    case "groovy": {
-      const pkg = declared(r.text, /^\s*package\s+([\w.]+)\s*;?/m);
-      const [type, ...rest] = chain;
-      const typePath = [pkg, type].filter(Boolean).join(".");
-      // `pkg.Outer.Inner#member`: the last symbol is the member unless the caret is on a type's name.
-      return rest.length ? `${[typePath, ...rest.slice(0, -1)].join(".")}#${rest[rest.length - 1]}` : typePath;
-    }
-    case "kotlin":
-    case "scala": {
-      const pkg = declared(r.text, /^\s*package\s+([\w.]+)/m);
-      return [pkg, ...chain].filter(Boolean).join(".");
-    }
     case "csharp":
       return chain.join(".");
     case "rust":

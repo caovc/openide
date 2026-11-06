@@ -199,13 +199,7 @@ impl Default for ConsoleSettings {
             override_buffer: true,
             buffer_kb: 1024,
             encoding: "UTF-8".into(),
-            fold_patterns: vec![
-                "at java.base/jdk.internal.reflect.".into(),
-                "at java.base/java.lang.reflect.Method.invoke".into(),
-                "at org.junit.".into(),
-                "at node:internal/".into(),
-                "<frozen importlib._bootstrap".into(),
-            ],
+            fold_patterns: vec!["at node:internal/".into(), "<frozen importlib._bootstrap".into()],
         }
     }
 }

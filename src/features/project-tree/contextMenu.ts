@@ -75,10 +75,7 @@ export function newMenuItems(parent: string | null, { outsideTree = false } = {}
           run: () => void executeAction(emptyFile.id, { directory: parent }),
         }
       : { id: "new.file", label: "File", icon: "file", run: inline(() => beginNew("file", parent)) },
-    // IDEA offers "Package" instead of "Directory" inside a Java / Kotlin source root.
-    pkg === "jvm"
-      ? { id: "new.package", label: "Package", icon: "package", run: inline(() => beginNewPackage("jvm", parent)) }
-      : dir,
+    dir,
     ...(pkg === "python"
       ? [
           {

@@ -112,8 +112,7 @@ pub async fn lsp_implementations(
     ide_host::ops::lsp::lsp_implementations(&state.host, window.label(), request, doc, positions).await
 }
 
-/// Contents of a read-only language-server document, including JDT library
-/// classes and disk class files. Cached per project.
+/// Contents of a read-only language-server document. Cached per project.
 #[tauri::command]
 #[specta::specta]
 pub async fn lsp_virtual_document(
@@ -122,16 +121,6 @@ pub async fn lsp_virtual_document(
     uri: String,
 ) -> IdeResult<VirtualDocument> {
     ide_host::ops::lsp::lsp_virtual_document(&state.host, window.label(), uri).await
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn lsp_resolve_class_file(
-    window: Window,
-    state: State<'_, AppState>,
-    path: std::path::PathBuf,
-) -> IdeResult<String> {
-    ide_host::ops::lsp::lsp_resolve_class_file(&state.host, window.label(), path).await
 }
 
 /// References of the symbol at `pos`. `project_wide` also searches project files
@@ -255,38 +244,6 @@ pub async fn lsp_rename(
     new_name: String,
 ) -> IdeResult<Renamed> {
     ide_host::ops::lsp::lsp_rename(&state.host, window.label(), request, doc, pos, new_name).await
-}
-
-/// The class at `pos` and the members Pull Members Up / Push Members Down can move.
-#[tauri::command]
-#[specta::specta]
-pub async fn lsp_hierarchy_members(
-    window: Window,
-    state: State<'_, AppState>,
-    request: RequestId,
-    doc: DocId,
-    pos: Pos,
-    kind: HierarchyRefactoring,
-) -> IdeResult<HierarchyMembers> {
-    ide_host::ops::lsp::lsp_hierarchy_members(&state.host, window.label(), request, doc, pos, kind).await
-}
-
-/// Checks Pull Members Up / Push Members Down and computes the edit without applying it.
-#[tauri::command]
-#[specta::specta]
-#[allow(clippy::too_many_arguments)]
-pub async fn lsp_hierarchy_refactor(
-    window: Window,
-    state: State<'_, AppState>,
-    request: RequestId,
-    doc: DocId,
-    pos: Pos,
-    kind: HierarchyRefactoring,
-    target: Option<String>,
-    choices: Vec<HierarchyChoice>,
-) -> IdeResult<HierarchyRefactored> {
-    ide_host::ops::lsp::lsp_hierarchy_refactor(&state.host, window.label(), request, doc, pos, kind, target, choices)
-        .await
 }
 
 #[tauri::command]
