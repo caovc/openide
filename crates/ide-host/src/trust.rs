@@ -286,6 +286,7 @@ pub fn restricted_command_allowed(cmd: &str) -> bool {
             | "plugin_installed_intellij_themes"
             | "notebook_open"
             | "notebook_get"
+            | "notebook_project_environment"
             | "notebook_edit"
             | "notebook_save"
             | "notebook_undo"

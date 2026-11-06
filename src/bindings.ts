@@ -182,6 +182,7 @@ export const commands = {
 	notebookClose: (id: string) => typedError<null, IdeError>(__TAURI_INVOKE("notebook_close", { id })),
 	notebookExecute: (id: string, cells: string[], python: string | null, request: RequestId, onOutput: Channel<NotebookOutputEvent>) => typedError<NotebookSnapshot, IdeError>(__TAURI_INVOKE("notebook_execute", { id, cells, python, request, onOutput })),
 	notebookDetectRuntimes: () => typedError<NotebookRuntimeInfo[], IdeError>(__TAURI_INVOKE("notebook_detect_runtimes")),
+	notebookProjectEnvironment: (near: string | null) => typedError<RProjectEnvironment, IdeError>(__TAURI_INVOKE("notebook_project_environment", { near })),
 	notebookInterrupt: (id: string) => typedError<null, IdeError>(__TAURI_INVOKE("notebook_interrupt", { id })),
 	notebookRestart: (id: string) => typedError<NotebookSnapshot, IdeError>(__TAURI_INVOKE("notebook_restart", { id })),
 	fsReadDir: (path: string) => typedError<FileEntry[], IdeError>(__TAURI_INVOKE("fs_read_dir", { path })),
@@ -704,6 +705,8 @@ export const commands = {
 	sdkDetect: (kind: SdkKind) => typedError<Sdk[], IdeError>(__TAURI_INVOKE("sdk_detect", { kind })),
 	/**  The interpreter the project uses: the configured one, else its virtualenv. */
 	sdkPythonEffective: (near: string | null) => typedError<string | null, IdeError>(__TAURI_INVOKE("sdk_python_effective", { near })),
+	/**  Inspect the selected interpreter without installing packages. */
+	sdkPythonEnvironment: (python: string) => typedError<PythonEnvironmentInfo, IdeError>(__TAURI_INVOKE("sdk_python_environment", { python })),
 	/**  The PHP interpreter chosen in Settings › Languages & Frameworks › PHP; `None`: the `php` on `PATH`. */
 	sdkPhpEffective: () => typedError<string | null, IdeError>(__TAURI_INVOKE("sdk_php_effective")),
 	/**  The PHP language level of the project `path` belongs to: the effective one and Auto's. */
@@ -5718,6 +5721,21 @@ export type PythonDebuggerSettings = {
 	gevent?: boolean,
 };
 
+/**
+ *  The selected interpreter's own identity and discoverable dependencies.
+ *  Dependency flags do not imply that importing or running a package succeeds.
+ */
+export type PythonEnvironmentInfo = {
+	executable: string,
+	version: string,
+	prefix: string,
+	basePrefix: string,
+	isVirtualenv: boolean,
+	ipykernel: boolean,
+	debugpy: boolean,
+	pip: boolean,
+};
+
 export type PythonPackage = {
 	name: string,
 	version: string,
@@ -5728,6 +5746,17 @@ export type PythonSettings = {
 	interpreter?: string,
 	/**  Activate the interpreter's virtualenv in new terminal sessions. */
 	activateVirtualenv?: boolean,
+};
+
+export type RProjectEnvironment = {
+	projectRoot: string,
+	renvStatus: RenvStatus,
+	hasLockfile: boolean,
+	hasActivateScript: boolean,
+	hasProjectProfile: boolean,
+	lockedRVersion: string | null,
+	lockedPackageCount: number | null,
+	diagnostics: string[],
 };
 
 /**  Half-open range `[start, end)`. */
@@ -5949,6 +5978,8 @@ export type Renamed = {
 	edit: WorkspaceEdit,
 	incomplete: ReferencesIncomplete | null,
 };
+
+export type RenvStatus = "not-present" | "detected-inactive" | "unavailable";
 
 export type ReplaceEvent = 
 /**  A file was changed (`replacements` > 0) or had nothing left to replace. */

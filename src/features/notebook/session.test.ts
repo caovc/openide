@@ -675,3 +675,19 @@ describe("kernel stdin prompts", () => {
     await session.close();
   });
 });
+
+it("resolves the initial environment near the notebook and keeps an explicit selection on refresh", async () => {
+  const m = model();
+  const environments = vi.fn<typeof notebookBackend.environments>().mockResolvedValue([[], "/near/.venv/python"]);
+  m.backend.environments = environments;
+  const session = new NotebookSession("/nested/science/env-check.ipynb", m.backend);
+  await session.detectEnvironments();
+  expect(environments).toHaveBeenCalledExactlyOnceWith("/nested/science/env-check.ipynb");
+  expect(session.getState().python).toBe("/near/.venv/python");
+  session.selectPython("/explicit/python");
+  environments.mockResolvedValue([[], "/different/default/python"]);
+  await session.detectEnvironments();
+  expect(session.getState().python).toBe("/explicit/python");
+  await session.close();
+  localStorage.removeItem("openidea.notebook.python:/nested/science/env-check.ipynb");
+});

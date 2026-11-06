@@ -139,3 +139,9 @@ add_one()
 **DS-01E0–E4 / P0** 与 DS-04 调试并行：统一有效环境合同；Python venv 创建/发现/选择/依赖修复；R 版本与项目包库选择；renv 项目激活；运行/调试/Notebook/Console 环境一致性回归。项目默认、运行配置覆盖和会话覆盖必须明确，修改默认不改变已运行会话。Ark 当前 `--vanilla` 与 `.Rprofile` 激活的接缝需要显式解决，检测到 `renv.lock` 不代表实际激活。
 
 **DS-08E1–E4 / P1**：Conda/Mamba、uv、Poetry 完整管理器接入和 renv snapshot/restore；**DS-07E** 将包操作绑定明确目标环境。验收包括双环境包隔离、实际解释器与库路径、跨子目录项目识别、重启恢复和缺依赖诊断。详细任务、源码证据及官方来源见 [Python/R 环境计划](research/2026-11-06-environments.md)。以上是开发计划，尚不能宣称完整支持。
+
+## 环境与后续调试切片进展
+
+DS-01E0/E1/E2 首个实现切片：Notebook/Console 环境详情、真实 Python 身份/依赖探针、renv 项目只读状态、文件附近Python默认与Console自动/显式选择隔离。验收与未完边界见 [环境报告](evidence/environments/REPORT.md)。这不等于renv已激活或完整管理器已支持。
+
+DS-04B0 新增前置：显式启动/协商内核，不执行用户cell、不消耗其execution_count，随后才发送调试初始化/断点请求。与环境诊断可以独立推进，具体合同见 [下一切片研究](research/2026-11-06-next-slices.md)。

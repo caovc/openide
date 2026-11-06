@@ -37,10 +37,10 @@ export const notebookBackend = {
     request: RequestId,
     output: Channel<NotebookOutputEvent>,
   ) => call(commands.notebookExecute(id, cells, python, request, output)),
-  environments: async () => {
+  environments: async (near: string | null) => {
     const [python, effective, ark] = await Promise.all([
       call(commands.sdkDetect("python")),
-      call(commands.sdkPythonEffective(null)),
+      call(commands.sdkPythonEffective(near)),
       call(commands.notebookDetectRuntimes()),
     ]);
     const arkAsSdk: Sdk[] = ark.map((runtime) => ({
@@ -216,7 +216,7 @@ export class NotebookSession {
   }
   async detectEnvironments() {
     try {
-      const [environments, effective] = await this.backend.environments();
+      const [environments, effective] = await this.backend.environments(this.path);
       if (!this.disposed) {
         this.publish({ environments, python: this.state.python ?? effective });
         this.recover("environment");

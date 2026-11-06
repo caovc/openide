@@ -9,6 +9,27 @@ use ide_core::{IdeError, IdeResult, RequestId};
 use ide_notebook::{NotebookEdit, NotebookSnapshot};
 use std::path::PathBuf;
 
+pub async fn project_environment(
+    host: &Host,
+    window: &str,
+    near: Option<PathBuf>,
+) -> IdeResult<ide_notebook::environment::RProjectEnvironment> {
+    let root = host.project(window)?.root.clone();
+    host.blocking(move || {
+        let near = near.map(|path| if path.is_absolute() { path } else { root.join(path) });
+        let member = ide_workspace::workspace::Workspace::load(&root)?.and_then(|workspace| {
+            let near = near.as_ref()?;
+            workspace
+                .projects
+                .into_iter()
+                .filter(|member| near.starts_with(member))
+                .max_by_key(|member| member.components().count())
+        });
+        ide_notebook::environment::inspect_r_environment(member.as_deref().unwrap_or(&root))
+    })
+    .await
+}
+
 pub async fn open(host: &Host, window: &str, path: String) -> IdeResult<NotebookSnapshot> {
     let project = host.project(window)?;
     if let Some(key) = path.strip_prefix("openide-console:") {
@@ -238,6 +259,10 @@ pub(crate) fn register(d: &mut Dispatcher) {
     d.add("notebook_interrupt", |c| async move { interrupt(&c.host, &c.window, c.arg("id")?).await });
     d.add("notebook_restart", |c| async move { restart(&c.host, &c.window, c.arg("id")?).await });
     d.add("notebook_detect_runtimes", |_c| async move { Ok::<_, IdeError>(ide_notebook::detect_ark()) });
+    d.add(
+        "notebook_project_environment",
+        |c| async move { project_environment(&c.host, &c.window, c.arg("near")?).await },
+    );
     d.add("notebook_execute", |c| async move {
         execute(
             &c.host,

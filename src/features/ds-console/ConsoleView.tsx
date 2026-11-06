@@ -1,10 +1,12 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { executeAction } from "@/platform/actions";
 import { useTx } from "@/platform/i18n";
+import { useProject } from "@/platform/project";
 import { consoleBackend, type Runtime } from "./backend";
 import { useConsoles } from "./store";
 import type { ConsoleSession } from "./session";
 import styles from "./Console.module.css";
+import { RuntimeEnvironmentDetails } from "@/ui/RuntimeEnvironmentDetails";
 
 function InputReply({ session }: { session: ConsoleSession }) {
   const tx = useTx();
@@ -77,6 +79,7 @@ function SessionView({ session }: { session: ConsoleSession }) {
           {tx("Close")}
         </button>
       </div>
+      <RuntimeEnvironmentDetails selection={session.runtime.selection} label={tx("Console environment")} />
       {state.error && <div role="alert">{state.error}</div>}
       <div className={styles.history} role="log" aria-label={tx("Console")}>
         {state.history.map((entry, i) => (
@@ -112,35 +115,70 @@ function SessionView({ session }: { session: ConsoleSession }) {
   );
 }
 export function ConsoleView() {
+  const projectRoot = useProject((state) => state.project?.root ?? null);
+  return <ProjectConsoleView key={projectRoot ?? "no-project"} />;
+}
+
+function ProjectConsoleView() {
   const tx = useTx();
   const { sessions, active } = useConsoles();
   const [runtimes, setRuntimes] = useState<Runtime[]>([]);
   const [selection, setSelection] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const refreshState = useRef({ id: 0 });
+  const explicitSelection = useRef(false);
   const refresh = () => {
+    const id = ++refreshState.current.id;
     setLoading(true);
     setError(null);
     void consoleBackend
       .runtimes()
       .then((values) => {
+        if (id !== refreshState.current.id) return;
         setRuntimes(values);
         setSelection((previous) =>
-          values.some((r) => r.selection === previous) ? previous : (values[0]?.selection ?? ""),
+          explicitSelection.current
+            ? previous
+            : values.find((r) => r.isProjectDefault)?.selection || values[0]?.selection || "",
         );
       })
-      .catch((e) => setError(String(e)))
-      .finally(() => setLoading(false));
+      .catch((e) => {
+        if (id === refreshState.current.id) setError(String(e));
+      })
+      .finally(() => {
+        if (id === refreshState.current.id) setLoading(false);
+      });
   };
   useEffect(() => {
-    void Promise.resolve().then(refresh);
+    const state = refreshState.current;
+    let mounted = true;
+    void Promise.resolve().then(() => {
+      if (mounted) refresh();
+    });
+    return () => {
+      mounted = false;
+      state.id++;
+    };
   }, []);
   const session = sessions.find((s) => s.id === active);
   return (
     <div className={styles.root}>
       <div className={styles.controls}>
-        <select aria-label={tx("Notebook kernel")} value={selection} onChange={(e) => setSelection(e.target.value)}>
+        <select
+          aria-label={tx("Notebook kernel")}
+          value={selection}
+          onChange={(e) => {
+            explicitSelection.current = true;
+            setSelection(e.target.value);
+          }}
+        >
           <option value="">{tx("Select notebook kernel")}</option>
+          {selection && !runtimes.some((r) => r.selection === selection) && (
+            <option value={selection}>
+              {selection} — {tx("Environment unavailable")}
+            </option>
+          )}
           {runtimes.map((r) => (
             <option key={r.selection} value={r.selection}>
               {r.name} ({r.language === "r" ? "R / Ark" : "Python"}) — {r.selection}
@@ -151,7 +189,7 @@ export function ConsoleView() {
           {tx("Refresh notebook kernels")}
         </button>
         <button
-          disabled={!selection}
+          disabled={!selection || loading || !runtimes.some((r) => r.selection === selection)}
           onClick={() =>
             void executeAction(
               "ds.console.new",
@@ -162,6 +200,7 @@ export function ConsoleView() {
           {tx("New…")}
         </button>
       </div>
+      <RuntimeEnvironmentDetails selection={selection || null} label={tx("New Console environment")} />
       {!loading && !runtimes.length && (
         <p>
           {tx(

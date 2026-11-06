@@ -6,6 +6,7 @@ export interface Runtime {
   selection: string;
   name: string;
   language: "python" | "r";
+  isProjectDefault?: boolean;
 }
 export const consoleBackend = {
   open: (key: string) => call(commands.notebookOpen(`openide-console:${key}`)),
@@ -41,13 +42,25 @@ export const consoleBackend = {
     const results = await Promise.allSettled([
       call(commands.sdkDetect("python")),
       call(commands.notebookDetectRuntimes()),
+      call(commands.sdkPythonEffective(null)),
     ]);
     const runtimes: Runtime[] = [];
-    const [python, ark] = results;
+    const [python, ark, effective] = results;
     if (python.status === "fulfilled")
       for (const sdk of python.value) runtimes.push({ selection: sdk.path, name: sdk.name, language: "python" });
     if (ark.status === "fulfilled")
       for (const runtime of ark.value) runtimes.push({ selection: runtime.id, name: runtime.name, language: "r" });
+    if (effective.status === "fulfilled" && effective.value) {
+      const selected = runtimes.find((r) => r.selection === effective.value);
+      if (selected) selected.isProjectDefault = true;
+      else
+        runtimes.unshift({
+          selection: effective.value,
+          name: effective.value,
+          language: "python",
+          isProjectDefault: true,
+        });
+    }
     if (!runtimes.length && results.some((r) => r.status === "rejected"))
       throw new Error(
         results

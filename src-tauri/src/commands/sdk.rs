@@ -17,6 +17,17 @@ pub async fn sdk_detect(window: Window, state: State<'_, AppState>, kind: SdkKin
     ide_host::ops::sdk::sdk_detect(&state.host, window.label(), kind).await
 }
 
+/// Inspect the selected interpreter without installing packages.
+#[tauri::command]
+#[specta::specta]
+pub async fn sdk_python_environment(
+    window: Window,
+    state: State<'_, AppState>,
+    python: PathBuf,
+) -> IdeResult<ide_sdk::python::PythonEnvironmentInfo> {
+    ide_host::ops::sdk::sdk_python_environment(&state.host, window.label(), python).await
+}
+
 /// The interpreter the project uses: the configured one, else its virtualenv.
 #[tauri::command]
 #[specta::specta]

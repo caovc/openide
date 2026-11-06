@@ -103,3 +103,21 @@ JVM 工具链删除代码已集成；全workspace/all-targets clippy、自动生
 ### 已提交里程碑与 DS-04A 进度
 
 U11 集成里程碑：`8b6cc56`（提交含环境管理 P0/P1 计划与固定 Ark 调试协议研究）。DS-04A 增量修复 Windows/UNC Python 解释器解析；前端21测通过，两个真实Python venv各自debugpy断点/变量/单步/解释器验收通过。完整DS04A仍in_progress：GUI与统一环境选择接线待验，证据 `docs/ds/evidence/ds04a/REPORT.md`。
+
+## 环境 P0 并行开发（2026-11-06，基线 80b97c7）
+
+| unit               | status | owner                 | branch             | 独占路径 / 本次范围                                                                                                                 |
+| ------------------ | ------ | --------------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| DS-01E1-probe      | done   | env_python            | ds/env-python      | crates/ide-sdk/src/python.rs：选定解释器只读诊断、真实双venv；root统一编译                                                          |
+| DS-01E2-status     | done   | env_r                 | ds/env-r           | 新 crates/ide-notebook/src/environment.rs：只读renv项目状态，不启动/激活项目脚本                                                    |
+| DS-01E0-ui         | done   | env_frontend          | ds/env-frontend    | notebook/**、ds-console/**、platform/runtimeEnvironment.ts、新ui/RuntimeEnvironmentDetails组件及tests/CSS；有效默认与显式选择不串用 |
+| DS-04B-next        | done   | debug_protocol_review | ds/debug-next-plan | docs/ds/research/2026-11-06-next-slices.md；下一调试切片合同                                                                        |
+| DS-env-integration | done   | Cloud Codex           | work               | host/sdk/notebook ops、Tauri薄命令/注册、notebook lib导出、生成bindings、catalog、集成测试/文档                                     |
+
+接口冻结：sdk_python_environment(python绝对路径) -> PythonEnvironmentInfo；notebook_project_environment(near可空路径) -> RProjectEnvironment，host选择项目/所属workspace member根，不向父目录无限扫描。探针不安装依赖，R状态不报告active。前端新建Console继承有效Python默认，旧会话保持不变。共享类型由Rust生成；子agent不可手改bindings。
+
+环境本批切片已完成集成验收，报告 `docs/ds/evidence/environments/REPORT.md`：真实Python双venv探针、R只读状态和host信任/项目根12测通过；bindings/严格clippy/标准类型/构建通过；前端全量6793通过，review修正后105相关测试通过；Chromium双视口4测通过。独立review发现默认/显式选择、跨项目迟到请求和renv措辞问题均已修复。整体DS-01E0–E4仍in_progress：renv实际激活、多R版本验证和完整统一环境合同尚待后续。
+
+| unit    | status  | owner | branch | notes                                                                        |
+| ------- | ------- | ----- | ------ | ---------------------------------------------------------------------------- |
+| DS-04B0 | pending | —     | —      | 显式内核启动/协商，不执行用户cell；合同见 research/2026-11-06-next-slices.md |

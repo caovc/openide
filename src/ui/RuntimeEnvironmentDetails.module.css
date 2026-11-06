@@ -1,0 +1,51 @@
+.root {
+  flex: none;
+  color: var(--fg);
+  font-size: var(--fs-small);
+}
+.root summary {
+  cursor: pointer;
+  padding: var(--space-2);
+}
+.body {
+  max-height: min(18rem, 16vh);
+  overscroll-behavior: contain;
+  overflow: auto;
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  background: var(--bg-app);
+}
+.body p {
+  margin: var(--space-2) 0;
+}
+.path,
+.body dd {
+  overflow-wrap: anywhere;
+}
+.body dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: calc(var(--space-2) / 2) var(--space-2);
+}
+.body dd {
+  margin: 0;
+  font-family: var(--font-mono);
+}
+.module {
+  display: contents;
+}
+.buttons {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.buttons button {
+  color: var(--fg);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  padding: calc(var(--space-2) / 2) var(--space-2);
+}
+.buttons button:disabled {
+  opacity: 0.5;
+}

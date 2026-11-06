@@ -2,6 +2,7 @@
 pub mod ark_explorer;
 pub mod discover;
 pub mod document;
+pub mod environment;
 pub mod kernel;
 pub mod session;
 pub mod session_adapter;

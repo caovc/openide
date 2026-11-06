@@ -19,6 +19,7 @@ import { KernelInput } from "./KernelInput";
 import { CellOutputs, MarkdownCell } from "./OutputView";
 import { notebookSession, type NotebookSession } from "./session";
 import styles from "./Notebook.module.css";
+import { RuntimeEnvironmentDetails } from "@/ui/RuntimeEnvironmentDetails";
 
 export function NotebookEditor({ input }: { input: EditorInput }) {
   if (!input.path) return <EmptyState title="Notebook path is missing" />;
@@ -196,6 +197,7 @@ function NotebookDocument({ session }: { session: NotebookSession }) {
           onClick={() => setReloadOpen(true)}
         />
       </div>
+      <RuntimeEnvironmentDetails selection={state.python} near={session.path} />
       {state.error && (
         <div role="alert" className={styles.error}>
           <div className={styles.errorMessage}>

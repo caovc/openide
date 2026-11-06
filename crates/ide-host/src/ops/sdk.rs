@@ -12,6 +12,15 @@ fn join_err(e: impl std::fmt::Display) -> IdeError {
     IdeError::internal(e.to_string())
 }
 
+pub async fn sdk_python_environment(
+    host: &Host,
+    window: &str,
+    python: PathBuf,
+) -> IdeResult<ide_sdk::python::PythonEnvironmentInfo> {
+    host.require_trust(window)?;
+    host.blocking(move || ide_sdk::python::inspect_environment(&python)).await
+}
+
 /// Executables found for "run this file", and where single files are compiled to.
 #[derive(Clone, Debug, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -229,6 +238,10 @@ pub async fn sdk_python_pip(
 pub(crate) fn register(d: &mut Dispatcher) {
     d.add("sdk_detect", |c| async move { sdk_detect(&c.host, &c.window, c.arg("kind")?).await });
     d.add("sdk_python_effective", |c| async move { sdk_python_effective(&c.host, &c.window, c.arg("near")?) });
+    d.add(
+        "sdk_python_environment",
+        |c| async move { sdk_python_environment(&c.host, &c.window, c.arg("python")?).await },
+    );
     d.add("sdk_php_effective", |c| async move { sdk_php_effective(&c.host, &c.window) });
     d.add(
         "sdk_php_language_level",

@@ -10,6 +10,16 @@ use tauri::{State, Window};
 
 #[tauri::command]
 #[specta::specta]
+pub async fn notebook_project_environment(
+    window: Window,
+    state: State<'_, AppState>,
+    near: Option<std::path::PathBuf>,
+) -> IdeResult<ide_notebook::environment::RProjectEnvironment> {
+    notebook::project_environment(&state.host, window.label(), near).await
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn notebook_open(window: Window, state: State<'_, AppState>, path: String) -> IdeResult<NotebookSnapshot> {
     notebook::open(&state.host, window.label(), path).await
 }
