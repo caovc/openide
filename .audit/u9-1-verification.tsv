@@ -1,0 +1,26 @@
+timestamp	check	exact_command	exit_status	log	scope
+2026-11-06T19:00:57.512750+08:00	vitest	pnpm vitest run src/features/ds-data-explorer	0	.audit/u9-1-final-vitest.log	final new-directory checks
+2026-11-06T19:00:58.630771+08:00	typecheck	pnpm typecheck	0	.audit/u9-1-final-typecheck.log	full repository typecheck
+2026-11-06T19:00:59.846460+08:00	lint	pnpm exec oxlint src/features/ds-data-explorer	0	.audit/u9-1-final-lint.log	final new-directory checks
+2026-11-06T19:00:59.906531+08:00	format-check	pnpm exec oxfmt --check src/features/ds-data-explorer	0	.audit/u9-1-final-format-check.log	final new-directory checks
+2026-11-06T19:02:10.076289+08:00	preservation	SHA-256 compare baseline listed in .audit/u9-1-before-sha256.log	0	.audit/u9-1-preservation.log	144 existing dirty/untracked files unchanged
+see log/session	iteration-vitest	pnpm vitest run src/features/ds-data-explorer	1	.audit/u9-1-iteration-vitest.log	historical iteration; superseded by final checks
+see log/session	iteration-typecheck	pnpm typecheck	2	.audit/u9-1-iteration-typecheck.log	historical iteration; superseded by final checks
+see log/session	iteration2-vitest	pnpm vitest run src/features/ds-data-explorer	0	.audit/u9-1-iteration2-vitest.log	historical iteration; superseded by final checks
+see log/session	iteration2-typecheck	pnpm typecheck	0	.audit/u9-1-iteration2-typecheck.log	historical iteration; superseded by final checks
+see log/session	review-vitest	pnpm vitest run src/features/ds-data-explorer	0	.audit/u9-1-review-vitest.log	historical iteration; superseded by final checks
+see log/session	review-typecheck	pnpm typecheck	0	.audit/u9-1-review-typecheck.log	historical iteration; superseded by final checks
+see log/session	initial-format	pnpm exec oxfmt --check src/features/ds-data-explorer	1	.audit/u9-1-format.log	historical iteration; superseded by final checks
+2026-11-06T19:05:07.275969+08:00	review-correction-final-vitest	pnpm vitest run src/features/ds-data-explorer	0	.audit/u9-1-review-correction-final-vitest.log	objectId contract review correction; final checks
+2026-11-06T19:05:16.409232+08:00	review-correction-final-lint	pnpm exec oxlint src/features/ds-data-explorer	0	.audit/u9-1-review-correction-final-lint.log	objectId contract review correction; final checks
+2026-11-06T19:05:16.410894+08:00	review-correction-final-format-check	pnpm exec oxfmt --check src/features/ds-data-explorer	0	.audit/u9-1-review-correction-final-format-check.log	objectId contract review correction; final checks
+2026-11-06T19:05:17.584698+08:00	review-correction-final-typecheck	pnpm typecheck	0	.audit/u9-1-review-correction-final-typecheck.log	objectId contract review correction; final checks
+2026-11-06T19:06:20.086287+08:00	review-correction-reproduction	pnpm vitest run src/features/ds-data-explorer -t 'distinguishes object identity'	1	.audit/u9-1-review-reproduction-vitest.log	expected pre-fix failure: distinct objectId compared equal
+2026-11-06T19:06:20.086287+08:00	review-correction-iteration-vitest	pnpm vitest run src/features/ds-data-explorer	1	.audit/u9-1-review-correction-iteration-vitest.log	historical: 147 passed, 1 failed; cache probe duplicate request id; superseded
+2026-11-06T19:06:20.086287+08:00	review-correction-initial-format	pnpm exec oxfmt --check src/features/ds-data-explorer	1	.audit/u9-1-review-correction-initial-format.log	historical: one test file required formatting; superseded
+2026-11-06T19:06:20.086287+08:00	review-correction-format	pnpm exec oxfmt src/features/ds-data-explorer	0	.audit/u9-1-review-correction-format.log	formatted only authorized new source directory
+2026-11-06T19:06:20.086287+08:00	review-correction-preservation	SHA-256 compare .audit/u9-1-review-preservation-baseline.json	0	.audit/u9-1-review-preservation.log	4271 outside-source/audit files unchanged; zero added/removed
+2026-11-06T19:06:20.086287+08:00	review-correction-final-totals	four requested final commands	0	.audit/u9-1-report.md	148 tests passed (+21 vs 127); 4/4 final commands exit 0; fixture only; NO runtime authorization acceptance; U9.2 not started
+2026-11-06T19:07:01.094414+08:00	executor-vitest	pnpm vitest run src/features/ds-data-explorer	0	.audit/u9-1-executor-vitest.log	independent executor rerun after objectId review fix
+2026-11-06T19:07:01.094414+08:00	executor-typecheck	pnpm typecheck	0	.audit/u9-1-executor-typecheck.log	independent executor rerun after objectId review fix
+2026-11-06T19:07:18+08:00	coord-u9-1	pnpm vitest run src/features/ds-data-explorer	0	.audit/u9-1-coord-tests.log

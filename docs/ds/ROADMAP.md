@@ -1,0 +1,45 @@
+# DS 可验证路线图
+
+每个单位独立交付、独立验收；按实际协议与版本校验假设，不用 mock 替代真实 runtime 集成。路径是规划范围，修改前仍须按 [COLLAB.md](COLLAB.md) 认领。U1 不动 UI 或 `languages/r.toml`。
+
+<<<<<<< Updated upstream
+| 单位                                       | 假设                                                                                                                                            | 主要路径（候选，非提前授权）                                                                                 | 验证谓词                                                                                                                                                                                                                                                                                                                |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| U1 Ark headless ZMQ + comm LSP 冒烟        | Ark 可脱离 Positron，由本仓通过 Jupyter 与会话级 comm 驱动 LSP。                                                                                | `crates/ide-notebook/**`，含新 `tests/` 集成探针                                                             | 固定版本 Ark 无 UI 执行得到 42；真实 LSP hover/completion 有效；正常/异常退出后无本会话残留进程，附可复跑证据。                                                                                                                                                                                                         |
+| U2 runtime 描述产品化且 Python 不回退      | 启动描述可表达 Ark 与现有 ipykernel，不破坏既有 Python 会话。                                                                                   | `crates/ide-notebook/**`；必要时 `crates/ide-host/src/ops/notebook.rs`、`src-tauri/src/commands/notebook.rs` | 两种 runtime 均可启动、执行、重启、关闭；现有 Python notebook 回归通过；涉及 IPC 时按上游规则生成 bindings。                                                                                                                                                                                                            |
+| U3 R 环境发现 + notebook kernel 选择       | 可发现本地 R / Ark 并明确反馈缺失依赖，而非隐式选错环境。                                                                                       | `src/features/notebook/**`，后端 notebook / 环境发现接缝（认领时明确）                                       | 可选 Python/R kernel、展示实际环境；R 缺失给可操作错误；切换后会话与执行语言一致且旧会话清理。                                                                                                                                                                                                                          |
+| U4 编辑器接 Ark 会话 LSP                   | 编辑器可绑定已有 R 会话的 Ark LSP，避免另起不关联的 R 会话。                                                                                    | `languages/r.toml`、`crates/ide-lsp/**`、编辑器 LSP 接线（认领时明确）                                       | 实际 R 文档 hover/completion 正确；会话切换/关闭取消旧请求；其他语言服务回归通过。                                                                                                                                                                                                                                      |
+| U5 Ark DAP + stdin                         | Ark 调试与输入协议可通过既有 DAP / notebook 管线适配。                                                                                          | `crates/ide-dap/**`、`crates/ide-notebook/**`，相关调试/输入 UI（认领时明确）                                | 真实 R 断点、单步、变量求值可用；输入提示可回复/取消；停止后无挂起请求及残留进程。                                                                                                                                                                                                                                      |
+| U6 共用 Session 变量查看器 / 图表面板      | R / Python 共用会话级变量 UI；Ark comm 与 Python runtime 通过语言适配器提供变量和图形事件，复用 tool window，接口预留 SAS。                     | `crates/ide-notebook/**`，新 DS feature、`src/workbench/contributions.ts` 贡献点（具体路径认领时明确）       | R 与 Python 执行修改变量、绘图后共用面板正确更新；变量名称、类型、摘要与展开可用；双语言 / 双会话不串数据；重启清空旧状态，沿用 tokens、JetBrains IDE 风格与可访问交互，不复制源码。                                                                                                                                    |
+| U7 Python / R Console                      | notebook 外也能使用交互会话，复用已验证的 Python / Ark runtime。                                                                                | 新 Console feature、会话关联接缝（认领时明确）                                                               | 两语言均可交互执行并保留状态；输入、取消、重启、关闭及双会话隔离实测通过，不依赖 notebook UI。                                                                                                                                                                                                                          |
+| U8 编辑器 Run（选中 / 当前文件）           | 普通 Python / R 编辑器可将代码发送到明确的交互会话。                                                                                            | 编辑器 actions、Console 会话路由（认领时明确）                                                               | 选区与当前文件均可运行；语言和目标会话明确，输出进入对应 Console；错误定位、取消及不串会话实测。                                                                                                                                                                                                                        |
+| U9 HTML widgets + JetBrains 级数据探索控件 | R / Python 共用数据查看 / 探索 UI，对标 DataSpell / IDEA 能力与 IDE 风格；可评估 dbx 高性能组件，语言适配器架构可扩展 SAS；先审核来源与许可证。 | 新 DS viewer / widget feature、语言无关表格模型与 R / Python 适配器、第三方许可记录（认领时明确）            | 许可证与来源审核完成；真实 R / Python DataFrame 均支持虚拟滚动、排序、筛选、列类型 / 缺失值与摘要探索；代表性大表交互性能有证据，验收前明确基准数据 / 阈值；SAS 通过接口契约验证可扩展（本单位不实现 SAS）；真实 HTML widget 展示、富内容权限与不可信内容隔离测试通过，UI 沿用 tokens 并向 JetBrains 靠拢，不复制源码。 |
+=======
+| 单位 | 假设 | 主要路径（候选，非提前授权） | 验证谓词 |
+| --- | --- | --- | --- |
+| U1 Ark headless ZMQ + comm LSP 冒烟 | Ark 可脱离 Positron，由本仓通过 Jupyter 与会话级 comm 驱动 LSP。 | `crates/ide-notebook/**`，含新 `tests/` 集成探针 | 固定版本 Ark 无 UI 执行得到 42；真实 LSP hover/completion 有效；正常/异常退出后无本会话残留进程，附可复跑证据。 |
+| U2 runtime 描述产品化且 Python 不回退 | 启动描述可表达 Ark 与现有 ipykernel，不破坏既有 Python 会话。 | `crates/ide-notebook/**`；必要时 `crates/ide-host/src/ops/notebook.rs`、`src-tauri/src/commands/notebook.rs` | 两种 runtime 均可启动、执行、重启、关闭；现有 Python notebook 回归通过；涉及 IPC 时按上游规则生成 bindings。 |
+| U3 R 环境发现 + notebook kernel 选择 | 可发现本地 R / Ark 并明确反馈缺失依赖，而非隐式选错环境。 | `src/features/notebook/**`，后端 notebook / 环境发现接缝（认领时明确） | 可选 Python/R kernel、展示实际环境；R 缺失给可操作错误；切换后会话与执行语言一致且旧会话清理。 |
+| U4 编辑器接 Ark 会话 LSP | 编辑器可绑定已有 R 会话的 Ark LSP，避免另起不关联的 R 会话。 | `languages/r.toml`、`crates/ide-lsp/**`、编辑器 LSP 接线（认领时明确） | 实际 R 文档 hover/completion 正确；会话切换/关闭取消旧请求；其他语言服务回归通过。 |
+| U5 Ark DAP + stdin | Ark 调试与输入协议可通过既有 DAP / notebook 管线适配。 | `crates/ide-dap/**`、`crates/ide-notebook/**`，相关调试/输入 UI（认领时明确） | 真实 R 断点、单步、变量求值可用；输入提示可回复/取消；停止后无挂起请求及残留进程。 |
+| U6 共用 Session 变量查看器 / 图表面板 | R / Python 共用会话级变量 UI；Ark comm 与 Python runtime 通过语言适配器提供变量和图形事件，复用 tool window，接口预留 SAS。 | `crates/ide-notebook/**`，新 DS feature、`src/workbench/contributions.ts` 贡献点（具体路径认领时明确） | R 与 Python 执行修改变量、绘图后共用面板正确更新；变量名称、类型、摘要与展开可用；双语言 / 双会话不串数据；重启清空旧状态，沿用 tokens、JetBrains IDE 风格与可访问交互，不复制源码。 |
+| U7 Python / R Console | notebook 外也能使用交互会话，复用已验证的 Python / Ark runtime。 | 新 Console feature、会话关联接缝（认领时明确） | 两语言均可交互执行并保留状态；输入、取消、重启、关闭及双会话隔离实测通过，不依赖 notebook UI。 |
+| U8 编辑器 Run（选中 / 当前文件） | 普通 Python / R 编辑器可将代码发送到明确的交互会话。 | 编辑器 actions、Console 会话路由（认领时明确） | 选区与当前文件均可运行；语言和目标会话明确，输出进入对应 Console；错误定位、取消及不串会话实测。 |
+| U9 HTML widgets + JetBrains 级数据探索控件 | R / Python 共用数据查看 / 探索 UI，对标 DataSpell / IDEA 能力与 IDE 风格；可评估 dbx 高性能组件，语言适配器架构可扩展 SAS；先审核来源与许可证。 | 新 DS viewer / widget feature、语言无关表格模型与 R / Python 适配器、第三方许可记录（认领时明确） | 许可证与来源审核完成；真实 R / Python DataFrame 均支持虚拟滚动、排序、筛选、列类型 / 缺失值与摘要探索；代表性大表交互性能有证据，验收前明确基准数据 / 阈值；SAS 通过接口契约验证可扩展（本单位不实现 SAS）；真实 HTML widget 展示、富内容权限与不可信内容隔离测试通过，UI 沿用 tokens 并向 JetBrains 靠拢，不复制源码。 |
+>>>>>>> Stashed changes
+
+## 顺序与边界
+
+U1 → U2 → U3 / U4 → U5 / U6 → U7 Console → U8 编辑器 Run → U9 widgets。可并行调研，但只有路径无交叠、依赖接口已确定并获认领的实现才能并行；这不是允许多 agent 同改 notebook 的清单。U9 后置，未核实具体 dbx 组件前不承诺直接复用。
+
+详细完成谓词见 [PRODUCT.md](PRODUCT.md)；状态与阻塞见 [BOARD.md](../../.agents/BOARD.md)。
+
+## Later (platform)
+
+- U10 Windows SAS: COM → .NET backend → Tauri IPC; after U1–U6 core DS path.
+- U11 JVM 硬移除（阶段 B / Later）：在阶段 A 默认软隐藏稳定后，单独认领并删除 Java / Kotlin / Scala / Groovy / JSP / Clojure 语言包、JDT LS / java-debug / Kotlin debugger、Maven / Gradle / Spring / Tomcat / Android 相关实现与资源；先审计跨语言共用 SDK / run / DAP 接缝和旧配置迁移，再删依赖、测试、资源。保留 Python / R / Jupyter / Ark、Console 与编辑器 Run 路径；独立构建与真实 runtime 回归验收。本次仅规划，未删除 crate、语言 TOML 或 javaDebug.ts。
+- U12 Python / R 包可视化管理：两者能力有差异须都支持；R 另需包文档浏览。路径与验收谓词认领时明确；排在 U9 之后，不打断当前数据探索。
+<<<<<<< Updated upstream
+=======
+
+>>>>>>> Stashed changes

@@ -1,0 +1,53 @@
+.root,
+.session {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  color: var(--fg);
+  background: var(--bg-app);
+}
+.controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.controls button,
+.controls input,
+.controls select,
+.controls textarea {
+  color: var(--fg);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  padding: var(--space-2) var(--space-2);
+}
+.controls select {
+  max-width: 70%;
+}
+.controls textarea {
+  flex: 1;
+  min-height: 64px;
+  font-family: var(--font-mono);
+}
+.controls button:disabled {
+  opacity: 0.5;
+}
+.history {
+  flex: 1;
+  overflow: auto;
+  min-height: 80px;
+}
+.history pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+}
+.source {
+  color: var(--fg-muted);
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-2);
+}

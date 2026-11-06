@@ -1,0 +1,43 @@
+timestamp	command	exit	evidence
+2026-11-06T18:10:40+08:00	pnpm exec oxlint src/features/ds-session	0	.audit/u6-lint.log
+2026-11-06T18:10:54+08:00	pnpm exec oxfmt --check src/features/ds-session	0	.audit/u6-format-check.log
+2026-11-06T18:11:21+08:00	pnpm build	0	.audit/u6-build.log
+2026-11-06T18:11:34+08:00	pnpm gen:bindings	0	.audit/u6-bindings-final.log
+2026-11-06T18:12:03+08:00	cargo test -p ide-notebook	0	.audit/u6-notebook-regressions-final.log
+2026-11-06T18:12:51+08:00	pnpm typecheck	0	.audit/u6-typecheck-final.log
+2026-11-06T18:13:11+08:00	python3 -c 'import socket; socket.socket().bind(("127.0.0.1", 0))'	1	.audit/u6-socket-permission.log
+2026-11-06T18:13:11+08:00	pnpm dev:status	1	.audit/u6-gui-status.log
+2026-11-06T18:13:14+08:00	pnpm vitest run src/features/ds-session src/features/notebook	0	.audit/u6-frontend-final.log
+2026-11-06T18:14:27+08:00	cargo test -p ide-host --lib ops::ds_session::tests	0	.audit/u6-host-registration.log
+2026-11-06T18:14:49+08:00	git diff --check	0	.audit/u6-diff-check.log
+2026-11-06T18:14:49+08:00	env PATH=/home/box/.cargo/bin:/home/box/.local/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path:/home/box/.cargo/bin:/home/box/.local/bin:/home/box/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games rustfmt --edition 2024 --check crates/ide-notebook/src/session.rs crates/ide-notebook/src/session_adapter.rs crates/ide-notebook/src/session_tests.rs crates/ide-notebook/tests/session_runtime.rs crates/ide-host/src/ops/ds_session.rs src-tauri/src/commands/ds_session.rs	0	.audit/u6-rust-format.log
+2026-11-06T18:15:11+08:00	cargo clippy -p ide-notebook --all-targets -- -D warnings	101	.audit/u6-clippy.log
+2026-11-06T18:15:45+08:00	pnpm vitest run src/features/ds-session src/features/notebook	0	.audit/u6-frontend-final.log
+2026-11-06T18:16:17+08:00	pnpm typecheck	0	.audit/u6-typecheck-final.log
+2026-11-06T18:16:23+08:00	cargo clippy -p ide-notebook --all-targets --no-deps -- -D warnings	0	.audit/u6-clippy-no-deps.log
+2026-11-06T18:17:04+08:00	.audit/python-u2/bin/python -c 'import sys, ipykernel, IPython; print(sys.version); print(sys.executable); print("ipykernel", ipykernel.__version__); print("IPython", IPython.__version__); import matplotlib; print("matplotlib", matplotlib.__version__)'	1	.audit/u6-python-environment.log
+2026-11-06T18:17:04+08:00	env PATH=/workspace/mamba/envs/r/bin:/home/box/.local/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path:/home/box/.cargo/bin:/home/box/.local/bin:/home/box/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games R_HOME=/workspace/mamba/envs/r/lib/R R --version	0	.audit/u6-r-environment.log
+2026-11-06T18:17:05+08:00	cargo test -p ide-notebook	0	.audit/u6-notebook-regressions-final.log
+2026-11-06T18:17:20+08:00	pnpm build	0	.audit/u6-build-final.log
+2026-11-06T18:17:58+08:00	pnpm exec oxlint src/features/ds-session	0	.audit/u6-lint-final.log
+2026-11-06T18:17:58+08:00	pnpm exec oxfmt --check src/features/ds-session	0	.audit/u6-format-check-final.log
+2026-11-06T18:18:42+08:00	/workspace/ark/target/release/ark --version	0	.audit/u6-ark-environment.log
+2026-11-06T18:18:42+08:00	git -C /workspace/ark rev-parse HEAD	0	.audit/u6-ark-source.log
+2026-11-06T18:18:59+08:00	pnpm gen:bindings	0	.audit/u6-bindings-final.log
+2026-11-06T18:19:17+08:00	git diff --check	0	.audit/u6-diff-check-final.log
+2026-11-06T18:19:17+08:00	pnpm typecheck	0	.audit/u6-typecheck-final.log
+2026-11-06T18:19:27+08:00	cargo test -p ide-notebook	0	.audit/u6-notebook-regressions-final.log
+2026-11-06T18:19:39+08:00	env PATH=/home/box/.cargo/bin:/workspace/mamba/envs/r/bin:/home/box/.local/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path:/home/box/.cargo/bin:/home/box/.local/bin:/home/box/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games OPENIDE_ARK=/workspace/ark/target/release/ark R_HOME=/workspace/mamba/envs/r/lib/R OPENIDEA_TEST_PYTHON=/workspace/openide/.audit/python-u2/bin/python cargo test -p ide-notebook --test session_runtime -- --ignored --nocapture --test-threads=1	101	.audit/u6-session-runtime-final.log
+2026-11-06T18:19:46+08:00	env PATH=/home/box/.cargo/bin:/home/box/.local/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path:/home/box/.cargo/bin:/home/box/.local/bin:/home/box/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games OPENIDEA_TEST_PYTHON=/workspace/openide/.audit/python-u2/bin/python OPENIDEA_TEST_PYTHON_SECOND=/workspace/openide/.audit/python-u2-second/bin/python cargo test -p ide-notebook --test kernel_runtime -- --ignored --nocapture --test-threads=1	101	.audit/u6-python-runtime-regressions.log
+2026-11-06T18:19:46+08:00	env PATH=/home/box/.cargo/bin:/workspace/mamba/envs/r/bin:/home/box/.local/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path:/home/box/.cargo/bin:/home/box/.local/bin:/home/box/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games OPENIDE_ARK=/workspace/ark/target/release/ark R_HOME=/workspace/mamba/envs/r/lib/R cargo test -p ide-notebook --test ark_smoke -- --ignored --nocapture --test-threads=1	101	.audit/u6-ark-runtime-regressions.log
+2026-11-06T18:20:29+08:00	python3 -c 'from pathlib import Path; compile(Path("crates/ide-notebook/src/session_python.py").read_text(), "session_python.py", "exec"); print("Python adapter syntax OK")'	0	.audit/u6-python-helper-syntax.log
+2026-11-06T18:20:30+08:00	cargo clippy -p ide-notebook --all-targets --no-deps -- -D warnings	0	.audit/u6-clippy-no-deps-final.log
+2026-11-06T18:22:14+08:00	git diff --check	0	.audit/u6-diff-check-delivery.log
+2026-11-06T18:23:08+08:00	env PATH=/home/box/.cargo/bin:/workspace/mamba/envs/r/bin:/home/box/.local/bin:/home/box/bin:/home/box/.dotnet:/home/box/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games OPENIDEA_TEST_PYTHON=/workspace/openide/.audit/u6-python/bin/python OPENIDE_ARK=/workspace/ark/target/release/ark R_HOME=/workspace/mamba/envs/r/lib/R cargo test -p ide-notebook --test session_runtime -- --ignored --nocapture --test-threads=1	0	.audit/u6-runtime-acceptance-delivery.log
+2026-11-06T18:23:30+08:00	env PATH=/home/box/.cargo/bin:/home/box/.local/bin:/home/box/bin:/home/box/.dotnet:/home/box/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games OPENIDEA_TEST_PYTHON=/workspace/openide/.audit/u6-python/bin/python OPENIDEA_TEST_PYTHON_SECOND=/workspace/openide/.audit/python-u2/bin/python cargo test -p ide-notebook --test kernel_runtime -- --ignored --nocapture --test-threads=1	0	.audit/u6-python-regression-delivery.log
+2026-11-06T18:23:46+08:00	env PATH=/home/box/.cargo/bin:/workspace/mamba/envs/r/bin:/home/box/.local/bin:/home/box/bin:/home/box/.dotnet:/home/box/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games OPENIDE_ARK=/workspace/ark/target/release/ark R_HOME=/workspace/mamba/envs/r/lib/R cargo test -p ide-notebook --test ark_smoke -- --ignored --nocapture --test-threads=1	0	.audit/u6-ark-regression-delivery.log
+2026-11-06T18:23:47+08:00	env PATH=/home/box/.cargo/bin:/home/box/.local/bin:/home/box/bin:/home/box/.dotnet:/home/box/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games cargo test -p ide-notebook	0	.audit/u6-notebook-unit-delivery.log
+2026-11-06T18:24:00+08:00	pnpm vitest run src/features/ds-session src/features/notebook	0	.audit/u6-frontend-delivery.log
+2026-11-06T18:24:01+08:00	pnpm typecheck	0	.audit/u6-typecheck-delivery.log
+2026-11-06T18:24:01+08:00	git diff --check	0	.audit/u6-diff-check-host-delivery.log
+2026-11-06T18:24:01+08:00	env PATH=/home/box/.cargo/bin:/home/box/.local/bin:/home/box/bin:/home/box/.dotnet:/home/box/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games rustfmt --edition 2024 --check crates/ide-notebook/tests/kernel_runtime.rs	0	.audit/u6-comm-test-format.log

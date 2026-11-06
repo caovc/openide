@@ -1,0 +1,13 @@
+time_asia_shanghai	check	command	exit	result	evidence
+2026-11-06T17:43:56.676711+08:00	Ark real integration	cargo test -p ide-notebook --test ark_smoke -- --ignored --nocapture --test-threads=1	0	5 passed	.audit/u5-ark-serial.log
+2026-11-06T17:43:56.676711+08:00	Host real Ark API	cargo test -p ide-host --lib ark_stdin_host_api -- --ignored --nocapture	0	1 passed	.audit/u5-host-ark-final.log
+2026-11-06T17:43:56.676711+08:00	Python real regression	cargo test -p ide-notebook --test kernel_runtime -- --ignored --nocapture --test-threads=1	0	7 passed	.audit/u5-python.log
+2026-11-06T17:43:56.676711+08:00	Rust defaults	cargo test -p ide-notebook -p ide-dap -p ide-lsp	0	284 passed; 28 ignored	.audit/u5-rust-final.log
+2026-11-06T17:43:56.676711+08:00	Host defaults	cargo test -p ide-host --lib -- --test-threads=1	0	165 passed; 2 ignored	.audit/u5-host-final.log
+2026-11-06T17:43:56.676711+08:00	Bindings	cargo test -p openidea --test export_bindings	0	1 passed; generated notebook DAP/events/input bindings	.audit/u5-bindings-final.log
+2026-11-06T17:43:56.676711+08:00	Frontend and catalogs	pnpm vitest run src/features/notebook src/platform/locales/textCatalog.test.ts	0	77 passed; 6 skipped	.audit/u5-frontend-final.log
+2026-11-06T17:43:56.676711+08:00	TypeScript	pnpm typecheck	0	all configurations pass, after binding generation	.audit/u5-typecheck-final.log
+2026-11-06T17:43:56.676711+08:00	Frontend lint	pnpm exec oxlint <touched notebook files>	0	0 errors; existing useVirtualizer incompatible-library warning	.audit/u5-lint-final.log
+2026-11-06T17:43:56.676711+08:00	Rust formatting	rustfmt --check --edition 2024 --config skip_children=true <touched Rust files>	0	pass	.audit/u5-rustfmt.log
+2026-11-06T17:43:56.676711+08:00	Frontend formatting	pnpm exec oxfmt --check <touched notebook files>	0	pass	.audit/u5-format-check.log
+2026-11-06T17:43:56.676711+08:00	Cleanup	real tests assert ESRCH and empty runtime dirs; independent killpg/ps recheck	0	no owned Ark groups/processes; preview preserved	.audit/u5-processes.log

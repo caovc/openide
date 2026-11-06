@@ -1,0 +1,9 @@
+ts	check	command	exit	result	evidence
+2026-11-06T17:52:45+08:00	typecheck	pnpm typecheck	0	all TS projects	.audit/java-typecheck.log
+2026-11-06T17:52:45+08:00	language	cargo test -p ide-language --lib	0	99 passed	.audit/java-language-full.log
+2026-11-06T17:52:45+08:00	DS frontend	pnpm vitest run DS profiles welcome notebook	0	72 passed	.audit/java-frontend-tests.log
+2026-11-06T17:52:45+08:00	legacy run	VITE_OPENIDE_JVM=1 pnpm vitest run runConfigTypes producers configs jvmTypes remote	0	186 passed	.audit/java-legacy-tests.log
+2026-11-06T17:52:45+08:00	legacy settings/tools	VITE_OPENIDE_JVM=1 pnpm vitest run settings dialog tools	0	49 passed	.audit/java-legacy-settings-tests.log
+2026-11-06T17:52:45+08:00	Python runtime	cargo test -p ide-notebook --test kernel_runtime -- --ignored --nocapture --test-threads=1	0	7 passed	.audit/java-python-runtime.log
+2026-11-06T17:52:45+08:00	Ark runtime	cargo test -p ide-notebook --test ark_smoke -- --ignored --nocapture --test-threads=1	0	5 passed; ESRCH cleanup	.audit/java-ark-runtime.log
+2026-11-06T17:52:45+08:00	lint	pnpm exec oxlint touched TS paths	0	pass	.audit/java-lint.log

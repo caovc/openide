@@ -1,0 +1,37 @@
+{
+  "name": "ag-grid-community",
+  "version": "36.3.0",
+  "license": "MIT",
+  "repository": {
+    "url": "git+https://github.com/ag-grid/ag-grid.git",
+    "type": "git"
+  },
+  "homepage": "https://www.ag-grid.com/",
+  "dependencies": {
+    "ag-stack": "36.3.0",
+    "ag-charts-types": "14.3.0"
+  },
+  "dist": {
+    "shasum": "c918baeeb7c2819f6455d71fcaf10b324c35c993",
+    "tarball": "https://registry.npmjs.org/ag-grid-community/-/ag-grid-community-36.3.0.tgz",
+    "fileCount": 686,
+    "integrity": "sha512-0JRaIwE82TuOcx+upA3OnTyhDAIUDqrMxLoBib6yVON0SyfICdpOnwD4QdiT0A1lgrC8SkzLBFRst73bTREF6Q==",
+    "signatures": [
+      {
+        "sig": "MEYCIQCGJOZTiTrELj+neYdr9Fppp7pyCXSyl55RaGuXFDJqUwIhAIYP9FjHtWJCJ7QT742COCgetVibFjV0+Ue5gzUaxZEP",
+        "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+      },
+      {
+        "sig": "MEYCIQD8nDnpKcPM9HaQ0/Ac1CNq8rV9zzEJXiEhNSwgmLmhnQIhAO7pEAnUZl16fp2E2+KoFHtYqw9NwLdWi5v/rnpnTsWU",
+        "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+      }
+    ],
+    "attestations": {
+      "url": "https://registry.npmjs.org/-/npm/v1/attestations/ag-grid-community@36.3.0",
+      "provenance": {
+        "predicateType": "https://slsa.dev/provenance/v1"
+      }
+    },
+    "unpackedSize": 21947043
+  }
+}

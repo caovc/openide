@@ -1,0 +1,11 @@
+id = "r"
+name = "R"
+extensions = ["r", "rprofile"]
+filenames = [".Rprofile"]
+first-line = "^#!.*\\bRscript\\b"
+line-comment = "#"
+indent = { tab-size = 2, insert-spaces = true }
+ui-mode = "R"
+
+# R intelligence is provided by the running notebook Ark session (notebook_lsp).
+# Never spawn an unbound R languageserver as a fallback.

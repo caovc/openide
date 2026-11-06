@@ -1,0 +1,29 @@
+{
+  "name": "apache-arrow",
+  "version": "21.2.0",
+  "license": "Apache-2.0",
+  "repository": {
+    "url": "git+https://github.com/apache/arrow-js.git",
+    "type": "git"
+  },
+  "homepage": "https://arrow.apache.org/js/",
+  "dependencies": {
+    "tslib": "^2.6.2",
+    "@types/node": "^25.2.0",
+    "flatbuffers": "^25.1.24",
+    "json-with-bigint": "^3.5.3"
+  },
+  "dist": {
+    "shasum": "3adc16eb816202687782065836cda6092ff7db51",
+    "tarball": "https://registry.npmjs.org/apache-arrow/-/apache-arrow-21.2.0.tgz",
+    "fileCount": 1108,
+    "integrity": "sha512-Hxe6Agq26gQOM954qpzYSllJBPJl+e16U5CkfuMUhLrNba+5nKkttIVlflaovN6oaTratqMGAO8H5u/aNhmHWQ==",
+    "signatures": [
+      {
+        "sig": "MEUCIFY+kcKaxFfjeu004Kb1nJ+TtH1uubwzb57r7uKbsqcKAiEAyWYs2rCZcLIg/o77pOSDxcUDVzOyF6WjDPItlUR9DGM=",
+        "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+      }
+    ],
+    "unpackedSize": 5818996
+  }
+}

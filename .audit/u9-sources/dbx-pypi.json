@@ -1,0 +1,19 @@
+{
+  "info": {
+    "name": "dbx",
+    "version": "0.8.19",
+    "license": null,
+<<<<<<< Updated upstream
+    "classifiers": ["Intended Audience :: Developers", "Intended Audience :: System Administrators"],
+    "project_urls": null
+  }
+}
+=======
+    "classifiers": [
+      "Intended Audience :: Developers",
+      "Intended Audience :: System Administrators"
+    ],
+    "project_urls": null
+  }
+}
+>>>>>>> Stashed changes

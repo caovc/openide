@@ -1,0 +1,44 @@
+{
+  "name": "@tanstack/react-table",
+  "version": "9.3.1",
+  "license": "MIT",
+  "repository": {
+    "url": "https://github.com/TanStack/table.git",
+    "type": "git",
+    "directory": "packages/react-table"
+  },
+  "homepage": "https://tanstack.com/table",
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "dependencies": {
+    "@tanstack/table-core": "9.3.1",
+    "@tanstack/react-store": "^0.11.2"
+  },
+  "dist": {
+    "shasum": "7030e813d412f54db6dd34af351774dd1caa929e",
+    "tarball": "https://registry.npmjs.org/@tanstack/react-table/-/react-table-9.3.1.tgz",
+    "fileCount": 34,
+    "integrity": "sha512-E6Ya5TnY6EaGyZYIUqig/29Lr/gJSAubQkLJFqiWkUl5nRCr0Xr9hvJot+NiRTtG+TzGxHTiqUW3bnLtQxlHug==",
+    "signatures": [
+      {
+        "sig": "MEUCIFLc0J4ZwOv8O/1SOJECgfOZa9lOgg1sipQITjp7SRZIAiEAulYugm0AhU3bGJqBpDDZm8LI8xdOBlILRpUh+R1Hb9c=",
+        "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+      },
+      {
+        "sig": "MEUCIQCVymdjqBoeadKRDrgBbUatgdAsqsu6BLzA2wUUEPQrlAIgRZOxyTZZetMUdUradRLyvMdLk+EpjULnkMDD9m3UuMg=",
+        "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+      }
+    ],
+    "attestations": {
+      "url": "https://registry.npmjs.org/-/npm/v1/attestations/@tanstack%2freact-table@9.3.1",
+      "provenance": {
+        "predicateType": "https://slsa.dev/provenance/v1"
+      }
+    },
+    "unpackedSize": 122555
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

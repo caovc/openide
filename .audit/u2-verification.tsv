@@ -1,0 +1,7 @@
+ts	check	command	exit_code	evidence
+2026-11-06T16:27:38.561987+08:00	notebook-tests	cargo test --locked -p ide-notebook	0	.audit/u2-notebook-tests.log
+2026-11-06T16:27:44.659347+08:00	python-runtime	cargo test --locked -p ide-notebook --test kernel_runtime -- --ignored --nocapture	0	.audit/u2-python-runtime.log
+2026-11-06T16:27:47.633730+08:00	ark-smoke	cargo test --locked -p ide-notebook --test ark_smoke -- --ignored --nocapture	0	.audit/u2-ark-smoke.log
+2026-11-06T16:27:48.558990+08:00	clippy	cargo clippy --locked -p ide-notebook --all-targets -- -D warnings	0	.audit/u2-clippy.log
+2026-11-06T16:27:48.647239+08:00	fmt	cargo fmt -p ide-notebook -- --check	0	.audit/u2-fmt.log
+2026-11-06T16:27:48.653093+08:00	diff-check	git diff --check	0	.audit/u2-diff-check.log

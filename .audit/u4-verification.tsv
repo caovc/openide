@@ -1,0 +1,15 @@
+check	result	evidence
+cargo test -p ide-lsp -p ide-notebook	PASS: 226 passed; real-runtime probes separately run	u4-rust-regression.log
+cargo test -p ide-notebook --test ark_smoke -- --ignored --nocapture	PASS: 3 real Ark tests; both U4 process groups ESRCH	u4-ark-all.log
+cargo test -p ide-host --lib ark_notebook_cell_lsp_uses_execution_session -- --ignored --nocapture	PASS: same execution-only symbol + hover in notebook cell service	u4-host-ark.log
+cargo test -p ide-notebook --test kernel_runtime -- --ignored --nocapture	PASS: 7 real Python tests	u4-python-regression.log
+cargo test -p ide-host --lib	PASS: 165 passed; 1 real Ark test separately run	u4-host-regression.log
+vitest notebook + editor availability/completion/hoverPrecedence/snippet	PASS: 134 tests / 9 files	u4-frontend-regression.log
+pnpm typecheck	PASS	u4-typecheck.log
+oxlint changed notebook TS/TSX	PASS	u4-frontend-lint.log
+cargo clippy -p ide-lsp -p ide-notebook -p ide-host --all-targets -- -D warnings	BASELINE FAIL: Rust 1.96 nonminimal_bool in unchanged launch.rs and ide-db	u4-clippy.log
+cargo clippy same targets -- -D warnings -A clippy::nonminimal_bool	PASS	u4-clippy-baseline-allow.log
+cargo test -p openidea --test export_bindings	ENV BLOCK: pkg-config missing for glib-sys; bindings hand-patched	u4-bindings-export.log
+vitest textCatalog	BASELINE FAIL: 7 U3 notebook-kernel rename/translation cases; no R-cell-source failure	u4-catalog-baseline.log
+process check	PASS: no Ark/R/Rscript processes remain	u4-process-check.log
+git diff --check	PASS	u4-report.md

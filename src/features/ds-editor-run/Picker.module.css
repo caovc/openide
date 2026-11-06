@@ -1,0 +1,40 @@
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  color: var(--fg);
+}
+.content p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.content label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.content select,
+.content button {
+  color: var(--fg);
+  background: var(--bg-input);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-small);
+  padding: var(--space-2);
+}
+.content button:disabled {
+  opacity: 0.5;
+}
+.buttons {
+  display: flex;
+  gap: var(--space-2);
+}
+.source {
+  max-height: 160px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  background: var(--bg-input);
+  padding: var(--space-2);
+  margin: 0;
+}

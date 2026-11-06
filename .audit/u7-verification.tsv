@@ -1,0 +1,20 @@
+time_asia_shanghai	check	command	exit	evidence
+2026-11-06T18:05:20.706116+08:00	frontend-tests	pnpm vitest run src/features/ds-console	0	.audit/u7-check-180519-frontend-tests.log
+2026-11-06T18:05:24.003784+08:00	catalog-tests	pnpm vitest run src/platform/locales/textCatalog.test.ts	1	.audit/u7-check-180519-catalog-tests.log
+2026-11-06T18:05:25.249974+08:00	typecheck	pnpm typecheck	0	.audit/u7-check-180519-typecheck.log
+2026-11-06T18:05:25.303796+08:00	lint	pnpm exec oxlint src/features/ds-console src/features/index.ts	0	.audit/u7-check-180519-lint.log
+2026-11-06T18:05:25.361297+08:00	format	pnpm exec oxfmt --check src/features/ds-console src/features/index.ts	0	.audit/u7-check-180519-format.log
+2026-11-06T18:05:25.388245+08:00	rust-format	/home/box/.cargo/bin/rustfmt --edition 2024 --check crates/ide-host/src/notebook.rs crates/ide-host/src/ops/notebook.rs	0	.audit/u7-check-180519-rust-format.log
+2026-11-06T18:02:18.501199+08:00	host-console-unit	PATH=$HOME/.cargo/bin:$PATH cargo test -p ide-host --lib u7_console_transient_identity_and_cleanup	0	.audit/u7-host-unit-pass.log
+2026-11-06T18:05:20.843751+08:00	host-notebook-regression	PATH=$HOME/.cargo/bin:$PATH cargo test -p ide-host --lib notebook::tests:: -- --test-threads=1	0	.audit/u7-host-notebook-tests.log
+2026-11-06T18:04:05.844347+08:00	real-python-BLOCKED	PATH=$HOME/.cargo/bin:/workspace/mamba/envs/r/bin:$PATH OPENIDE_ARK=/workspace/ark/target/release/ark R_HOME=/workspace/mamba/envs/r/lib/R OPENIDEA_TEST_PYTHON=/workspace/openide/.audit/python-u2/bin/python OPENIDE_U7_RUNTIME=python cargo test -p ide-host --lib u7_console_real_runtime -- --ignored --nocapture --test-threads=1	101	.audit/u7-real-python.log
+2026-11-06T18:04:19.696237+08:00	real-ark-BLOCKED	PATH=$HOME/.cargo/bin:/workspace/mamba/envs/r/bin:$PATH OPENIDE_ARK=/workspace/ark/target/release/ark R_HOME=/workspace/mamba/envs/r/lib/R OPENIDEA_TEST_PYTHON=/workspace/openide/.audit/python-u2/bin/python OPENIDE_U7_RUNTIME=ark cargo test -p ide-host --lib u7_console_real_runtime -- --ignored --nocapture --test-threads=1	101	.audit/u7-real-ark.log
+2026-11-06T18:04:26.468183+08:00	local-socket-BLOCKED	python3 socket.socket() then bind(127.0.0.1,0)	1	.audit/u7-socket-probe.log
+2026-11-06T18:05:02.159900+08:00	clippy-with-dependencies	PATH=$HOME/.cargo/bin:$PATH cargo clippy -p ide-host --lib -- -D warnings	101	.audit/u7-clippy.log
+2026-11-06T18:05:54.327485+08:00	clippy-host-only	PATH=$HOME/.cargo/bin:$PATH cargo clippy -p ide-host --lib --no-deps -- -D warnings	0	.audit/u7-clippy-no-deps.log
+2026-11-06T18:06:23.915250+08:00	gui-preflight-BLOCKED	pnpm dev:status	1	.audit/u7-dev-status.log
+2026-11-06T18:06:23.767251+08:00	diff-whitespace	git diff --check -- src/features/index.ts crates/ide-host/src/notebook.rs crates/ide-host/src/ops/notebook.rs	0	.audit/u7-diff-check.log
+2026-11-06T18:08:56.188169+08:00	executor-frontend-tests	pnpm vitest run src/features/ds-console	0	.audit/u7-executor-tests.log
+2026-11-06T18:08:56.188169+08:00	executor-typecheck	pnpm typecheck	0	.audit/u7-executor-typecheck.log
+2026-11-06T18:10:57.514325+08:00	real-python-coord	PATH=$HOME/.cargo/bin:/workspace/mamba/envs/r/bin:$PATH OPENIDE_ARK=... OPENIDE_U7_RUNTIME=python cargo test -p ide-host --lib u7_console_real_runtime -- --ignored --nocapture --test-threads=1	0	.audit/u7-real-python-coord.log
+2026-11-06T18:10:57.514325+08:00	real-ark-coord	PATH=... OPENIDE_U7_RUNTIME=ark cargo test -p ide-host --lib u7_console_real_runtime -- --ignored --nocapture --test-threads=1	0	.audit/u7-real-ark-coord.log

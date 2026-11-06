@@ -1,0 +1,17 @@
+ts	check	command	exit_code	result	evidence
+2026-11-06T18:39:19.699077+08:00	frontend-tests	PATH=$HOME/.cargo/bin:$PATH pnpm vitest run src/features/ds-editor-run src/features/ds-console src/features/ds-session --reporter=verbose	0	PASS 55 tests: U8 34, U7 13, U6 8; mocked transports, real editor/actions/DOM	.audit/u8-tests.log
+2026-11-06T18:39:19.699077+08:00	typecheck	PATH=$HOME/.cargo/bin:$PATH pnpm typecheck	0	PASS full configured typecheck	.audit/u8-typecheck.log
+2026-11-06T18:39:19.699077+08:00	lint	PATH=$HOME/.cargo/bin:$PATH pnpm lint	0	PASS full repository lint	.audit/u8-lint.log
+2026-11-06T18:39:19.699077+08:00	format	PATH=$HOME/.cargo/bin:$PATH pnpm exec oxfmt --check src/features/ds-editor-run src/features/index.ts src/platform/locales/text/en.json src/platform/locales/text/zh.json	0	PASS 13 files	.audit/u8-format.log
+2026-11-06T18:39:19.699077+08:00	build	PATH=$HOME/.cargo/bin:$PATH pnpm build	0	PASS; existing chunk/dynamic-import warnings	.audit/u8-build.log
+2026-11-06T18:39:19.699077+08:00	knip	PATH=$HOME/.cargo/bin:$PATH pnpm knip	0	PASS; existing ignored-pattern configuration hint	.audit/u8-knip.log
+2026-11-06T18:39:19.699077+08:00	text-catalog	PATH=$HOME/.cargo/bin:$PATH pnpm vitest run src/platform/locales/textCatalog.test.ts	1	BASELINE FAILURE 19 pass/1 fail/6 skip; only U6 ds-session/index.ts Plots missing; no U8 missing strings	.audit/u8-catalog.log
+2026-11-06T18:39:19.699077+08:00	diff-whitespace	git diff --check -- src/features/index.ts src/platform/locales/text/en.json src/platform/locales/text/zh.json	0	PASS scoped tracked diff whitespace	.audit/u8-diff-check.log
+2026-11-06T18:39:19.699077+08:00	preservation	Compare SHA-256 of 134 initial dirty/untracked paths against .audit/u8-baseline.json	0	PASS only three authorized shared wiring/catalog paths changed; no pre-existing file missing; all other 131 unchanged	.audit/u8-preservation.log
+2026-11-06T18:39:19.699077+08:00	gui-status	PATH=$HOME/.cargo/bin:$PATH pnpm dev:status	1	BLOCKED no worktree MCP bridges; no Tauri MCP tools available	.audit/u8-gui-status.log
+2026-11-06T18:39:19.699077+08:00	socket-probe	"python3 -c 'import socket; s=socket.socket(); s.bind((""127.0.0.1"", 0)); print(s.getsockname()); s.close()'"	1	BLOCKED PermissionError Errno 1 at socket.socket(); retained log used equivalent multiline Python probe	.audit/u8-socket-permission.log
+2026-11-06T18:39:19.699077+08:00	gui-launch	PATH=$HOME/.cargo/bin:$PATH pnpm dev:app	1	BLOCKED listen EPERM 127.0.0.1:47544; no desktop/screenshots/runtime verification	.audit/u8-gui-launch.log
+2026-11-06T18:40:04.509131+08:00	executor-frontend-tests	PATH=$HOME/.cargo/bin:$PATH pnpm vitest run src/features/ds-editor-run src/features/ds-console src/features/ds-session --reporter=verbose	0	PASS independently rerun 55 tests	.audit/u8-executor-tests.log
+2026-11-06T18:40:04.509131+08:00	executor-typecheck	PATH=$HOME/.cargo/bin:$PATH pnpm typecheck	0	PASS independently rerun full configured typecheck	.audit/u8-executor-typecheck.log
+2026-11-06T18:40:31+08:00	coord-frontend	pnpm vitest run ds-editor-run ds-console ds-session	0	.audit/u8-coord-frontend.log
+2026-11-06T18:40:31+08:00	coord-typecheck	pnpm typecheck	0	.audit/u8-coord-typecheck.log

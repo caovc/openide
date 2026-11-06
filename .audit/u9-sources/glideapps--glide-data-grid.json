@@ -1,0 +1,36 @@
+{
+  "name": "@glideapps/glide-data-grid",
+  "version": "6.0.3",
+  "license": "MIT",
+  "repository": {
+    "url": "git+https://github.com/glideapps/glide-data-grid.git",
+    "type": "git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://grid.glideapps.com",
+  "peerDependencies": {
+    "react": "^16.12.0 || 17.x || 18.x",
+    "lodash": "^4.17.19",
+    "marked": "^4.0.10",
+    "react-dom": "^16.12.0 || 17.x || 18.x",
+    "react-responsive-carousel": "^3.2.7"
+  },
+  "dependencies": {
+    "@linaria/react": "^4.5.3",
+    "canvas-hypertxt": "^1.0.3",
+    "react-number-format": "^5.0.0"
+  },
+  "dist": {
+    "shasum": "dfb5b82e690f999a62b825fb52c9fce891946524",
+    "tarball": "https://registry.npmjs.org/@glideapps/glide-data-grid/-/glide-data-grid-6.0.3.tgz",
+    "fileCount": 718,
+    "integrity": "sha512-YXKggiNOaEemf0jP0jORq2EQKz+zXms+6mGzZc+q0mLMjmgzzoGLOQC1uYcynXSj1R61bd27JcPFsoH+Gj37Vg==",
+    "signatures": [
+      {
+        "sig": "MEYCIQCWw3Ym6bV89pyO23rUSJFrAbPu/jMGdOJhq17dnIVCrwIhAM5H2HuayciDCBGRQc+hZAwPObkM2l2ahCGliOEyQVm0",
+        "keyid": "SHA256:jl3bwswu80PjjokCgh0o2w5c2U4LhQAE57gj9cz1kzA"
+      }
+    ],
+    "unpackedSize": 3662455
+  }
+}

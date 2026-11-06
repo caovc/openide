@@ -1,0 +1,124 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  color: var(--fg);
+  background: var(--bg-app);
+  font-family: var(--font-ui);
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  min-height: 28px;
+}
+.picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+.picker select {
+  min-width: 0;
+  max-width: 100%;
+  color: var(--fg);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+}
+.panel button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-small);
+  min-width: 22px;
+  height: 22px;
+  padding: 2px;
+  cursor: pointer;
+}
+.panel button:hover {
+  background: var(--bg-hover);
+}
+.panel button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.panel :focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+.empty {
+  padding: 10px 12px;
+  margin: 0;
+  color: var(--fg-muted);
+}
+.content {
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+}
+.variables {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+}
+.variables th {
+  position: sticky;
+  top: 0;
+  text-align: start;
+  font-weight: 500;
+  background: var(--bg-app);
+  color: var(--fg-muted);
+}
+.variables th,
+.variables td {
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.variables th:first-child {
+  width: 34%;
+}
+.variables th:nth-child(2) {
+  width: 20%;
+}
+.variables tr:hover td {
+  background: var(--bg-hover);
+}
+.name {
+  display: flex;
+  align-items: center;
+  min-height: 22px;
+}
+.name > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.spacer {
+  display: inline-block;
+  width: 22px;
+  flex-shrink: 0;
+}
+.plot {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  place-items: center;
+  padding: 8px;
+}
+.plot img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}

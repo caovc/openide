@@ -1,0 +1,27 @@
+{
+  "name": "@finos/perspective-viewer",
+  "version": "3.8.0",
+  "license": "Apache-2.0",
+  "repository": {
+    "url": "git+https://github.com/finos/perspective.git",
+    "type": "git"
+  },
+  "homepage": "https://github.com/finos/perspective#readme",
+  "dependencies": {
+    "@finos/perspective": "^3.8.0",
+    "pro_self_extracting_wasm": "0.0.9"
+  },
+  "dist": {
+    "shasum": "5a88b2b6c67076bee951604fbc20905563fed527",
+    "tarball": "https://registry.npmjs.org/@finos/perspective-viewer/-/perspective-viewer-3.8.0.tgz",
+    "fileCount": 362,
+    "integrity": "sha512-u5dtQw4NzlbMOPZgvi+Tr1p0ZDFoYLne9tV99yEGIEqhQFWG3Ke2RL/562RjDm7o2Vk/nPHP+K9RkF/9KceBMg==",
+    "signatures": [
+      {
+        "sig": "MEUCIFcPTWUj0F8gfVTBHDvaK6/rGMtD00Y+Td0HmeiRi1qCAiEAv2kpQjuVVtEn9Qf+YB5wAP28ts+iJY9k6BaLD0Gine8=",
+        "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+      }
+    ],
+    "unpackedSize": 8170863
+  }
+}
